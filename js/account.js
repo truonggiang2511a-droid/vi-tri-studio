@@ -377,7 +377,7 @@ function showOrder(order, bank) {
   $('payHelpZalo').hidden = !bank.zalo;
   // Ảnh QR của SePay (vietqr.app) có sẵn số tiền + nội dung là mã đơn để tự cộng lượt.
   // Ảnh không tải được thì vẽ mã VietQR ngay trên máy (cùng tài khoản, cùng số tiền, cùng nội dung).
-  const qs = new URLSearchParams({ acc: bank.account, bank: bank.bin, amount: String(order.amount), des: order.code, template: 'compact', showinfo: 'true' });
+  const qs = new URLSearchParams({ acc: bank.account, bank: bank.bin, amount: String(order.amount), des: order.code, template: '', showinfo: 'true' });
   if (bank.holder) qs.set('holder', bank.holder);
   const qrUrl = 'https://vietqr.app/img?' + qs.toString();
   const img = $('qrImg'), cv = $('qrCanvas');
