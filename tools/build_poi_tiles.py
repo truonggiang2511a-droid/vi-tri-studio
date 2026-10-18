@@ -30,7 +30,7 @@ MALL = R(r'trung tâm thương mại|tttm|vincom|aeon|lotte|go!|big c|bigc|mm me
 SHOP_CATS = {'supermarket','grocery_store','convenience_store','shopping_center','shopping_mall','department_store','shopping','food_and_beverage_store'}
 MARKET = R(r'^(chợ|cho) (?!tốt|tot\b|online|sỉ online)')
 CHO_BAD = R(r'thiết bị|thiet bi|vệ sinh|điện máy|điện thoại|xe máy|ô tô|oto|online|đồ cũ|sim |máy may|vật liệu|vật tư|gạch|sắt thép|nhà đất|real estate|bất động sản|bđs|bds|việc làm|mua bán|sỉ |thanh lý')
-BAD_ALL = R(r'^(kho |kho$)|trung tâm phân phối|công ty|cty|văn phòng|vpgd|nhà phân phối|đại lý|apartment|căn hộ|chung cư|residence|\boffice\b|quán|cơm |cháo|phở|bún |cafe|cà phê|coffee|trà sữa|tiệm|\bshop\b|cửa hàng|homestay|khách sạn|nhà nghỉ|nhà trọ|giữ xe|parking|tổ yến|in ấn|photocopy|(tại|gần|đối diện|cạnh|trước|ngay|bên|sau|cổng) (bv|bệnh viện|trường|chợ)')
+BAD_ALL = R(r'^thông báo|nhà sách|fahasa|kính thuốc|đồng hồ|pshop|^cđcs|lẩu |tình nguyện|tiếp sức|^(kho |kho$)|trung tâm phân phối|công ty|cty|văn phòng|vpgd|nhà phân phối|đại lý|apartment|căn hộ|chung cư|residence|\boffice\b|quán|cơm |cháo|phở|bún |cafe|cà phê|coffee|trà sữa|tiệm|\bshop\b|cửa hàng|homestay|khách sạn|nhà nghỉ|nhà trọ|giữ xe|parking|tổ yến|in ấn|photocopy|(tại|gần|đối diện|cạnh|trước|ngay|bên|sau|cổng) (bv|bệnh viện|trường|chợ)')
 STORE_START = R(r'^(siêu thị|sieu thi|co\.?op ?(mart|food|xtra|smile)?|coopmart|bách hóa xanh|bách hoá xanh|bach hoa xanh|winmart|vinmart|lotte mart|aeon|go!|big ?c|emart|e-mart|mm mega|satra|kingfood|lan chi|circle ?k|family ?mart|ministop|gs25|7-eleven|trung tâm thương mại|tttm|vincom|giga mall|crescent mall|sc vivocity|vạn hạnh mall|takashimaya|parkson)')
 MALL_START = R(r'^(trung tâm thương mại|tttm|vincom|aeon|lotte mart|go!|big ?c|emart|e-mart|mm mega|giga mall|crescent mall|sc vivocity|vạn hạnh mall|takashimaya|parkson)')
 SHOP_BAD = R(r'điện máy|di động|thế giới|máy may|máy|thiết bị|vật liệu|nội thất|gạch|sơn|xe |xe$|điện thoại|laptop|máy tính|kính|thuốc|sữa|mẹ và bé|me va be|đồ gỗ|thời trang|giày|mỹ phẩm|điện tử|điện lạnh|nông sản|vật tư|bia|rượu|đồ chơi|thú cưng|pet|vải|chăn|nệm|xây dựng|tóc|mắt|nhựa|inox|điện nước')
@@ -75,6 +75,8 @@ def classify(name, cat, conf):
 ADDR = R(r'\d|\b(q\.|p\.|tp|tphcm|hcm|huyện|quận|phường|xã|đường|kp|ấp|tổ|thị trấn|tỉnh|thành phố|việt nam|vietnam)\b')
 def clean_name(n):
     n = re.sub(r'\s+', ' ', n).strip(' -_|,.')
+    w = n.split()
+    if len(w) >= 4 and len(w) % 2 == 0 and w[:len(w)//2] == w[len(w)//2:]: n = ' '.join(w[:len(w)//2])
     parts = re.split(r'\s*[-–_|]\s+|\s+[-–_|]\s*|\s*,\s*|\s*\(', n, maxsplit=1)
     if len(parts) == 2 and len(parts[0].split()) >= 2 and ADDR.search(parts[1]):
         n = parts[0].strip(' -_|,.')
