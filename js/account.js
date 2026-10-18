@@ -1,10 +1,29 @@
 // Tài khoản khách hàng: đăng ký/đăng nhập, số lượt, mua thêm lượt bằng VietQR.
 // Mọi kiểm tra lượt nằm ở các hàm vt_* trên Supabase; trình duyệt chỉ gọi và hiển thị.
 import qrcode from 'qrcode-generator';
+import { track } from './track.js';
 
 export const SB_URL = 'https://crzinaydjgqepffatqoo.supabase.co';
 export const SB_KEY = 'sb_publishable_NhyivL-3owNWC6unb8GbZA_d135dx3i';
 const TOKEN_KEY = 'vitri.session.v1';
+const REF_KEY = 'vitri.ref.v1';
+
+// Mã giới thiệu trên link (?ref=abc123): nhớ lại để gửi kèm khi đăng ký, rồi bỏ khỏi thanh địa chỉ
+export function captureRef() {
+  try {
+    const u = new URL(location.href);
+    const r = (u.searchParams.get('ref') || '').trim().toLowerCase();
+    if (/^[a-z0-9]{4,12}$/.test(r)) localStorage.setItem(REF_KEY, JSON.stringify({ code: r, at: Date.now() }));
+    if (u.searchParams.has('ref')) { u.searchParams.delete('ref'); history.replaceState(null, '', u.pathname + (u.search || '') + u.hash); }
+  } catch { /* bỏ qua */ }
+}
+export function getRef() {
+  try {
+    const j = JSON.parse(localStorage.getItem(REF_KEY) || 'null');
+    if (j && Date.now() - j.at < 60 * 86400000) return j.code;
+  } catch { /* bỏ qua */ }
+  return null;
+}
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -23,6 +42,7 @@ const S = {
   reexportUntil: null, // còn được xuất lại miễn phí vị trí hiện tại tới lúc nào
   loc: null,
   order: null,         // đơn đang chờ thanh toán
+  ref: null,           // mã giới thiệu của mình + số người đã mời
 };
 let toast = m => console.log(m);
 const listeners = new Set();
@@ -76,6 +96,7 @@ export async function refreshAccount() {
     const r = await rpc('vt_me', { p_token: S.token, p_lat: S.loc?.lat ?? null, p_lng: S.loc?.lng ?? null });
     S.profile = r.profile;
     S.reexportUntil = r.reexport_until;
+    S.ref = r.ref || null;
     if (r.pending) S.order = S.order?.code === r.pending.code ? S.order : { ...r.pending };
   } catch (e) {
     if (e.hint === 'AUTH' || e.hint === 'LOCKED') clearSession();
@@ -98,6 +119,9 @@ async function loadInfo() {
     for (const a of document.querySelectorAll('.zalo-link')) { a.href = z || '#'; a.hidden = !z; }
     for (const el of document.querySelectorAll('.zalo-alt')) el.hidden = !!z;
     for (const el of document.querySelectorAll('.trial-n')) el.textContent = S.info.trial_credits;
+    const rb = S.info.ref_bonus || 0;
+    const refLine = $('refLine');
+    if (refLine) { refLine.hidden = !(getRef() && rb > 0); refLine.textContent = `Anh/chị đăng ký qua link giới thiệu: được tặng thêm ${rb} lượt.`; }
   }
   return S.info;
 }
@@ -119,6 +143,14 @@ function renderBadge() {
     const init = (p.name || p.login || '?').trim().charAt(0).toUpperCase();
     btn.innerHTML = `<span class="credit-pill${!p.unlimited && p.credits <= 0 ? ' empty' : ''}">${esc(creditText(p))}</span><span class="avatar">${esc(init)}</span>`;
     btn.classList.add('has-acct');
+  }
+  const low = $('lowBanner');
+  if (low) {
+    const soon = p?.unlimited && new Date(p.unlimited_until) - Date.now() < 3 * 86400000;
+    const few = p && !p.unlimited && p.credits <= 1;
+    low.hidden = !(soon || few);
+    if (soon) low.innerHTML = `Gói không giới hạn hết hạn ${fmtDate(p.unlimited_until, false)}. <button type="button" class="link-btn" data-act="buy">Gia hạn</button>`;
+    else if (few) low.innerHTML = `${p.credits <= 0 ? 'Anh/chị đã hết lượt.' : 'Còn <strong>1 lượt</strong> cuối.'} <button type="button" class="link-btn" data-act="buy">Mua thêm</button> hoặc <button type="button" class="link-btn" data-act="invite">mời bạn bè để được tặng lượt</button>`;
   }
   const note = $('creditNote');
   if (note) {
@@ -183,7 +215,9 @@ async function submitAuth(e) {
   try {
     let r;
     if (authTab === 'register') {
-      r = await rpc('vt_register', { p_login: login, p_password: pass, p_name: $('authName').value.trim() });
+      r = await rpc('vt_signup', { p_login: login, p_password: pass, p_name: $('authName').value.trim(), p_ref: getRef() });
+      track('register');
+      try { localStorage.removeItem(REF_KEY); } catch { /* bỏ qua */ }
     } else {
       r = await rpc('vt_login', { p_login: login, p_password: pass });
       if (!r.ok) { msg.textContent = r.message; return; }
@@ -193,7 +227,7 @@ async function submitAuth(e) {
     $('authPass').value = '';
     $('authDlg').close();
     toast(authTab === 'register'
-      ? `Đã tạo tài khoản. Anh/chị có ${r.profile.credits} lượt dùng thử.`
+      ? `Đã tạo tài khoản. Anh/chị có ${r.profile.credits} lượt dùng thử${r.ref_bonus ? ` (đã gồm ${r.ref_bonus} lượt thưởng giới thiệu)` : ''}.`
       : `Xin chào ${r.profile.name || ''}`.trim() + '.', 3500);
     refreshAccount();
     const f = authResolve; authResolve = null; f?.(true);
@@ -223,6 +257,7 @@ export async function beginExport(loc) {
       }
       S.reexportUntil = r.until;
       emit();
+      if (r.charged || r.mode === 'unlimited') track('export');
       return r;
     } catch (e) {
       if ((e.hint === 'AUTH') && attempt === 0) {
@@ -355,6 +390,7 @@ function showOrder(order, bank) {
           : `Đã nhận ${money(order.amount)}. Tài khoản hiện có ${p.credits} lượt.`;
         payView('done');
         toast('Thanh toán thành công, đã cộng lượt.', 4000);
+        track('purchase', { value: order.amount, id: order.package_id });
       }
     } catch { /* thử lại ở vòng sau */ }
   }, 4000);
@@ -366,6 +402,7 @@ async function pickPackage(id) {
   try {
     const r = await rpc('vt_create_order', { p_token: S.token, p_package: id });
     showOrder(r.order, r.bank);
+    track('checkout', { value: r.order.amount, id });
   } catch (e) {
     if (e.hint === 'AUTH') { clearSession(); $('payDlg').close(); requireLogin('Phiên đăng nhập đã hết hạn.', 'login'); return; }
     toast(e.message, 5000);
@@ -388,11 +425,37 @@ async function openAccount() {
   $('acCredits').innerHTML = p.unlimited
     ? `<strong>Không giới hạn</strong><span>tới ${fmtDate(p.unlimited_until, false)}${p.credits ? ` · còn ${p.credits} lượt lẻ` : ''}</span>`
     : `<strong>${p.credits}</strong><span>lượt xuất video</span>`;
+  renderRef();
   $('acHist').innerHTML = '';
   $('acHistBox').open = false;
   $('pwMsg').textContent = '';
   $('acctDlg').showModal();
 }
+// ---------- Giới thiệu bạn bè ----------
+function refLink() {
+  const code = S.ref?.code || S.profile?.ref_code;
+  return code ? `${location.origin}/gioi-thieu?ref=${code}` : '';
+}
+function renderRef() {
+  const box = $('acRef');
+  if (!box) return;
+  const link = refLink();
+  const bonus = S.ref?.bonus ?? S.info?.ref_bonus ?? 2;
+  box.hidden = !link || !bonus;
+  if (!link) return;
+  $('refLink').value = link;
+  $('refDesc').textContent = `Gửi link cho bạn bè môi giới: bạn đăng ký qua link được tặng thêm ${bonus} lượt. Khi bạn xuất video đầu tiên, anh/chị được cộng ${bonus} lượt.`;
+  const inv = S.ref?.invited || 0, done = S.ref?.rewarded || 0;
+  $('refStats').textContent = inv ? `Đã mời ${inv} người · ${done} người đã xuất video (anh/chị đã nhận ${done * bonus} lượt)` : 'Chưa mời ai.';
+  $('refShare').hidden = !navigator.share;
+}
+async function openInvite() {
+  if (!S.profile) { requireLogin('Đăng nhập để lấy link giới thiệu của anh/chị.'); return; }
+  await refreshAccount();
+  openAccount();
+  setTimeout(() => $('acRef')?.scrollIntoView({ block: 'center' }), 80);
+}
+
 async function loadHistory() {
   const box = $('acHist');
   box.innerHTML = '<p class="hint">Đang tải…</p>';
@@ -408,6 +471,7 @@ async function loadHistory() {
 
 export async function initAccount(opts = {}) {
   if (opts.toast) toast = opts.toast;
+  captureRef();
   S.token = readToken();
   $('acctBtn').addEventListener('click', () => (S.profile ? openAccount() : requireLogin()));
   $('authTabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) setAuthTab(b.dataset.tab); });
@@ -443,6 +507,11 @@ export async function initAccount(opts = {}) {
   $('payDoneBtn').addEventListener('click', () => $('payDlg').close());
   $('acBuy').addEventListener('click', () => { $('acctDlg').close(); openPricing(); });
   $('acHistBox').addEventListener('toggle', e => { if (e.target.open) loadHistory(); });
+  $('refCopy').addEventListener('click', () => copyText(refLink(), 'link giới thiệu'));
+  $('refShare').addEventListener('click', async () => {
+    try { await navigator.share({ title: 'Vị Trí Studio', text: 'Làm video vị trí & tiện ích bất động sản tự động, có giọng đọc AI. Đăng ký qua link này được tặng thêm lượt:', url: refLink() }); }
+    catch { /* người dùng huỷ */ }
+  });
   $('acLogout').addEventListener('click', async () => {
     const t = S.token;
     clearSession();
@@ -464,6 +533,7 @@ export async function initAccount(opts = {}) {
     if (!b) return;
     if (b.dataset.act === 'register') requireLogin('', 'register');
     else if (b.dataset.act === 'buy') openPricing();
+    else if (b.dataset.act === 'invite') openInvite();
   });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && S.token) refreshAccount(); });
   emit();

@@ -36,6 +36,7 @@
     <button id="acctBtn" class="btn btn-ghost acct-btn" type="button">Đăng nhập</button>
   </div>
 </header>
+<div id="lowBanner" class="low-banner" role="status" hidden></div>
 
 <main class="layout">
   <section class="stage" aria-label="Xem trước video">
@@ -159,6 +160,36 @@
         <span class="hint small">Có số thì cuối video hiện số, giọng đọc mời gọi xem nhà và đọc số.</span>
       </label>
 
+      <div class="sub-head">Thông tin căn nhà</div>
+      <div class="grid2">
+        <label class="field"><span class="field-label">Giá bán</span><input autocomplete="off" id="priceInput" class="input" type="text" maxlength="30" placeholder="3,2 tỷ"></label>
+        <label class="field"><span class="field-label">Diện tích</span><input autocomplete="off" id="areaInput" class="input" type="text" maxlength="30" placeholder="5x20m hoặc 100 m²"></label>
+      </div>
+      <div class="grid2">
+        <label class="field"><span class="field-label">Phòng ngủ</span><input autocomplete="off" id="bedsInput" class="input" type="text" inputmode="numeric" maxlength="20" placeholder="3"></label>
+        <label class="field"><span class="field-label">Pháp lý</span><input autocomplete="off" id="legalInput" class="input" type="text" maxlength="30" placeholder="Sổ hồng riêng" list="legalList"></label>
+      </div>
+      <datalist id="legalList">
+        <option value="Sổ hồng riêng"></option><option value="Sổ hồng chung"></option><option value="Sổ đỏ"></option>
+        <option value="Sổ hồng hoàn công"></option><option value="Đang chờ sổ"></option><option value="Hợp đồng mua bán"></option>
+      </datalist>
+      <p class="hint small">Hiện thành thẻ giá trên video lúc giới thiệu căn nhà và lúc kết, giọng đọc cũng nhắc tới. Ô nào để trống thì không hiện.</p>
+
+      <div class="sub-head">Logo &amp; phụ đề</div>
+      <div class="field">
+        <span class="field-label">Logo góc video <em>(PNG nền trong suốt là đẹp nhất)</em></span>
+        <div class="file-row">
+          <label class="btn btn-quiet file-btn">Chọn logo<input autocomplete="off" id="logoFile" type="file" accept="image/png,image/jpeg,image/webp"></label>
+          <img id="logoPreview" class="logo-preview" alt="Logo" hidden>
+          <span id="logoName" class="file-name">Chưa có</span>
+          <button id="logoClear" class="link-btn" type="button" hidden>Bỏ</button>
+        </div>
+        <label class="check"><input autocomplete="off" id="logoBg" type="checkbox" checked> Nền trắng sau logo (logo màu tối nên bật)</label>
+        <span class="hint small">Logo lưu trên máy này, lần sau mở app vẫn còn.</span>
+      </div>
+      <label class="check"><input autocomplete="off" id="subsOn" type="checkbox" checked> Hiện phụ đề chạy chữ theo giọng đọc AI</label>
+      <p class="hint small">Phần lớn người xem Facebook, TikTok để tắt tiếng. Phụ đề hiện sau khi bấm Tạo giọng đọc AI.</p>
+
       <div class="field">
         <span class="field-label">Màu line trục đường lớn</span>
         <div class="swatches" id="roadThemeRow" role="radiogroup" aria-label="Màu line trục đường lớn"></div>
@@ -210,8 +241,10 @@
         </div>
         <div class="field">
           <span class="field-label">Nhạc nền</span>
+          <select id="musicLib" class="input" autocomplete="off" aria-label="Nhạc nền có sẵn"></select>
+          <span class="hint small">Nhạc có sẵn do Vị Trí Studio tự soạn, đăng Facebook, TikTok, YouTube không lo bản quyền.</span>
           <div class="file-row">
-            <label class="btn btn-quiet file-btn">Chọn nhạc<input autocomplete="off" id="musicFile" type="file" accept="audio/*,video/mp4"></label>
+            <label class="btn btn-quiet file-btn">Hoặc tải nhạc<input autocomplete="off" id="musicFile" type="file" accept="audio/*,video/mp4"></label>
             <span id="musicName" class="file-name">Chưa có</span>
             <button id="musicClear" class="link-btn" type="button" hidden>Bỏ</button>
           </div>
@@ -261,6 +294,7 @@
 
     <footer class="foot">
       <p>Ảnh vệ tinh: Esri, Maxar, Earthstar Geographics. Dữ liệu bản đồ © OpenStreetMap contributors. Địa điểm: Overture Maps Foundation (CDLA-Permissive-2.0). Đường đi: OSRM.</p>
+      <p class="foot-links"><a href="/gioi-thieu">Giới thiệu &amp; bảng giá</a> · <a href="/dieu-khoan">Điều khoản &amp; hoàn tiền</a> · <a href="/chinh-sach-bao-mat">Chính sách bảo mật</a> · <button type="button" class="link-btn" data-act="invite">Mời bạn bè nhận lượt</button></p>
     </footer>
   </section>
 </main>
@@ -279,6 +313,7 @@
       <button type="button" role="radio" data-tab="login">Đăng nhập</button>
     </div>
     <p id="trialLine" class="trial-line">Tài khoản mới được tặng <strong><span class="trial-n">3</span> video</strong> dùng thử, không cần thẻ.</p>
+    <p id="refLine" class="trial-line ref-line" hidden></p>
     <label class="field" id="nameField"><span class="field-label">Tên anh/chị <em>(không bắt buộc)</em></span><input id="authName" class="input" type="text" autocomplete="name" maxlength="60"></label>
     <label class="field"><span class="field-label">Số điện thoại hoặc email</span><input id="authLogin" class="input" type="text" autocomplete="username" inputmode="email" spellcheck="false" autocapitalize="off" maxlength="120"></label>
     <label class="field"><span class="field-label">Mật khẩu <em>(ít nhất 6 ký tự)</em></span><input id="authPass" class="input" type="password" autocomplete="new-password" maxlength="72"></label>
@@ -328,6 +363,13 @@
     <p id="acLogin" class="hint mono"></p>
     <div id="acCredits" class="credit-big"></div>
     <button id="acBuy" class="btn btn-primary btn-block" type="button">Mua thêm lượt</button>
+    <section id="acRef" class="ref-box" hidden>
+      <h4>Mời bạn bè, nhận lượt miễn phí</h4>
+      <p id="refDesc" class="hint"></p>
+      <div class="input-row"><input id="refLink" class="input mono" type="text" readonly aria-label="Link giới thiệu"><button id="refCopy" class="btn btn-quiet" type="button">Chép</button></div>
+      <button id="refShare" class="btn btn-quiet btn-block" type="button" hidden>Gửi qua Zalo, Messenger…</button>
+      <p id="refStats" class="hint small"></p>
+    </section>
     <details id="acHistBox" class="ac-sec"><summary>Lịch sử dùng và thanh toán</summary><div id="acHist"></div></details>
     <details class="ac-sec"><summary>Đổi mật khẩu</summary>
       <label class="field"><span class="field-label">Mật khẩu hiện tại</span><input id="pwOld" class="input" type="password" autocomplete="current-password" maxlength="72"></label>

@@ -32,4 +32,5 @@ except ImportError:
 PY
 cp manifest.webmanifest _headers 404.html site/
 cp -r poi site/poi
+cp -r music site/music
 echo "Đã đóng gói vào site/: $(find site -type f | wc -l) file"

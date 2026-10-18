@@ -132,7 +132,7 @@ async function orderAction(e) {
 let users = [];
 async function loadUsers() {
   const tb = $('userRows');
-  tb.innerHTML = '<tr><td colspan="8" class="muted">Đang tải…</td></tr>';
+  tb.innerHTML = '<tr><td colspan="9" class="muted">Đang tải…</td></tr>';
   try {
     users = await call('vt_admin_users', { p_q: $('userQ').value.trim() || null });
     tb.innerHTML = users.map(u => `<tr data-row="${u.id}">
@@ -141,11 +141,12 @@ async function loadUsers() {
       <td class="num">${u.unlimited ? fmt(u.unlimited_until) : '<span class="muted">—</span>'}</td>
       <td class="num">${u.exports}</td>
       <td class="num">${money(u.paid_total)}</td>
+      <td class="num">${u.invited ? `mời ${u.invited}` : '—'}${u.invited_by ? `<span class="sub">do ${esc(u.invited_by)} mời</span>` : ''}${u.ref_code ? `<span class="sub mono">mã ${esc(u.ref_code)}</span>` : ''}</td>
       <td class="num">${fmt(u.created_at)}<span class="sub">vào lần cuối ${fmt(u.last_login) || '—'}</span></td>
       <td><span class="badge ${u.status}">${u.status === 'active' ? 'Hoạt động' : 'Đã khoá'}</span></td>
       <td><button class="btn btn-quiet" type="button" data-edit="${u.id}">Sửa</button></td>
-    </tr>`).join('') || '<tr><td colspan="8" class="muted">Chưa có khách hàng.</td></tr>';
-  } catch (e) { tb.innerHTML = `<tr><td colspan="8" class="hint err">${esc(e.message)}</td></tr>`; }
+    </tr>`).join('') || '<tr><td colspan="9" class="muted">Chưa có khách hàng.</td></tr>';
+  } catch (e) { tb.innerHTML = `<tr><td colspan="9" class="hint err">${esc(e.message)}</td></tr>`; }
 }
 function genPassword() {
   const a = 'abcdefghjkmnpqrstuvwxyz23456789';
@@ -157,7 +158,7 @@ function openUserEdit(id) {
   const u = users.find(x => x.id === id);
   const row = document.querySelector(`tr[data-row="${id}"]`);
   if (!u || !row) return;
-  row.insertAdjacentHTML('afterend', `<tr class="edit-row"><td colspan="8">
+  row.insertAdjacentHTML('afterend', `<tr class="edit-row"><td colspan="9">
     <div class="edit-grid">
       <label class="field"><span class="field-label">Cộng/trừ lượt</span><input class="input" type="number" data-f="credits" value="0"></label>
       <label class="field"><span class="field-label">Cộng/trừ ngày không giới hạn</span><input class="input" type="number" data-f="days" value="0"></label>
@@ -244,6 +245,7 @@ async function loadSettings() {
     $('cAcc').value = c.bank_account; $('cHolder').value = c.bank_holder; $('cZalo').value = c.zalo_url;
     $('cTrial').value = c.trial_credits; $('cReexp').value = c.reexport_hours; $('cTts').value = c.tts_daily_chars;
     $('cUnl').value = c.unlimited_daily_exports; $('cIp').value = c.signup_per_ip_day;
+    $('cRef').value = c.ref_bonus ?? 2; $('cRefMax').value = c.ref_max_month ?? 30;
     $('cHook').value = ''; $('cNewKey').value = '';
     $('hookUrl').textContent = location.origin + '/api/sepay';
     $('hookState').textContent = c.webhook_ready ? 'đã đặt khoá, đang tự xác nhận' : 'chưa đặt khoá (đơn phải xác nhận tay)';
@@ -260,6 +262,7 @@ async function saveConfig(e) {
     bank_account: $('cAcc').value.trim(), bank_holder: $('cHolder').value.trim(), zalo_url: $('cZalo').value.trim(),
     trial_credits: num('cTrial'), reexport_hours: num('cReexp'), tts_daily_chars: num('cTts'),
     unlimited_daily_exports: num('cUnl'), signup_per_ip_day: num('cIp'),
+    ref_bonus: num('cRef'), ref_max_month: num('cRefMax'),
   };
   const warn = [];
   if (p.tts_daily_chars !== null && p.tts_daily_chars < 3000) warn.push('Giới hạn ký tự giọng AI nên từ 3.000 trở lên (1 video cần khoảng 1.000–1.500 ký tự).');

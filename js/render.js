@@ -492,6 +492,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     prev = camAtPhase(ph, ph.t1);
     return ph;
   });
+  const captions = opts.captions && vd ? buildCaptions(phases, opts.captions, vd, fmtKey) : [];
   const first = type => phases.find(p => p.type === type);
   const tl = {
     fmt: fmtKey, LW, LH, safe, duration: t, phases, scene, panelH,
@@ -499,11 +500,60 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     intro: first('intro'), house: first('house'), overview: first('overview'), boundaryPh: first('boundary'),
     summary: first('summary'), outro: first('outro'),
     roadPhases: phases.filter(p => p.type === 'road'), poiPhases: phases.filter(p => p.type === 'poi'),
-    pois, roads, boundary,
+    pois, roads, boundary, captions,
   };
   tl.roadsEnd = tl.roadPhases.length ? tl.roadPhases[tl.roadPhases.length - 1].t1 : tl.overview.t1;
   tl.roadLabels = camRoads ? placeRoadLabels(tl, camRoads) : [];
   return tl;
+}
+
+// ---------- Phụ đề ----------
+// Chia lời đọc của từng cảnh thành cụm ngắn, chia thời gian theo độ dài đọc của từng cụm.
+const CAP_CHARS = { v: 32, s: 30, h: 56 };
+function splitCaption(text, max) {
+  const words = String(text || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  const out = [];
+  let cur = [];
+  const len = a => a.join(' ').length;
+  for (const w of words) {
+    if (cur.length && len([...cur, w]) > max) { out.push(cur.join(' ')); cur = []; }
+    cur.push(w);
+    // Ngắt ở dấu câu khi cụm đã đủ dài để đọc thoải mái
+    if (/[.!?;:]$/.test(w) || (/,$/.test(w) && len(cur) >= max * 0.45)) { out.push(cur.join(' ')); cur = []; }
+  }
+  if (cur.length) out.push(cur.join(' '));
+  // Cụm quá ngắn (vd "TP.HCM.") thì ghép vào cụm bên cạnh cho đỡ nháy chữ
+  for (let i = 0; i < out.length; i++) {
+    if (out.length < 2 || out[i].length >= 12) continue;
+    if (i > 0 && out[i - 1].length + out[i].length < max * 1.2) { out[i - 1] += ' ' + out[i]; out.splice(i, 1); i--; }
+    else if (i + 1 < out.length && out[i].length + out[i + 1].length < max * 1.2) { out[i + 1] = out[i] + ' ' + out[i + 1]; out.splice(i, 1); i--; }
+  }
+  return out;
+}
+function capWeight(s) {
+  const digits = (s.match(/\d/g) || []).length;
+  const stop = /[.!?…]$/.test(s) ? 5 : /[,;:]$/.test(s) ? 3 : 0;
+  return Math.max(4, s.length + digits * 2.5 + stop);
+}
+export function buildCaptions(phases, texts, voice, fmtKey) {
+  const out = [];
+  const max = CAP_CHARS[fmtKey] || 40;
+  for (const ph of phases) {
+    const text = ph.vkey && texts[ph.vkey];
+    const dur = ph.vkey && voice[ph.vkey];
+    if (!text || !dur) continue;
+    const start = ph.t0 + (ph.type === 'intro' ? 0.5 : 0.3);
+    const parts = splitCaption(text, max);
+    const w = parts.map(capWeight);
+    const tot = w.reduce((a, b) => a + b, 0) || 1;
+    let c = start;
+    parts.forEach((txt, i) => {
+      const d = dur * w[i] / tot;
+      out.push({ t0: c, t1: i === parts.length - 1 ? c + d + 0.25 : c + d, text: txt });
+      c += d;
+    });
+  }
+  return out;
 }
 
 function camAtPhase(ph, t) {
@@ -1091,7 +1141,7 @@ function drawSummary(ctx, tl, p) {
   ctx.restore();
 }
 
-function drawTitle(ctx, tl, text, sub, alpha) {
+function drawTitle(ctx, tl, text, sub, alpha, topY = 0) {
   if (alpha <= 0.01 || !text) return;
   const { LW, safe } = tl;
   ctx.save();
@@ -1099,7 +1149,8 @@ function drawTitle(ctx, tl, text, sub, alpha) {
   const size = tl.fmt === 'h' ? 30 : 34;
   ctx.font = `800 ${size}px ${FONT}`;
   const lines = wrapText(ctx, text.toUpperCase(), LW - safe.x * 2 - 20, 2);
-  let y = (tl.fmt === 'v' ? safe.top + 8 : safe.top - 6) + (1 - easeOut(alpha)) * -10;
+  // Có logo góc trên thì tiêu đề xuống dưới logo
+  let y = Math.max(tl.fmt === 'v' ? safe.top + 8 : safe.top - 6, topY ? topY + size * 0.55 : 0) + (1 - easeOut(alpha)) * -10;
   ctx.translate(LW / 2, 0);
   lines.forEach((l, i) => {
     ctx.save();
@@ -1169,6 +1220,139 @@ function drawBrand(ctx, tl, text, phone, alpha) {
     ctx.fillText(t, LW / 2, y + h / 2 + 1);
   }
   ctx.restore();
+}
+
+// ---------- Logo, thông tin căn nhà, phụ đề ----------
+const LOGO_H = { v: 58, h: 50, s: 48 };
+function logoBox(tl) {
+  const img = tl.scene.logo;
+  if (!img || !img.width || !img.height) return null;
+  const { LW, safe } = tl;
+  const pad = tl.scene.logoBg === false ? 0 : 7;
+  const mh = LOGO_H[tl.fmt] || 52;
+  const k = Math.min(mh / img.height, (mh * 2.8) / img.width);
+  const w = img.width * k, h = img.height * k;
+  return { x: LW - safe.x - w - pad * 2, y: safe.top + 6, w: w + pad * 2, h: h + pad * 2, iw: w, ih: h, pad };
+}
+function drawLogo(ctx, tl, box) {
+  if (!box) return;
+  ctx.save();
+  if (box.pad) {
+    ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 2;
+    roundRect(ctx, box.x, box.y, box.w, box.h, 10);
+    ctx.fillStyle = 'rgba(255,255,255,0.94)'; ctx.fill();
+    ctx.shadowColor = 'transparent';
+  } else {
+    ctx.shadowColor = 'rgba(0,0,0,0.55)'; ctx.shadowBlur = 6;
+  }
+  ctx.drawImage(tl.scene.logo, box.x + box.pad, box.y + box.pad, box.iw, box.ih);
+  ctx.restore();
+}
+
+function infoData(scene) {
+  const i = scene.info || {};
+  const clean = v => String(v ?? '').replace(/\s+/g, ' ').trim();
+  const beds = clean(i.beds);
+  const det = [clean(i.area), beds ? (/^\d+$/.test(beds) ? beds + ' phòng ngủ' : beds) : '', clean(i.legal)].filter(Boolean);
+  const price = clean(i.price);
+  return price || det.length ? { price, det } : null;
+}
+// Vị trí thẻ thông tin: lúc giới thiệu căn nhà nằm dưới cùng (ngang: góc phải dưới), lúc kết nằm trên cùng
+function infoBox(tl, where, logo) {
+  const d = infoData(tl.scene);
+  if (!d) return null;
+  const { LW, LH, safe } = tl;
+  const h = d.price ? (d.det.length ? 92 : 66) : 46;
+  if (tl.fmt === 'h') {
+    const w = 384;
+    return where === 'top'
+      ? { x: safe.x, y: safe.top + 6, w, h, d }
+      : { x: LW - safe.x - w, y: LH - safe.bottom - h, w, h, d };
+  }
+  if (where === 'top') return { x: safe.x, y: logo ? logo.y + logo.h + 8 : safe.top + 6, w: LW - safe.x * 2, h, d };
+  return { x: safe.x, y: LH - safe.bottom - h - (tl.fmt === 'v' ? 6 : 0), w: LW - safe.x * 2, h, d };
+}
+function drawInfo(ctx, box, alpha) {
+  if (!box || alpha <= 0.01) return;
+  const { x, w, h, d } = box;
+  const y = box.y + (1 - easeOut(clamp01(alpha * 1.4))) * 12;
+  ctx.save();
+  ctx.globalAlpha = clamp01(alpha * 1.6);
+  ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 4;
+  roundRect(ctx, x, y, w, h, 14);
+  ctx.fillStyle = 'rgba(10,12,22,0.92)'; ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.lineWidth = 1.4; ctx.strokeStyle = 'rgba(255,209,102,0.75)'; ctx.stroke();
+  ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+  const detText = d.det.join('  ·  ');
+  if (d.price) {
+    ctx.fillStyle = GOLD;
+    ctx.font = `700 11px ${FONT}`;
+    const lx = spacedCaps(ctx, 'GIÁ BÁN', x + 16, y + 24, 1.2);
+    ctx.font = `800 29px ${FONT}`;
+    ctx.fillText(fitOneLine(ctx, d.price, w - (lx - x) - 24), x + 16, y + 56);
+    if (detText) {
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `700 14.5px ${FONT}`;
+      ctx.fillText(fitOneLine(ctx, detText, w - 32), x + 16, y + 80);
+    }
+  } else {
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `800 16px ${FONT}`;
+    ctx.fillText(fitOneLine(ctx, detText, w - 32), x + 16, y + 29);
+  }
+  ctx.restore();
+}
+
+const CAP_SIZE = { v: 24, h: 24, s: 22 };
+function captionAt(tl, t) {
+  const c = tl.captions;
+  if (!c || !c.length) return null;
+  for (const x of c) if (t >= x.t0 && t < x.t1) return x;
+  return null;
+}
+// Đặt phụ đề phía trên các thẻ đang hiện ở đáy khung (thẻ ranh, bảng tổng kết, thẻ liên hệ, thẻ giá)
+function captionLayout(ctx, tl, cap, occ) {
+  const { LW, LH, safe } = tl;
+  const size = CAP_SIZE[tl.fmt] || 24;
+  let left = safe.x + 10, right = LW - safe.x - 10;
+  if (occ.rightPanel) right = occ.rightPanel - 16;
+  const maxW = right - left - 28;
+  ctx.save();
+  ctx.font = `800 ${size}px ${FONT}`;
+  const lines = wrapText(ctx, cap.text, maxW, 2);
+  const lw = Math.max(...lines.map(l => ctx.measureText(l).width));
+  ctx.restore();
+  const lh = size * 1.3;
+  const h = lines.length * lh + 14;
+  const w = lw + 28;
+  const bottom = Math.min(LH - safe.bottom - (tl.fmt === 'v' ? 10 : 6), occ.top - 10);
+  const cx = (left + right) / 2;
+  return { x: cx - w / 2, y: bottom - h, w, h, lines, size, lh };
+}
+function drawCaption(ctx, L, alpha) {
+  if (!L || alpha <= 0.01) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  roundRect(ctx, L.x, L.y, L.w, L.h, 10);
+  ctx.fillStyle = 'rgba(0,0,0,0.62)'; ctx.fill();
+  ctx.font = `800 ${L.size}px ${FONT}`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  L.lines.forEach((ln, i) => {
+    const y = L.y + 7 + L.lh * (i + 0.5) + 1;
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+    ctx.strokeText(ln, L.x + L.w / 2, y);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(ln, L.x + L.w / 2, y);
+  });
+  ctx.restore();
+}
+function brandTop(tl) {
+  const { LH, safe, scene } = tl;
+  if (!scene.brand && !scene.phone) return Infinity;
+  const bottom = LH - safe.bottom + (tl.fmt === 'v' ? -6 : 0);
+  return scene.phone ? bottom - 46 - (scene.brand ? 34 : 0) : bottom - 38;
 }
 
 // ---------- Khung hình ----------
@@ -1433,7 +1617,8 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       }
       own.x = Math.max(safe.x + ownW / 2, Math.min(LW - safe.x - ownW / 2, own.x));
       acr.x = Math.max(safe.x + 90, Math.min(LW - safe.x - 90, acr.x));
-      acr.y = Math.max(safe.top + 34, Math.min(cardTop - 40, acr.y));
+      const lg = logoBox(tl);
+      acr.y = Math.max(lg && acr.x + 90 > lg.x ? lg.y + lg.h + 34 : safe.top + 34, Math.min(cardTop - 40, acr.y));
       tl._acr = acr;
       const ownName = (scene.provinceShort || '').toUpperCase();
       ctx.save();
@@ -1477,25 +1662,53 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   if (t > tl.intro.t0 + (tl.intro.t1 - tl.intro.t0) * 0.6 || dropT > 0) drawHousePin(ctx, hs.x, hs.y, dropT, t, depthScale(hs.w));
 
   // Tiêu đề + thẻ căn nhà
-  drawTitle(ctx, tl, scene.title, scene.titleSub, fadeWin(t, 0.3, ov.t0 + 0.5, 0.6, 0.6));
+  const logo = logoBox(tl);
+  drawTitle(ctx, tl, scene.title, scene.titleSub, fadeWin(t, 0.3, ov.t0 + 0.5, 0.6, 0.6), logo && tl.fmt !== 'h' ? logo.y + logo.h + 8 : 0);
   const houseCardA = Math.max(fadeWin(t, ho.t0 + 0.5, ov.t0 + 0.4, 0.45, 0.4), fadeWin(t, ou.t0 + 0.5, T + 10, 0.45, 0.4));
   labelCard(ctx, hs.x, hs.y - 60 * depthScale(hs.w), scene.label, scene.sub, houseCardA, LW, safe);
 
-  // Thẻ tiện ích
+  // Thẻ giá & thông tin căn nhà: lúc giới thiệu căn nhà và lúc kết
+  const infoHouseA = fadeWin(t, ho.t0 + 0.6, ov.t0 + 0.3, 0.45, 0.4);
+  const infoEndA = fadeWin(t, ou.t0 + 0.6, T + 10, 0.45, 0.4);
+  const infoBottom = infoHouseA > 0 ? infoBox(tl, 'bottom', logo) : null;
+  const infoTop = infoEndA > 0 ? infoBox(tl, 'top', logo) : null;
+
+  // Những thẻ đang chiếm đáy khung -> phụ đề nằm phía trên
+  const sumP = sm ? (t < sm.t0 ? 0 : (t < ou.t0 + 0.4 ? clamp01((t - sm.t0 - 0.3 * (sm.t1 - sm.t0)) / 0.9) : Math.max(0, 1 - (t - ou.t0 - 0.4) / 0.4))) : 0;
+  const brandA = fadeWin(t, ou.t0 + 0.8, T + 10, 0.5, 0.4);
+  const occ = { top: Infinity, rightPanel: 0 };
+  if (tl.fmt === 'h') {
+    if (sumP > 0.05) occ.rightPanel = LW - safe.x - 384;
+    if (infoBottom && infoHouseA > 0.05) occ.rightPanel = infoBottom.x;
+  } else {
+    if (sumP > 0.05) occ.top = Math.min(occ.top, LH - safe.bottom - tl.panelH);
+    if (infoBottom && infoHouseA > 0.05) occ.top = Math.min(occ.top, infoBottom.y);
+  }
+  if (B && bp && t >= bp.t0 + 0.5 * (bp.t1 - bp.t0) && t < bp.t1 + 0.6) occ.top = Math.min(occ.top, LH - safe.bottom - 104 - (tl.fmt === 'h' ? 0 : 14));
+  if (brandA > 0.05) occ.top = Math.min(occ.top, brandTop(tl));
+  const cap = captionAt(tl, t);
+  const capL = cap ? captionLayout(ctx, tl, cap, occ) : null;
+  const capA = cap ? Math.min(clamp01((t - cap.t0) / 0.12), clamp01((cap.t1 - t) / 0.12)) : 0;
+
+  // Thẻ tiện ích (tránh ghim nhà, logo, phụ đề)
+  const avoid = [{ x: hs.x - 26, y: hs.y - 64, w: 52, h: 68 }];
+  if (logo) avoid.push(logo);
+  if (capL) avoid.push(capL);
   tl.poiPhases.forEach((ph, i) => {
     const d = ph.t1 - ph.t0;
     const a = fadeWin(t, ph.t0 + 0.6 * d, ph.t1 + 0.2, 0.4, 0.3);
     if (a <= 0) return;
     const poi = tl.pois[i];
     const s = S(poi.lat, poi.lng);
-    poiCard(ctx, poi, s.x, s.y, a, tl, [{ x: hs.x - 26, y: hs.y - 64, w: 52, h: 68 }]);
+    poiCard(ctx, poi, s.x, s.y, a, tl, avoid);
   });
 
-  if (sm) {
-    const p = t < sm.t0 ? 0 : (t < ou.t0 + 0.4 ? clamp01((t - sm.t0 - 0.3 * (sm.t1 - sm.t0)) / 0.9) : Math.max(0, 1 - (t - ou.t0 - 0.4) / 0.4));
-    drawSummary(ctx, tl, p);
-  }
-  drawBrand(ctx, tl, scene.brand, scene.phone, fadeWin(t, ou.t0 + 0.8, T + 10, 0.5, 0.4));
+  if (sm) drawSummary(ctx, tl, sumP);
+  drawBrand(ctx, tl, scene.brand, scene.phone, brandA);
+  drawInfo(ctx, infoBottom, infoHouseA);
+  drawInfo(ctx, infoTop, infoEndA);
+  drawLogo(ctx, tl, logo);
+  drawCaption(ctx, capL, capA);
 
   // Nguồn dữ liệu (bắt buộc giữ)
   ctx.save();

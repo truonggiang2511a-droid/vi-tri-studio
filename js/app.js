@@ -9,6 +9,7 @@ import { sfxEvents } from './sfx.js';
 import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4 } from './export.js';
 import { initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account } from './account.js';
 import { splitVoice, joinForTts } from './voicesplit.js';
+import { loadConfig, initTracking } from './track.js';
 import { speakNumbers, speakPhones } from './vinum.js';
 
 const $ = id => document.getElementById(id);
@@ -26,6 +27,13 @@ const state = {
   title: 'Vị trí & tiện ích',
   brand: '',
   phone: '',
+  price: '',         // thông tin căn nhà hiện trên video + giọng đọc
+  area: '',
+  beds: '',
+  legal: '',
+  subsOn: true,      // phụ đề chạy chữ theo giọng AI
+  logoBg: true,      // nền trắng sau logo
+  musicLib: '',      // nhạc nền có sẵn đang chọn
   scriptSeed: 0,
   fmt: 'v',
   speed: 'cham',
@@ -49,7 +57,8 @@ const state = {
   useBoundary: true,
   scannedAt: null,
 };
-const media = { music: null, voice: null, musicName: '', voiceName: '', mixed: null, mixKey: '', voiceSegs: new Map() };
+const media = { music: null, voice: null, musicName: '', voiceName: '', mixed: null, mixKey: '', voiceSegs: new Map(), logo: null };
+const LOGO_STORE = 'vitri.logo.v1';
 const ai = { tts: false, ttsProvider: null, script: false, gated: true, voices: null };
 
 // ---------- Lưu dự án gần nhất ----------
@@ -125,6 +134,9 @@ function buildScene() {
     title: state.title,
     brand: state.brand,
     phone: phoneDisplay(state.phone),
+    logo: media.logo,
+    logoBg: state.logoBg,
+    info: { price: state.price, area: state.area, beds: state.beds, legal: state.legal },
     radiusKm: state.radiusKm,
     speed: state.speed,
     pois: selectedPois(),
@@ -151,9 +163,19 @@ function voiceDurations() {
   }
   return n ? out : null;
 }
+// Chữ của các câu đã có giọng: dùng làm phụ đề chạy theo lời đọc
+function captionTexts() {
+  if (!state.subsOn || !state.aiVoiceOn) return null;
+  const out = {};
+  for (const sg of scriptSegments()) {
+    const v = media.voiceSegs.get(sg.key);
+    if (v && v.ck === voiceKey(sg.text)) out[sg.key] = sg.text;
+  }
+  return out;
+}
 function timelineOpts() {
   const vd = voiceDurations();
-  return vd ? { voice: vd } : { fitDuration: voiceFitDuration() };
+  return vd ? { voice: vd, captions: captionTexts() } : { fitDuration: voiceFitDuration() };
 }
 function voiceSegsFor(T) {
   if (!state.aiVoiceOn) return [];
@@ -175,7 +197,7 @@ const canvas = $('preview');
 const ctx = canvas.getContext('2d');
 const cache = new TileCache(() => (dirty = true));
 // Khoá ảnh vệ tinh thương mại (nếu đã đặt ARCGIS_KEY trên máy chủ)
-fetch('/api/config', { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).then(c => c?.arcgis && setImageryToken(c.arcgis)).catch(() => {});
+loadConfig().then(c => c?.arcgis && setImageryToken(c.arcgis));
 let tl = null;
 let t = 0;
 let playing = false;
@@ -583,6 +605,20 @@ const POI_LINES = {
   giaothong: ['{n} cách {d}, đi tỉnh, về quê đều tiện.'],
   nganhang: ['{n} chỉ cách {d}, giao dịch thuận tiện.'],
 };
+// Câu thông tin căn nhà: "Diện tích 5x20m, 3 phòng ngủ, sổ hồng riêng, giá chỉ 3,2 tỷ."
+function infoSentence(pick) {
+  const c = v => String(v || '').replace(/\s+/g, ' ').trim();
+  const beds = c(state.beds);
+  const legal = c(state.legal);
+  const parts = [];
+  if (c(state.area)) parts.push('diện tích ' + c(state.area));
+  if (beds) parts.push(/^\d+$/.test(beds) ? beds + ' phòng ngủ' : beds);
+  if (legal) parts.push(legal.charAt(0).toLowerCase() + legal.slice(1));
+  if (c(state.price)) parts.push(pick(['giá chỉ ', 'giá bán '], 5) + c(state.price));
+  if (!parts.length) return '';
+  const s = parts.join(', ');
+  return s.charAt(0).toUpperCase() + s.slice(1) + '.';
+}
 function scriptSegments() {
   const tw = TYPE_WORD[state.typeLabel] || 'Căn nhà';
   const twl = tw.toLowerCase();
@@ -609,7 +645,8 @@ function scriptSegments() {
     r0 && r0.nearKm < 3 ? `Chỉ ${kmSpeak(r0.nearKm)} là ra ${nameSpeak(r0.label)}, vị trí ${twl} này cực kỳ thuận tiện!` : `Vị trí ${twl} này có gì đặc biệt? Xem ngay nhé!`,
   ];
   add('intro', 'Mở đầu', generic ? pick(hooks) : `${nameSpeak(title)}. Cùng xem vị trí và tiện ích xung quanh nhé!`);
-  add('house', 'Căn nhà', loc ? pick([`${tw} nằm tại ${loc}.`, `Đây là vị trí ${twl}, thuộc ${loc}.`], 1) : `Đây là vị trí ${twl} trên bản đồ.`);
+  const info = infoSentence(pick);
+  add('house', 'Căn nhà', (loc ? pick([`${tw} nằm tại ${loc}.`, `Đây là vị trí ${twl}, thuộc ${loc}.`], 1) : `Đây là vị trí ${twl} trên bản đồ.`) + (info ? ' ' + info : ''));
 
   // Kể tối đa 4 nhóm quan trọng nhất cho gọn tai
   const cats = CAT_RANK.filter(c => pois.some(p => p.cat === c)).slice(0, 4).map(c => CAT_WORD[c]);
@@ -733,6 +770,7 @@ async function aiRewrite() {
     const facts = {
       loai_bds: TYPE_WORD[state.typeLabel] || 'Căn nhà', tieu_de: state.title, dong_phu: state.sub, thuong_hieu: state.brand,
       so_dien_thoai_lien_he: phoneDisplay(state.phone) || null,
+      thong_tin_nha: { gia: state.price || null, dien_tich: state.area || null, phong_ngu: state.beds || null, phap_ly: state.legal || null },
       ban_kinh_km: state.radiusKm, tinh_thanh: state.admin?.province || '', xa_phuong: state.admin?.commune || '',
       duong_lon: selectedRoads().map(r => ({ ten: r.label, ten_duong: r.alt || '', cach_km: +r.nearKm.toFixed(2) })),
       ranh_gioi: state.useBoundary && state.admin?.boundary ? { tinh: state.admin.boundary.short, chim_bay_km: +state.admin.boundary.km.toFixed(2), duong_di_km: state.routes.__ranh ? +state.routes.__ranh.km.toFixed(2) : null, phut_o_to: state.routes.__ranh?.min ? Math.round(state.routes.__ranh.min) : null } : null,
@@ -972,11 +1010,90 @@ async function fontsReady() {
   } catch { /* dùng phông dự phòng */ }
 }
 
+// ---------- Nhạc nền có sẵn (Vị Trí Studio tự soạn, không vướng bản quyền) ----------
+const MUSIC_LIB = [
+  { id: 'nhe-nhang', label: 'Nhẹ nhàng · piano' },
+  { id: 'tuoi-sang', label: 'Tươi sáng · vui tươi' },
+  { id: 'soi-dong', label: 'Sôi động · nhịp nhanh' },
+  { id: 'sang-trong', label: 'Sang trọng · trầm ấm' },
+];
+async function pickLibrary(id) {
+  const tr = MUSIC_LIB.find(x => x.id === id);
+  if (!tr) { if (state.musicLib) clearAudio('music'); return; }
+  $('musicName').textContent = 'Đang tải nhạc…';
+  try {
+    const res = await fetch(`music/${tr.id}.m4a`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const buf = await decodeAudioFile(await res.blob());
+    state.musicLib = id;
+    media.music = buf;
+    media.musicName = 'lib:' + id;
+    $('musicName').textContent = `${tr.label} · ${fmtTime(buf.duration)} (lặp lại)`;
+    $('musicClear').hidden = false;
+    $('musicFile').value = '';
+    media.mixKey = '';
+    scheduleRebuild();
+  } catch {
+    state.musicLib = '';
+    $('musicLib').value = '';
+    $('musicName').textContent = 'Chưa có';
+    toast('Không tải được nhạc có sẵn, thử lại sau.');
+  }
+}
+
+// ---------- Logo ----------
+function loadLogo(dataUrl) {
+  return new Promise(res => {
+    if (!dataUrl) { res(null); return; }
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = () => res(null);
+    img.src = dataUrl;
+  });
+}
+async function pickLogo(file) {
+  if (!file) return;
+  try {
+    const url = URL.createObjectURL(file);
+    const img = await loadLogo(url);
+    URL.revokeObjectURL(url);
+    if (!img) throw new Error('bad');
+    // Thu nhỏ để lưu gọn trên máy, vẫn đủ nét cho video 1080p
+    const k = Math.min(1, 640 / img.width, 320 / img.height);
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(img.width * k));
+    c.height = Math.max(1, Math.round(img.height * k));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const data = c.toDataURL('image/png');
+    try { localStorage.setItem(LOGO_STORE, data); } catch { /* máy đầy bộ nhớ: chỉ dùng trong phiên này */ }
+    media.logo = await loadLogo(data);
+    showLogo();
+    scheduleRebuild();
+  } catch {
+    toast('Không đọc được ảnh logo. Dùng file PNG hoặc JPG.', 3500);
+  }
+}
+function clearLogo() {
+  media.logo = null;
+  try { localStorage.removeItem(LOGO_STORE); } catch { /* bỏ qua */ }
+  $('logoFile').value = '';
+  showLogo();
+  scheduleRebuild();
+}
+function showLogo() {
+  const has = !!media.logo;
+  $('logoName').textContent = has ? `Đã có logo (${media.logo.width}×${media.logo.height})` : 'Chưa có';
+  $('logoClear').hidden = !has;
+  $('logoPreview').hidden = !has;
+  if (has) $('logoPreview').src = media.logo.src;
+}
+
 // ---------- Âm thanh ----------
 async function pickAudio(kind, file) {
   if (!file) return;
   try {
     const buf = await decodeAudioFile(file);
+    if (kind === 'music') { state.musicLib = ''; $('musicLib').value = ''; }
     media[kind] = buf;
     media[kind + 'Name'] = file.name;
     $(kind + 'Name').textContent = `${file.name} · ${fmtTime(buf.duration)}`;
@@ -988,6 +1105,7 @@ async function pickAudio(kind, file) {
   }
 }
 function clearAudio(kind) {
+  if (kind === 'music') { state.musicLib = ''; $('musicLib').value = ''; save(); }
   media[kind] = null;
   media[kind + 'Name'] = '';
   $(kind + 'Name').textContent = 'Chưa có';
@@ -1178,6 +1296,25 @@ function init() {
   $('titleInput').addEventListener('input', e => { state.title = e.target.value; scheduleRebuild(); });
   $('brandInput').addEventListener('input', e => { state.brand = e.target.value; scheduleRebuild(); });
   $('musicFile').addEventListener('change', e => pickAudio('music', e.target.files[0]));
+  $('musicLib').innerHTML = '<option value="">— Không dùng —</option>' + MUSIC_LIB.map(x => `<option value="${x.id}">${esc(x.label)}</option>`).join('');
+  $('musicLib').value = state.musicLib || '';
+  $('musicLib').addEventListener('change', e => pickLibrary(e.target.value));
+  if (state.musicLib) pickLibrary(state.musicLib);
+  // Thông tin căn nhà
+  for (const [id, key] of [['priceInput', 'price'], ['areaInput', 'area'], ['bedsInput', 'beds'], ['legalInput', 'legal']]) {
+    $(id).value = state[key] || '';
+    $(id).addEventListener('input', e => { state[key] = e.target.value; renderScript(); scheduleRebuild(); });
+  }
+  // Logo + phụ đề
+  $('logoBg').checked = state.logoBg !== false;
+  $('logoBg').addEventListener('change', e => { state.logoBg = e.target.checked; scheduleRebuild(); });
+  $('logoFile').addEventListener('change', e => pickLogo(e.target.files[0]));
+  $('logoClear').addEventListener('click', clearLogo);
+  $('subsOn').checked = state.subsOn !== false;
+  $('subsOn').addEventListener('change', e => { state.subsOn = e.target.checked; scheduleRebuild(); });
+  let savedLogo = null;
+  try { savedLogo = localStorage.getItem(LOGO_STORE); } catch { /* bỏ qua */ }
+  if (savedLogo) loadLogo(savedLogo).then(img => { media.logo = img; showLogo(); scheduleRebuild(); });
   $('voiceFile').addEventListener('change', e => pickAudio('voice', e.target.files[0]));
   $('musicClear').addEventListener('click', () => clearAudio('music'));
   $('voiceClear').addEventListener('click', () => clearAudio('voice'));
@@ -1246,6 +1383,7 @@ function init() {
   setupInstall();
   setAccountLocation(state.house);
   initAccount({ toast });
+  initTracking();
   new ResizeObserver(() => layoutCanvas()).observe($('canvasWrap').parentElement);
   window.addEventListener('resize', layoutCanvas);
   document.addEventListener('visibilitychange', () => { if (document.hidden && playing) pause(); });

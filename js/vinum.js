@@ -67,6 +67,8 @@ const UNIT = { km: 'ki lô mét', m: 'mét', m2: 'mét vuông', 'm²': 'mét vu�
 
 export function speakNumbers(text) {
   return String(text || '')
+    // kích thước đất: 5x20m, 4,5 x 18 m -> "năm nhân hai mươi mét"
+    .replace(/(\d+(?:[.,]\d+)?)\s?[x×]\s?(\d+(?:[.,]\d+)?)\s?(m)?(?![\p{L}\d²])/giu, (_, a, b, m) => `${speakNumber(a)} nhân ${speakNumber(b)}${m ? ' mét' : ''}`)
     // số kèm đơn vị: 1.5km, 1,5 km, 450m, 120 m2, 2 ha, 30%
     .replace(/(\d+(?:[.,]\d+)*)\s?(km|m²|m2|ha|m|%)(?![\p{L}\d])/giu, (_, num, u) => speakNumber(num) + ' ' + UNIT[u.toLowerCase()])
     // số thập phân hoặc có dấu phân cách còn lại
