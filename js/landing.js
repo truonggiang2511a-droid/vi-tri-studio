@@ -73,6 +73,7 @@ function setupDemo() {
   const v = $('demo');
   if (!v) return;
   const btn = $('demoSound');
+  v.muted = true; // tự phát chỉ được khi tắt tiếng
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   // Chỉ phát khi video nằm trong màn hình để đỡ tốn dữ liệu di động
   new IntersectionObserver(es => {
