@@ -19,6 +19,7 @@ async function serveMedia(request, env) {
   const headers = new Headers(res.headers);
   headers.set('accept-ranges', 'bytes');
   headers.set('cache-control', 'public, max-age=86400');
+  headers.set('x-vt-range', (request.headers.get('range') || 'none') + ';size=' + size);
   const m = /^bytes=(\d*)-(\d*)$/.exec((request.headers.get('range') || '').trim());
   if (!m || !size || (m[1] === '' && m[2] === '')) {
     if (request.method === 'HEAD') { res.body.cancel(); return new Response(null, { status: 200, headers }); }
