@@ -35,4 +35,10 @@ PY
 cp manifest.webmanifest _headers 404.html gioi-thieu.html chinh-sach-bao-mat.html dieu-khoan.html demo.mp4 demo-poster.jpg site/
 cp -r poi site/poi
 cp -r music site/music
+# Độ dài các file video để worker trả từng đoạn (Range) cho Safari/iPhone
+python3 - <<'PY'
+import os, json
+sizes = {'/' + f: os.path.getsize('site/' + f) for f in sorted(os.listdir('site')) if f.endswith('.mp4')}
+open('lib/media-sizes.js', 'w').write('// Tự sinh bởi build.sh, đừng sửa tay\nexport const MEDIA_SIZES = ' + json.dumps(sizes) + ';\n')
+PY
 echo "Đã đóng gói vào site/: $(find site -type f | wc -l) file"

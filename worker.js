@@ -6,6 +6,7 @@ import { handleScript } from './lib/script.js';
 import { handleSepay } from './lib/sepay.js';
 import { handleResolve } from './lib/resolve.js';
 import { handleConfig } from './lib/config.js';
+import { MEDIA_SIZES } from './lib/media-sizes.js';
 
 const ROUTES = { '/api/tts': handleTts, '/api/script': handleScript, '/api/sepay': handleSepay, '/api/resolve': handleResolve, '/api/config': handleConfig };
 
@@ -15,11 +16,11 @@ async function serveMedia(request, env) {
   const url = new URL(request.url);
   const res = await env.ASSETS.fetch(new Request(url.origin + url.pathname, { method: 'GET' }));
   if (!res.ok || !res.body) return res;
-  const size = Number(res.headers.get('content-length')) || 0;
+  // Phần tĩnh không gửi kèm độ dài file, nên lấy độ dài ghi sẵn lúc đóng gói (build.sh)
+  const size = Number(res.headers.get('content-length')) || MEDIA_SIZES[url.pathname] || 0;
   const headers = new Headers(res.headers);
   headers.set('accept-ranges', 'bytes');
   headers.set('cache-control', 'public, max-age=86400');
-  headers.set('x-vt-range', (request.headers.get('range') || 'none') + ';size=' + size);
   const m = /^bytes=(\d*)-(\d*)$/.exec((request.headers.get('range') || '').trim());
   if (!m || !size || (m[1] === '' && m[2] === '')) {
     if (request.method === 'HEAD') { res.body.cancel(); return new Response(null, { status: 200, headers }); }
