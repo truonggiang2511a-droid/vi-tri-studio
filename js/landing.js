@@ -1,6 +1,5 @@
 // Trang giới thiệu (/gioi-thieu): video mẫu chạy thật bằng chính bộ dựng của app, bảng giá lấy từ máy chủ.
-import { buildTimeline, render, TileCache, FORMATS, setImageryToken } from './render.js';
-import { loadConfig, initTracking, track, countVisit } from './track.js';
+import { initTracking, track, countVisit } from './track.js';
 import { SB_URL, SB_KEY } from './sb.js';
 const REF_KEY = 'vitri.ref.v1';
 const $ = id => document.getElementById(id);
@@ -69,86 +68,33 @@ function renderInfo(info, hasRef) {
     </article>`).join('');
 }
 
-// ---------- Video mẫu ----------
-const DEMO_TEXT = {
-  intro: 'Nhà phố sát Quốc lộ 1A, đi đâu cũng tiện? Xem ngay vị trí này nhé!',
-  house: 'Căn nhà thuộc xã Tân Nhựt, TP.HCM. Diện tích 5x20m, 3 phòng ngủ, sổ hồng riêng, giá chỉ 3,2 tỷ.',
-  overview: 'Trong bán kính 5 km có đủ trường học, chợ, bệnh viện và khu công nghiệp.',
-  'road:1459': 'Chỉ 0,46 km là ra Quốc lộ 1A.',
-  'road:h529': 'Ra Nguyễn Văn Linh chỉ khoảng 0,53 km.',
-  'road:1589': 'Lên cao tốc Trung Lương chỉ khoảng 1,6 km.',
-  boundary: 'Qua ranh Tây Ninh chỉ khoảng 6 km, chừng 8 phút chạy xe.',
-  'poi:658631': 'Bệnh viện Bình Chánh cách khoảng 1,2 km, yên tâm khi cần khám chữa bệnh.',
-  'poi:658555': 'Công viên trung tâm chỉ cách 1 km, cuối tuần cả nhà có chỗ vui chơi.',
-  'poi:658483': 'Ủy ban huyện cách 1,2 km, làm giấy tờ nhanh gọn.',
-  'poi:658488': 'Chỉ 1,5 km là tới trường mầm non, đưa đón con rất tiện.',
-  'poi:659554': 'Khu công nghiệp Tân Tạo cách 8,4 km, rất hợp đầu tư cho thuê.',
-  summary: 'Mọi tiện ích thiết yếu đều nằm trong bán kính 5 km.',
-  outro: 'Vị trí như thế này không có nhiều. Liên hệ ngay để đi xem nhà!',
-};
-function demoLogo() {
-  const c = document.createElement('canvas');
-  c.width = 260; c.height = 96;
-  const g = c.getContext('2d');
-  g.fillStyle = '#0e5b45'; g.beginPath(); g.roundRect?.(0, 0, 96, 96, 18); g.fill();
-  g.fillStyle = '#fff'; g.font = '800 44px "Be Vietnam Pro", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText('LG', 48, 50);
-  g.fillStyle = '#0e5b45'; g.textAlign = 'left'; g.font = '800 30px "Be Vietnam Pro", sans-serif';
-  g.fillText('LOGO', 110, 32); g.fillText('CỦA BẠN', 110, 70);
-  return c;
-}
-async function startDemo() {
-  const canvas = $('demo');
-  if (!canvas) return;
-  let scene;
-  try { scene = await (await fetch('/demo-scene.json')).json(); } catch { return; }
-  try { await document.fonts.load('800 20px "Be Vietnam Pro"', 'Vị trí'); } catch { /* phông dự phòng */ }
-  scene.logo = demoLogo();
-  scene.logoBg = true;
-  const voice = Object.fromEntries(Object.entries(DEMO_TEXT).map(([k, v]) => [k, Math.max(1.6, v.length / 14)]));
-  const tl = buildTimeline(scene, 'v', { voice, captions: DEMO_TEXT });
-  const F = FORMATS.v;
-  const ctx = canvas.getContext('2d');
-  let dirty = true;
-  const cache = new TileCache(() => (dirty = true));
-  const size = () => {
-    const r = canvas.getBoundingClientRect();
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.round(r.width * dpr);
-    canvas.height = Math.round(r.width * dpr * F.LH / F.LW);
-    dirty = true;
-  };
-  size();
-  new ResizeObserver(size).observe(canvas);
+// ---------- Video mẫu (video thật xuất từ app) ----------
+function setupDemo() {
+  const v = $('demo');
+  if (!v) return;
+  const btn = $('demoSound');
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let t = still ? tl.house.t0 + 2.5 : 0, last = performance.now(), visible = false, hold = 0;
-  new IntersectionObserver(es => { visible = es[0].isIntersecting; last = performance.now(); }, { threshold: 0.15 }).observe(canvas);
-  const frame = now => {
-    requestAnimationFrame(frame);
-    if (!visible || document.hidden) { last = now; return; }
-    const dt = Math.min(0.1, (now - last) / 1000);
-    last = now;
-    if (!still) {
-      if (hold > 0) { hold -= dt; if (hold <= 0) t = 0; }
-      else { t += dt; if (t >= tl.duration) { t = tl.duration; hold = 1.4; } }
-      dirty = true;
-    }
-    if (dirty) {
-      render(ctx, tl, t, { cache, scale: canvas.width / F.LW, request: true });
-      dirty = false;
-      $('demoTime').style.width = (100 * t / tl.duration).toFixed(1) + '%';
-    }
-  };
-  requestAnimationFrame(frame);
+  // Chỉ phát khi video nằm trong màn hình để đỡ tốn dữ liệu di động
+  new IntersectionObserver(es => {
+    if (es[0].isIntersecting && !still) v.play().catch(() => {});
+    else v.pause();
+  }, { threshold: 0.25 }).observe(v);
+  const label = () => { btn.textContent = v.muted ? '🔊 Bật tiếng nghe giọng đọc' : '🔇 Tắt tiếng'; };
+  btn.addEventListener('click', () => {
+    v.muted = !v.muted;
+    if (!v.muted) { if (v.ended || v.currentTime > v.duration - 1) v.currentTime = 0; v.play().catch(() => {}); track('view'); }
+    label();
+  });
+  v.addEventListener('timeupdate', () => { if (v.duration) $('demoTime').style.width = (100 * v.currentTime / v.duration).toFixed(1) + '%'; });
+  label();
 }
 
 // ---------- Khởi động ----------
 countVisit('landing'); // trước khi bỏ ?ref= khỏi địa chỉ để còn biết nguồn
 const ref = captureRef();
-loadConfig().then(c => c?.arcgis && setImageryToken(c.arcgis));
 initTracking().then(() => track('view'));
 Promise.all([loadInfo(), refValid(ref)]).then(([info, ok]) => renderInfo(info, ok));
-startDemo();
+setupDemo();
 document.addEventListener('click', e => {
   if (e.target.closest('[data-cta]')) track('trial_click');
 });

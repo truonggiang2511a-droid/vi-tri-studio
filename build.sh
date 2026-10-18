@@ -32,7 +32,7 @@ try:
 except ImportError:
     for f in os.listdir('icons'): shutil.copy('icons/' + f, 'site/icons/' + f)
 PY
-cp manifest.webmanifest _headers 404.html gioi-thieu.html chinh-sach-bao-mat.html dieu-khoan.html demo-scene.json site/
+cp manifest.webmanifest _headers 404.html gioi-thieu.html chinh-sach-bao-mat.html dieu-khoan.html demo.mp4 demo-poster.jpg site/
 cp -r poi site/poi
 cp -r music site/music
 echo "Đã đóng gói vào site/: $(find site -type f | wc -l) file"
