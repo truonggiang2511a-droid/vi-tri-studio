@@ -6,7 +6,9 @@ ESBUILD="${ESBUILD:-npx esbuild}"
 rm -rf site && mkdir -p site/icons
 $ESBUILD js/app.js --bundle --format=esm --minify --target=es2020 --charset=utf8 --line-limit=400 --outfile=site/app.js --log-level=warning
 $ESBUILD js/admin.js --bundle --format=esm --minify --target=es2020 --charset=utf8 --line-limit=400 --outfile=site/admin.js --log-level=warning
+$ESBUILD js/landing.js --bundle --format=esm --minify --target=es2020 --charset=utf8 --line-limit=400 --outfile=site/landing.js --log-level=warning
 $ESBUILD styles.css --minify --outfile=site/styles.css --log-level=warning
+$ESBUILD landing.css --minify --outfile=site/landing.css --log-level=warning
 sed -e 's#<script type="module" src="js/app.js"></script>#<script type="module" src="app.js"></script>#' index.html > site/index.html
 sed -e 's#<script type="module" src="js/admin.js"></script>#<script type="module" src="admin.js"></script>#' admin.html > site/admin.html
 python3 - <<'PY'
@@ -30,7 +32,7 @@ try:
 except ImportError:
     for f in os.listdir('icons'): shutil.copy('icons/' + f, 'site/icons/' + f)
 PY
-cp manifest.webmanifest _headers 404.html site/
+cp manifest.webmanifest _headers 404.html gioi-thieu.html chinh-sach-bao-mat.html dieu-khoan.html demo-scene.json site/
 cp -r poi site/poi
 cp -r music site/music
 echo "Đã đóng gói vào site/: $(find site -type f | wc -l) file"

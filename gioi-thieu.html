@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vị Trí Studio — Video vị trí &amp; tiện ích cho môi giới bất động sản</title>
+<meta name="description" content="Dán toạ độ căn nhà, tự quét trường học, chợ, bệnh viện, khu công nghiệp, đường lớn quanh nhà và xuất video có giọng đọc AI, phụ đề, logo, số điện thoại. Dùng thử miễn phí.">
+<meta property="og:title" content="Vị Trí Studio — Dán toạ độ, có ngay video vị trí căn nhà">
+<meta property="og:description" content="Tự quét tiện ích 5 km, vẽ đường đi thật, giọng đọc AI và phụ đề. Đăng TikTok, Facebook, YouTube ngay. Tặng video dùng thử.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="/icons/icon-512.png">
+<meta name="theme-color" content="#0b1311">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="/landing.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="/gioi-thieu">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2C9.4 2 4 7.2 4 13.7 4 22.5 16 30 16 30s12-7.5 12-16.3C28 7.2 22.6 2 16 2z" fill="currentColor"/><path d="M16 7.6 9.2 13.5h2.1V19h3.4v-3.7h2.6V19h3.4v-5.5h2.1z" fill="#0b1311"/></svg>
+      Vị Trí Studio
+    </a>
+    <nav class="nav" aria-label="Mục lục">
+      <a href="#cach-lam">Cách làm</a>
+      <a href="#bang-gia">Bảng giá</a>
+      <a href="#hoi-dap">Hỏi đáp</a>
+      <a class="btn btn-primary" href="/#dangky" data-cta>Dùng thử</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <div>
+        <span class="eyebrow">Dành cho môi giới &amp; chủ nhà</span>
+        <h1>Dán toạ độ, vài phút có <em>video vị trí căn nhà</em> để đăng ngay</h1>
+        <p class="lead">Tự quét trường học, chợ, bệnh viện, khu công nghiệp và đường lớn quanh nhà, vẽ đường đi thật, có giọng đọc AI, phụ đề, logo và số điện thoại của anh/chị.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary btn-lg" href="/#dangky" data-cta>Làm video miễn phí · tặng <span class="trial-n">3</span> video</a>
+          <a class="btn btn-ghost btn-lg" href="#bang-gia">Xem bảng giá</a>
+        </div>
+        <p id="refNote" class="ref-note" hidden></p>
+        <div class="trust"><span>Chạy ngay trên điện thoại</span><span>Không cần thẻ</span><span>Hơn 70.000 tiện ích cả nước</span></div>
+      </div>
+      <div>
+        <div class="phone">
+          <canvas id="demo" aria-label="Video mẫu: vị trí căn nhà và tiện ích xung quanh"></canvas>
+          <div class="bar"><i id="demoTime"></i></div>
+        </div>
+        <p class="phone-cap">Video mẫu dựng bằng chính app (thông tin căn nhà chỉ để minh hoạ)</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec-alt">
+    <div class="wrap">
+      <h2>Khách hỏi "nhà gần những gì?", anh/chị trả lời bằng một video</h2>
+      <p class="sec-lead">Người mua quan tâm vị trí trước cả giá. Một video rõ ràng giúp tin đăng giữ chân người xem lâu hơn và có thêm cuộc gọi.</p>
+      <div class="grid3">
+        <div class="card pain"><p class="q">Dựng video map mất cả buổi</p><p>Không cần phần mềm dựng phim. Dán toạ độ hoặc link Google Maps, app tự làm phần còn lại.</p></div>
+        <div class="card pain"><p class="q">Khó tìm đủ tiện ích quanh nhà</p><p>Tự quét trong bán kính 1–10 km: trường, chợ, siêu thị, bệnh viện, UBND, khu công nghiệp, bến xe, ngân hàng.</p></div>
+        <div class="card pain"><p class="q">Thuê người đọc lời, làm phụ đề tốn kém</p><p>Kịch bản viết sẵn theo dữ liệu thật, giọng AI đọc tự nhiên, phụ đề chạy theo lời đọc.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="cach-lam">
+    <div class="wrap">
+      <h2>3 bước, không cần biết dựng phim</h2>
+      <p class="sec-lead">Làm được ngay trên điện thoại, lúc đang dẫn khách đi xem nhà cũng làm được.</p>
+      <div class="steps">
+        <div class="card step"><h3>Dán vị trí căn nhà</h3><p>Toạ độ hoặc link chia sẻ từ Google Maps. Bấm quét: app tìm tiện ích và đường lớn quanh nhà trong vài giây.</p></div>
+        <div class="card step"><h3>Chọn tiện ích, nhập thông tin</h3><p>Giữ những điểm khách quan tâm. Nhập giá, diện tích, phòng ngủ, pháp lý, số điện thoại, tải logo.</p></div>
+        <div class="card step"><h3>Tạo giọng đọc, xuất video</h3><p>Giọng AI đọc kịch bản, phụ đề tự chạy. Xuất MP4 khổ dọc, ngang hoặc vuông để đăng TikTok, Facebook, YouTube, Zalo.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec-alt">
+    <div class="wrap">
+      <h2>Đủ những gì một video vị trí cần</h2>
+      <p class="sec-lead">Mỗi video là của anh/chị: không chèn logo của chúng tôi, chỉ có một dòng nhỏ ghi nguồn dữ liệu bản đồ theo giấy phép.</p>
+      <div class="grid3">
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="currentColor"/></svg></div><h3>Tự quét tiện ích</h3><p>Hơn 70.000 tiện ích trên cả nước, lọc sạch quán xá, tự chọn những điểm đáng nói nhất.</p></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M4 18c3-6 6 0 9-6s5-4 7-8" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="4" cy="18" r="2" fill="currentColor"/><circle cx="20" cy="4" r="2" fill="currentColor"/></svg></div><h3>Đường đi thật, khoảng cách thật</h3><p>Vẽ đường từ nhà tới từng tiện ích, quốc lộ, cao tốc và ranh tỉnh, kèm số km và phút chạy xe.</p></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4z" fill="currentColor"/></svg></div><h3>Giọng đọc AI + phụ đề</h3><p>Giọng nam, nữ tự nhiên. Đọc đúng "1,5 km", giá "3,2 tỷ" và số điện thoại. Phụ đề cho người xem tắt tiếng.</p></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M3 5h18v14H3zM7 9h6M7 13h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div><h3>Logo, số điện thoại, thẻ giá</h3><p>Logo góc video, thẻ giá, diện tích, pháp lý và lời mời gọi xem nhà ở cuối video.</p></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="2" y="8" width="20" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="2" opacity=".55"/></svg></div><h3>3 khổ video</h3><p>Dọc 9:16 cho TikTok, Reels, Shorts. Ngang 16:9 cho YouTube. Vuông 1:1 cho Facebook, Zalo.</p></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M9 18V5l11-2v13" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="6" cy="18" r="3" fill="currentColor"/><circle cx="17" cy="16" r="3" fill="currentColor"/></svg></div><h3>Nhạc nền không lo bản quyền</h3><p>Nhạc có sẵn do Vị Trí Studio tự soạn, đăng mạng xã hội không bị tắt tiếng.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="bang-gia">
+    <div class="wrap">
+      <h2>Bảng giá đơn giản</h2>
+      <p class="sec-lead">Trả theo lượt hoặc theo tháng. Mỗi căn nhà tính 1 lượt, sửa và xuất lại căn đó trong 24 giờ không mất thêm lượt.</p>
+      <div id="pkgGrid" class="pkgs"><p class="muted">Đang tải bảng giá…</p></div>
+      <div class="ref-band"><strong>Mời bạn bè, cả hai cùng được tặng lượt.</strong> Bạn đăng ký qua link của anh/chị nhận thêm <span class="ref-n">2</span> lượt. Khi bạn xuất video đầu tiên, anh/chị cũng nhận <span class="ref-n">2</span> lượt.</div>
+    </div>
+  </section>
+
+  <section id="hoi-dap" class="sec-alt faq">
+    <div class="wrap">
+      <h2>Hỏi đáp</h2>
+      <details><summary>Dữ liệu tiện ích lấy từ đâu, có chính xác không?</summary><p>Từ OpenStreetMap và Overture Maps, hơn 70.000 tiện ích trên cả nước. Khoảng cách tính theo đường đi thật. Dữ liệu cộng đồng có thể thiếu hoặc cũ, nên anh/chị xem lại danh sách trước khi xuất, bỏ điểm không đúng hoặc tự thêm điểm bằng link Google Maps.</p></details>
+      <details><summary>Có cần cài phần mềm không?</summary><p>Không. App chạy trên trình duyệt điện thoại hoặc máy tính. Muốn mở nhanh thì bấm "Cài app" để thêm biểu tượng ra màn hình chính.</p></details>
+      <details><summary>Video có dính logo của Vị Trí Studio không?</summary><p>Không. Video chỉ có logo, thương hiệu và số điện thoại của anh/chị, cùng một dòng chữ nhỏ ghi nguồn ảnh vệ tinh và dữ liệu bản đồ theo yêu cầu giấy phép.</p></details>
+      <details><summary>Nhạc nền đăng TikTok, Facebook có bị bản quyền không?</summary><p>Nhạc có sẵn trong app do Vị Trí Studio tự soạn, anh/chị dùng thoải mái cho video của mình. Nếu tự tải nhạc khác lên thì anh/chị tự chịu trách nhiệm bản quyền bài đó.</p></details>
+      <details><summary>Thanh toán thế nào?</summary><p>Chọn gói rồi quét mã VietQR bằng app ngân hàng bất kỳ. Tiền về là hệ thống tự cộng lượt, không cần chờ người duyệt. Chuyển nhầm nội dung thì nhắn hỗ trợ qua Zalo.</p></details>
+      <details><summary>Lượt có hết hạn không? Sửa video có mất lượt không?</summary><p>Gói theo lượt không hết hạn. Gói không giới hạn dùng trong số ngày của gói. Sửa và xuất lại cùng căn nhà trong 24 giờ không trừ thêm lượt.</p></details>
+      <details><summary>Có được hoàn tiền không?</summary><p>Có, theo <a href="/dieu-khoan">điều khoản &amp; chính sách hoàn tiền</a>.</p></details>
+    </div>
+  </section>
+
+  <section class="final">
+    <div class="wrap">
+      <h2>Làm thử video đầu tiên ngay bây giờ</h2>
+      <p class="sec-lead" style="margin-left:auto;margin-right:auto">Tài khoản mới được tặng <span class="trial-n">3</span> video, đủ để đăng thử vài căn và xem khách phản hồi.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary btn-lg" href="/#dangky" data-cta>Làm video miễn phí</a>
+        <a class="btn btn-ghost btn-lg zalo-link" href="#" hidden target="_blank" rel="noopener">Nhắn Zalo hỗ trợ</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-links"><a href="/">Mở app</a><a href="/dieu-khoan">Điều khoản &amp; hoàn tiền</a><a href="/chinh-sach-bao-mat">Chính sách bảo mật</a><a class="zalo-link" href="#" hidden target="_blank" rel="noopener">Zalo hỗ trợ</a></div>
+    <p>Ảnh vệ tinh: Esri, Maxar, Earthstar Geographics. Bản đồ © OpenStreetMap contributors. Địa điểm: Overture Maps Foundation. Đường đi: OSRM.</p>
+    <p>© <span id="year">2026</span> Vị Trí Studio</p>
+  </div>
+</footer>
+<script type="module" src="/landing.js"></script>
+</body>
+</html>

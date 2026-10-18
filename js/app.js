@@ -7,7 +7,7 @@ import {
 } from './render.js';
 import { sfxEvents } from './sfx.js';
 import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4 } from './export.js';
-import { initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account } from './account.js';
+import { initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing } from './account.js';
 import { splitVoice, joinForTts } from './voicesplit.js';
 import { loadConfig, initTracking } from './track.js';
 import { speakNumbers, speakPhones } from './vinum.js';
@@ -1382,7 +1382,13 @@ function init() {
 
   setupInstall();
   setAccountLocation(state.house);
-  initAccount({ toast });
+  initAccount({ toast }).then(() => {
+    // Link từ trang giới thiệu: /#dangky mở đăng ký, /#mua mở bảng giá
+    const h = location.hash;
+    if (h === '#dangky' || h === '#mua') history.replaceState(null, '', location.pathname + location.search);
+    if (h === '#dangky' && !account.profile) requireLogin('', 'register');
+    else if (h === '#mua') openPricing();
+  });
   initTracking();
   new ResizeObserver(() => layoutCanvas()).observe($('canvasWrap').parentElement);
   window.addEventListener('resize', layoutCanvas);
