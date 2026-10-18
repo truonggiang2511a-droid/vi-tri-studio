@@ -1,10 +1,10 @@
 // Tài khoản khách hàng: đăng ký/đăng nhập, số lượt, mua thêm lượt bằng VietQR.
 // Mọi kiểm tra lượt nằm ở các hàm vt_* trên Supabase; trình duyệt chỉ gọi và hiển thị.
 import qrcode from 'qrcode-generator';
-import { track } from './track.js';
+import { track, firstSource } from './track.js';
 
-export const SB_URL = 'https://crzinaydjgqepffatqoo.supabase.co';
-export const SB_KEY = 'sb_publishable_NhyivL-3owNWC6unb8GbZA_d135dx3i';
+import { SB_URL, SB_KEY } from './sb.js';
+export { SB_URL, SB_KEY };
 const TOKEN_KEY = 'vitri.session.v1';
 const REF_KEY = 'vitri.ref.v1';
 
@@ -223,6 +223,7 @@ async function submitAuth(e) {
     if (authTab === 'register') {
       r = await rpc('vt_signup', { p_login: login, p_password: pass, p_name: $('authName').value.trim(), p_ref: getRef() });
       track('register');
+      rpc('vt_set_source', { p_token: r.token, p_source: firstSource() || (getRef() ? 'gioi-thieu-ban' : 'truc-tiep') }).catch(() => {});
       try { localStorage.removeItem(REF_KEY); } catch { /* bỏ qua */ }
     } else {
       r = await rpc('vt_login', { p_login: login, p_password: pass });

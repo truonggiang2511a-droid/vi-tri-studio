@@ -1,9 +1,7 @@
 // Trang giới thiệu (/gioi-thieu): video mẫu chạy thật bằng chính bộ dựng của app, bảng giá lấy từ máy chủ.
 import { buildTimeline, render, TileCache, FORMATS, setImageryToken } from './render.js';
-import { loadConfig, initTracking, track } from './track.js';
-
-const SB_URL = 'https://crzinaydjgqepffatqoo.supabase.co';
-const SB_KEY = 'sb_publishable_NhyivL-3owNWC6unb8GbZA_d135dx3i';
+import { loadConfig, initTracking, track, countVisit } from './track.js';
+import { SB_URL, SB_KEY } from './sb.js';
 const REF_KEY = 'vitri.ref.v1';
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -145,6 +143,7 @@ async function startDemo() {
 }
 
 // ---------- Khởi động ----------
+countVisit('landing'); // trước khi bỏ ?ref= khỏi địa chỉ để còn biết nguồn
 const ref = captureRef();
 loadConfig().then(c => c?.arcgis && setImageryToken(c.arcgis));
 initTracking().then(() => track('view'));

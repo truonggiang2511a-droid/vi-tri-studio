@@ -393,3 +393,40 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .ref-line{color:var(--accent)}
 .foot-links{margin-top:6px}
 .foot-links a{color:inherit}
+
+/* Chế độ 3 bước cho người mới */
+.quick{background:var(--surface);border:1px solid var(--accent);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px;box-shadow:0 0 0 3px var(--accent-soft)}
+.quick-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.quick-head h2{margin:0;font-size:17px}
+.quick-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.quick-steps li{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:10px;opacity:.6}
+.quick-steps li div{display:flex;flex-direction:column;line-height:1.35}
+.quick-steps li span:not(.qn){font-size:13px;color:var(--muted)}
+.quick-steps .qn{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:13px;background:var(--surface-2);color:var(--ink)}
+.quick-steps li.cur{opacity:1;background:var(--accent-soft)}
+.quick-steps li.cur .qn{background:var(--accent);color:var(--accent-ink)}
+.quick-steps li.done{opacity:1}
+.quick-steps li.done .qn{background:var(--focus);color:#fff;font-size:0}
+.quick-steps li.done .qn::after{content:"✓";font-size:14px}
+#quickMsg{margin:-4px 0 0;text-align:center}
+.mode-bar{display:none;text-align:right;margin:-4px 0 0}
+body:not(.simple) .quick{display:none}
+body:not(.simple) .mode-bar{display:block}
+body.simple .adv{display:none !important}
+
+/* Căn đã lưu */
+.proj-row{display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 12px}
+.proj-row .btn{flex:1 1 140px}
+.proj-list{display:flex;flex-direction:column;gap:8px;max-height:52vh;overflow:auto;margin-top:4px}
+.proj-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.proj-item.cur{border-color:var(--accent);background:var(--accent-soft)}
+.proj-item .pi-txt{flex:1;min-width:0;display:flex;flex-direction:column}
+.proj-item .pi-txt strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj-item .pi-txt span{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj-item .btn{padding:6px 12px;min-height:34px;font-size:13.5px}
+.proj-item .del{color:var(--pin)}
+
+/* Nút Zalo nổi */
+.zalo-fab{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:max(16px,env(safe-area-inset-bottom,0px));z-index:40;display:inline-flex;align-items:center;gap:6px;padding:10px 14px 10px 10px;border-radius:999px;background:#0b6cff;color:#fff;font:700 14px/1 var(--font);text-decoration:none;box-shadow:0 8px 24px rgba(11,108,255,.35)}
+.zalo-fab svg{width:26px;height:26px;color:#fff}
+.zalo-fab[hidden]{display:none}

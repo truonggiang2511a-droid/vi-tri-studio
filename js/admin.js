@@ -303,16 +303,70 @@ async function savePackage(e) {
   } catch (err) { $('pkgMsg').textContent = err.message; $('pkgMsg').className = 'hint err'; }
 }
 
+// ---------- Phễu & chăm sóc ----------
+let funDays = 30;
+const pct = (a, b) => (b > 0 ? Math.round(100 * a / b) + '%' : '—');
+const SRC_NAME = { facebook: 'Facebook', tiktok: 'TikTok', google: 'Google', zalo: 'Zalo', youtube: 'YouTube', 'truc-tiep': 'Trực tiếp / không rõ', 'khong-ro': 'Trước khi đo nguồn', 'gioi-thieu-ban': 'Bạn bè giới thiệu' };
+async function loadFunnel() {
+  const steps = $('funSteps');
+  steps.innerHTML = '<p class="hint">Đang tải…</p>';
+  try {
+    const f = await call('vt_admin_funnel', { p_days: funDays });
+    const card = (n, label, sub, cls = '') => `<div class="fun-step ${cls}"><b>${n}</b><span>${label}</span>${sub ? `<em>${sub}</em>` : ''}</div>`;
+    steps.innerHTML = [
+      card(Number(f.visits_landing).toLocaleString('vi-VN'), 'Lượt vào trang giới thiệu'),
+      card(Number(f.visits_app).toLocaleString('vi-VN'), 'Lượt vào app'),
+      card(f.signups, 'Đăng ký mới', f.visits_landing ? `${pct(f.signups, f.visits_landing)} so với lượt vào trang giới thiệu` : ''),
+      card(f.exported, 'Đã xuất video', `${pct(f.exported, f.signups)} người đăng ký`),
+      card(f.paid, 'Đã mua gói', `${pct(f.paid, f.signups)} người đăng ký`),
+      card(money(f.revenue), `Doanh thu ${f.days} ngày`, `${f.orders_paid} đơn đã trả`, 'money'),
+      card(f.ref_signups, 'Đăng ký qua giới thiệu', f.signups ? `${pct(f.ref_signups, f.signups)} người đăng ký` : ''),
+    ].join('');
+    const rows = {};
+    for (const v of f.visit_sources) rows[v.source] = { source: v.source, landing: v.landing, app: v.app, signups: 0, exported: 0, paid: 0 };
+    for (const u of f.by_source) rows[u.source] = { landing: 0, app: 0, ...(rows[u.source] || {}), source: u.source, signups: u.signups, exported: u.exported, paid: u.paid };
+    const list = Object.values(rows).sort((a, b) => b.signups - a.signups || (b.landing + b.app) - (a.landing + a.app));
+    $('funSrc').innerHTML = list.map(r => `<tr><td>${esc(SRC_NAME[r.source] || r.source)}</td><td class="num">${r.landing}</td><td class="num">${r.app}</td><td class="num">${r.signups}</td><td class="num">${r.exported}</td><td class="num">${r.paid}</td><td class="num">${pct(r.paid, r.signups)}</td></tr>`).join('')
+      || '<tr><td colspan="7" class="muted">Chưa có dữ liệu.</td></tr>';
+    const maxV = Math.max(1, ...f.daily.map(d => d.visits));
+    $('funDaily').innerHTML = f.daily.map(d => `<tr><td class="num">${String(d.day).split('-').reverse().join('/')}</td><td class="num">${d.visits}<span class="mini-bar" style="width:${Math.round(80 * d.visits / maxV)}px"></span></td><td class="num">${d.signups}</td><td class="num">${d.exports}</td><td class="num">${d.paid}</td></tr>`).join('');
+  } catch (e) { steps.innerHTML = `<p class="hint err">${esc(e.message)}</p>`; }
+  loadFollowups();
+}
+async function loadFollowups() {
+  const tb = $('funFollow');
+  tb.innerHTML = '<tr><td colspan="6" class="muted">Đang tải…</td></tr>';
+  try {
+    const list = await call('vt_admin_followups');
+    tb.innerHTML = list.map(u => {
+      const phone = /^0\d{9}$/.test(u.login) ? u.login : '';
+      const contact = phone ? `<a class="btn btn-quiet" href="https://zalo.me/${phone}" target="_blank" rel="noopener">Nhắn Zalo</a>`
+        : `<a class="btn btn-quiet" href="mailto:${esc(u.login)}">Gửi email</a>`;
+      return `<tr><td>${esc(u.name || '—')}<span class="sub">${esc(u.login)}</span>${u.note ? `<span class="sub">📝 ${esc(u.note)}</span>` : ''}</td>
+        <td class="num">${u.credits}</td><td class="num">${u.exports}</td><td class="num">${fmt(u.last_export)}</td>
+        <td>${esc(SRC_NAME[u.source] || u.source || '—')}</td><td><div class="acts">${contact}</div></td></tr>`;
+    }).join('') || '<tr><td colspan="6" class="muted">Chưa có khách nào cần chăm sóc.</td></tr>';
+  } catch (e) { tb.innerHTML = `<tr><td colspan="6" class="hint err">${esc(e.message)}</td></tr>`; }
+}
+
 // ---------- Gắn sự kiện ----------
 function showTab(tab) {
   for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === tab));
   for (const p of document.querySelectorAll('[data-pane]')) p.hidden = p.dataset.pane !== tab;
-  ({ orders: loadOrders, users: loadUsers, payments: loadPayments, settings: loadSettings })[tab]();
+  ({ orders: loadOrders, funnel: loadFunnel, users: loadUsers, payments: loadPayments, settings: loadSettings })[tab]();
 }
 $('loginBox').addEventListener('submit', submitLogin);
 $('logoutBtn').addEventListener('click', logout);
 document.querySelector('.tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) showTab(b.dataset.tab); });
 $('orderStatus').addEventListener('change', loadOrders);
+$('funDays').addEventListener('click', e => {
+  const b = e.target.closest('button[data-v]');
+  if (!b) return;
+  funDays = +b.dataset.v;
+  for (const x of $('funDays').querySelectorAll('button')) x.setAttribute('aria-checked', String(x === b));
+  loadFunnel();
+});
+$('funReload').addEventListener('click', loadFunnel);
 $('orderReload').addEventListener('click', () => { loadOrders(); loadStats(); });
 let qt;
 $('orderQ').addEventListener('input', () => { clearTimeout(qt); qt = setTimeout(loadOrders, 350); });

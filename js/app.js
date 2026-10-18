@@ -7,9 +7,9 @@ import {
 } from './render.js';
 import { sfxEvents } from './sfx.js';
 import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4 } from './export.js';
-import { initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing } from './account.js';
+import { initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc } from './account.js';
 import { splitVoice, joinForTts } from './voicesplit.js';
-import { loadConfig, initTracking } from './track.js';
+import { loadConfig, initTracking, countVisit } from './track.js';
 import { speakNumbers, speakPhones } from './vinum.js';
 
 const $ = id => document.getElementById(id);
@@ -34,6 +34,10 @@ const state = {
   subsOn: true,      // phụ đề chạy chữ theo giọng AI
   logoBg: true,      // nền trắng sau logo
   musicLib: '',      // nhạc nền có sẵn đang chọn
+  simple: undefined, // chế độ 3 bước cho người mới
+  coordSet: false,   // đã tự nhập toạ độ (không phải toạ độ ví dụ)
+  cloudId: null,     // căn đang mở đã lưu theo tài khoản
+  projName: '',
   scriptSeed: 0,
   fmt: 'v',
   speed: 'cham',
@@ -220,6 +224,7 @@ function rebuild() {
   renderScript();
   dirty = true;
   scheduleMix();
+  updateQuick();
 }
 let rebuildTimer;
 function scheduleRebuild() {
@@ -370,6 +375,7 @@ function applyCoords(text, { silent = false } = {}) {
       const t = `${r.lat.toFixed(6)}, ${r.lng.toFixed(6)}`;
       setHouse({ lat: r.lat, lng: r.lng });
       state.coordText = t;
+      state.coordSet = true;
       $('coordInput').value = t;
       msg.textContent = `Đã đọc từ link${r.name ? ' (' + r.name + ')' : ''}: ${t}`;
       msg.className = 'hint ok';
@@ -384,6 +390,7 @@ function applyCoords(text, { silent = false } = {}) {
   }
   setHouse({ lat: r.lat, lng: r.lng });
   state.coordText = text;
+  if (!silent) state.coordSet = true;
   msg.textContent = `Đã đọc: ${r.lat.toFixed(6)}, ${r.lng.toFixed(6)}`;
   msg.className = 'hint ok';
   return true;
@@ -397,6 +404,7 @@ function setHouse(h) {
   if (moved > 0.5) {
     if (state.pois.length) toast('Đã đổi vị trí. Bấm Quét tiện ích để tìm lại quanh căn nhà mới.');
     state.pois = []; state.roads = []; state.selected = []; state.selectedRoads = []; state.routes = {}; state.admin = null;
+    state.cloudId = null; state.projName = '';
     renderLists();
   } else if (moved > 0.001) {
     for (const p of state.pois) p.km = p.zone ? Math.max(0.05, haversineKm(h, p) - (p.inset || 0)) : haversineKm(h, p);
@@ -436,7 +444,8 @@ async function scan() {
     scheduleRebuild();
     const b = res.admin?.boundary;
     toast(`Tìm thấy ${res.pois.length} tiện ích, ${res.roads.length} tuyến đường lớn` + (b ? `, ranh ${b.short} cách ${formatKm(b.km)}` : '') + `. Đã chọn sẵn ${state.selected.length} điểm.`, 4000);
-    if (window.matchMedia('(max-width: 979px)').matches) $('step2').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (state.simple) $('quickCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    else if (window.matchMedia('(max-width: 979px)').matches) $('step2').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
     if (e.name !== 'AbortError') toast(e.message || 'Không quét được. Kiểm tra mạng rồi thử lại.', 5000);
   } finally {
@@ -973,7 +982,8 @@ async function doExport() {
     $('resultMeta').textContent = `${width}×${height} · ${Math.round(xtl.duration)} giây · ${(blob.size / 1048576).toFixed(1)} MB · ${ext.toUpperCase()}`;
     $('shareBtn').hidden = !(navigator.canShare && navigator.canShare({ files: [resultFile] }));
     progress(100, 'Xong');
-    toast('Đã dựng xong video.');
+    if (account.profile && await saveProject({ silent: true })) toast('Đã dựng xong video. Căn này đã lưu vào mục Căn đã lưu.', 3500);
+    else toast('Đã dựng xong video.');
     $('resultBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (e) {
     const keep = gate?.charged || gate?.mode === 'unlimited' ? ' Lượt đã trừ vẫn giữ: xuất lại vị trí này trong 24 giờ không mất thêm lượt.' : '';
@@ -1008,6 +1018,160 @@ async function fontsReady() {
       new Promise(r => setTimeout(r, 4000)),
     ]);
   } catch { /* dùng phông dự phòng */ }
+}
+
+// ---------- Chế độ 3 bước cho người mới ----------
+function quickStage() {
+  if (!state.coordSet && !state.scannedAt && !state.pois.length) return 1;
+  if (!state.pois.length) return 2;
+  if (!voiceDurations()) return 3;
+  return 4;
+}
+function updateQuick() {
+  const card = $('quickCard');
+  if (!card) return;
+  const st = quickStage();
+  for (const li of card.querySelectorAll('[data-q]')) {
+    const q = +li.dataset.q;
+    li.classList.toggle('done', q < st);
+    li.classList.toggle('cur', q === Math.min(st, 3));
+  }
+  $('quickGo').textContent = st === 1 ? 'Dán vị trí căn nhà' : st === 2 ? 'Quét tiện ích quanh nhà'
+    : st === 3 ? 'Tạo giọng đọc AI & xem thử' : 'Xuất video MP4';
+  $('quickMsg').hidden = st !== 1;
+}
+function setSimple(on) {
+  state.simple = !!on;
+  document.body.classList.toggle('simple', state.simple);
+  save();
+}
+async function quickGo() {
+  const st = quickStage();
+  if (st === 1) {
+    try {
+      const txt = (await navigator.clipboard.readText() || '').trim();
+      if (txt && (SHORT_LINK.test(txt) || !parseCoords(txt).error)) { $('coordInput').value = txt; applyCoords(txt); return; }
+    } catch { /* trình duyệt chặn đọc clipboard */ }
+    $('coordInput').focus();
+    $('coordInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    toast('Dán toạ độ hoặc link chia sẻ Google Maps của căn nhà vào ô này.', 3500);
+    return;
+  }
+  if (st === 2) { await scan(); return; }
+  if (st === 3) {
+    await generateVoices();
+    if (voiceDurations()) {
+      t = 0;
+      if (window.matchMedia('(max-width: 979px)').matches) $('canvasWrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      play();
+    }
+    return;
+  }
+  doExport();
+}
+
+// ---------- Căn nhà đã lưu theo tài khoản ----------
+const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
+  'scriptSeed', 'scriptEdits', 'fmt', 'speed', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt'];
+const round5 = v => Array.isArray(v) ? v.map(round5)
+  : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
+  : typeof v === 'number' && !Number.isInteger(v) ? Math.round(v * 1e5) / 1e5 : v;
+function projectData() {
+  const d = Object.fromEntries(PROJECT_KEYS.map(k => [k, state[k]]));
+  const sel = new Set(state.selected);
+  d.pois = state.pois.filter(p => sel.has(p.id) || p.manual);
+  d.selected = state.selected.filter(id => d.pois.some(p => p.id === id));
+  d.roads = state.roads.filter(r => state.selectedRoads.includes(r.id));
+  d.selectedRoads = state.selectedRoads;
+  d.routes = Object.fromEntries(Object.entries(state.routes).filter(([k]) => sel.has(k) || k === '__ranh'));
+  d.admin = state.admin;
+  return round5(d);
+}
+function defaultProjName() {
+  const tw = TYPE_WORD[state.typeLabel] || 'Căn nhà';
+  const title = (state.title || '').trim();
+  const custom = title && !/^vị trí\s*(&|và)\s*tiện ích$/i.test(title) ? title : '';
+  return (custom || [tw, state.sub || state.admin?.commune, state.price].filter(Boolean).join(' · ')).slice(0, 80);
+}
+async function saveProject({ silent = false, name } = {}) {
+  if (!state.house) return false;
+  if (!account.profile) {
+    if (silent) return false;
+    if (!(await requireLogin('Đăng nhập để lưu căn nhà, mở lại được trên mọi máy.'))) return false;
+  }
+  const nm = (name ?? state.projName ?? '').trim() || defaultProjName();
+  try {
+    const r = await rpc('vt_project_save', {
+      p_token: account.token, p_id: state.cloudId || null, p_name: nm, p_sub: state.sub || state.admin?.commune || '',
+      p_lat: state.house.lat, p_lng: state.house.lng, p_data: projectData(),
+    });
+    state.cloudId = r.id;
+    state.projName = nm;
+    save();
+    if (!silent) toast(`Đã lưu "${nm}". Mở lại ở mục Căn đã lưu.`, 3200);
+    return true;
+  } catch (e) {
+    if (!silent) toast(e.message, 4500);
+    return false;
+  }
+}
+const fmtDay = d => { const x = new Date(d); return `${String(x.getDate()).padStart(2, '0')}/${String(x.getMonth() + 1).padStart(2, '0')}/${x.getFullYear()}`; };
+async function loadProjects() {
+  const box = $('projList');
+  box.innerHTML = '<p class="hint">Đang tải…</p>';
+  try {
+    const list = await rpc('vt_project_list', { p_token: account.token });
+    box.innerHTML = list.length ? list.map(p => `
+      <div class="proj-item${p.id === state.cloudId ? ' cur' : ''}" data-id="${esc(p.id)}">
+        <div class="pi-txt"><strong>${esc(p.name || 'Căn chưa đặt tên')}</strong><span>${esc(p.sub || '')}${p.sub ? ' · ' : ''}sửa ${fmtDay(p.updated_at)}</span></div>
+        ${p.id === state.cloudId ? '<span class="hint small">đang mở</span>' : `<button type="button" class="btn btn-quiet" data-open="${esc(p.id)}">Mở</button>`}
+        <button type="button" class="btn btn-quiet del" data-del="${esc(p.id)}">Xoá</button>
+      </div>`).join('')
+      : '<p class="hint">Chưa lưu căn nào. Bấm Lưu ở trên, hoặc xuất video xong app tự lưu.</p>';
+  } catch (e) { box.innerHTML = `<p class="hint err">${esc(e.message)}</p>`; }
+}
+async function openProjects(focusName = false) {
+  if (!account.profile && !(await requireLogin('Đăng nhập để lưu và mở lại các căn nhà đã làm.'))) return;
+  $('projName').value = state.projName || defaultProjName();
+  $('projMsg').textContent = '';
+  $('projDlg').showModal();
+  if (focusName) setTimeout(() => $('projName').select(), 60);
+  loadProjects();
+}
+async function openProject(id) {
+  $('projMsg').textContent = 'Đang mở…';
+  $('projMsg').className = 'hint';
+  try {
+    const r = await rpc('vt_project_get', { p_token: account.token, p_id: id });
+    const d = r.data || {};
+    Object.assign(state, { pois: [], roads: [], selected: [], selectedRoads: [], routes: {}, admin: null, scriptEdits: {} }, d);
+    state.cloudId = r.id;
+    state.projName = r.name;
+    state.coordSet = true;
+    save();
+    location.reload();
+  } catch (e) { $('projMsg').textContent = e.message; $('projMsg').className = 'hint err'; }
+}
+let delArmed = null;
+async function projListClick(e) {
+  const o = e.target.closest('[data-open]');
+  if (o) { openProject(o.dataset.open); return; }
+  const d = e.target.closest('[data-del]');
+  if (!d) return;
+  const id = d.dataset.del;
+  if (delArmed !== id) {
+    delArmed = id;
+    d.textContent = 'Bấm lần nữa để xoá';
+    setTimeout(() => { if (delArmed === id) { delArmed = null; d.textContent = 'Xoá'; } }, 3500);
+    return;
+  }
+  delArmed = null;
+  try {
+    await rpc('vt_project_delete', { p_token: account.token, p_id: id });
+    if (state.cloudId === id) { state.cloudId = null; save(); }
+    loadProjects();
+  } catch (err) { toast(err.message, 4000); }
 }
 
 // ---------- Nhạc nền có sẵn (Vị Trí Studio tự soạn, không vướng bản quyền) ----------
@@ -1145,7 +1309,10 @@ function setupInstall() {
 
 // ---------- Gắn sự kiện ----------
 function init() {
+  countVisit('app');
   load();
+  if (state.simple === undefined) state.simple = !state.scannedAt;
+  document.body.classList.toggle('simple', state.simple);
   const sel = new Set(state.selected);
   state.selected = [...sel];
 
@@ -1376,6 +1543,19 @@ function init() {
   });
 
   $('exportBtn').addEventListener('click', doExport);
+  // Chế độ 3 bước
+  $('quickGo').addEventListener('click', quickGo);
+  $('quickDemo').addEventListener('click', () => { state.coordSet = true; applyCoords($('coordInput').value || state.coordText); updateQuick(); scan(); });
+  $('modeBtn').addEventListener('click', () => setSimple(false));
+  $('modeBtn2').addEventListener('click', () => { setSimple(true); $('quickCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+  // Căn đã lưu
+  $('saveProjBtn').addEventListener('click', () => openProjects(true));
+  $('projListBtn').addEventListener('click', () => openProjects(false));
+  $('projSaveBtn').addEventListener('click', async () => {
+    if (await saveProject({ name: $('projName').value })) { $('projMsg').textContent = 'Đã lưu.'; $('projMsg').className = 'hint ok'; loadProjects(); }
+  });
+  $('projName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $('projSaveBtn').click(); } });
+  $('projList').addEventListener('click', projListClick);
   $('cancelBtn').addEventListener('click', () => exportCtrl?.abort());
   $('saveBtn').addEventListener('click', saveResult);
   $('shareBtn').addEventListener('click', shareResult);

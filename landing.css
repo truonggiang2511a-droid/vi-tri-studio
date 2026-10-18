@@ -122,3 +122,10 @@ h2 { font-size: clamp(26px, 3.4vw, 38px); line-height: 1.2; margin: 0 0 12px; le
   .cta-row .btn { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .btn { transition: none; } .btn:hover { transform: none; } }
+
+/* Nút Zalo nổi */
+.zalo-fab { position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px)); z-index: 30;
+  display: inline-flex; align-items: center; gap: 6px; padding: 10px 14px 10px 10px; border-radius: 999px; background: #0b6cff; color: #fff;
+  font: 700 14px/1 var(--font); text-decoration: none; box-shadow: 0 8px 24px rgba(11, 108, 255, .4); }
+.zalo-fab svg { width: 26px; height: 26px; }
+.zalo-fab[hidden] { display: none; }

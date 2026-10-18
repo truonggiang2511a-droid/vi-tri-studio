@@ -1,7 +1,51 @@
 // Cấu hình công khai từ máy chủ (/api/config) + đo chuyển đổi quảng cáo (Meta Pixel, TikTok Pixel).
 // Pixel chỉ chạy khi chủ app đã đặt mã trên Cloudflare (META_PIXEL_ID, TIKTOK_PIXEL_ID)
 // và người xem bấm Đồng ý ở thanh thông báo cookie.
+import { rpcFire } from './sb.js';
+
 const CONSENT = 'vitri.consent.v1';
+const SRC_KEY = 'vitri.src.v1';
+const SRC_DAYS = 30;
+
+// ---------- Nguồn khách (không cần cookie quảng cáo, không lưu thông tin cá nhân) ----------
+function readSrc() {
+  try {
+    const p = JSON.parse(localStorage.getItem(SRC_KEY) || 'null');
+    return p && Date.now() - p.at < SRC_DAYS * 86400000 ? p.s : null;
+  } catch { return null; }
+}
+// Nguồn của lượt vào hiện tại: utm_source, mã nhấp quảng cáo hoặc trang dẫn tới
+export function detectSource() {
+  let s = '';
+  try {
+    const q = new URL(location.href).searchParams;
+    s = q.get('utm_source') || (q.has('fbclid') ? 'facebook' : q.has('ttclid') ? 'tiktok' : q.has('gclid') ? 'google'
+      : q.has('zarsrc') ? 'zalo' : q.has('ref') ? 'gioi-thieu-ban' : '');
+    if (!s && document.referrer) {
+      const h = new URL(document.referrer).hostname.replace(/^www\./, '');
+      if (h && h !== location.hostname) {
+        s = /facebook|fb\.|messenger/.test(h) ? 'facebook' : /tiktok/.test(h) ? 'tiktok' : /google/.test(h) ? 'google'
+          : /zalo/.test(h) ? 'zalo' : /youtube|youtu\.be/.test(h) ? 'youtube' : h;
+      }
+    }
+    s = s.toLowerCase().replace(/[^a-z0-9_.-]/g, '').slice(0, 24);
+    // Giữ nguồn đầu tiên trong 30 ngày để biết khách đăng ký đến từ đâu
+    if (s && !readSrc()) localStorage.setItem(SRC_KEY, JSON.stringify({ s, at: Date.now() }));
+  } catch { /* bỏ qua */ }
+  return s;
+}
+export function firstSource() { return readSrc(); }
+
+// Đếm một lượt vào trang (mỗi phiên trình duyệt một lần cho mỗi trang)
+export function countVisit(page) {
+  const s = detectSource() || readSrc() || 'truc-tiep';
+  try {
+    const k = 'vitri.visit.' + page;
+    if (sessionStorage.getItem(k)) return;
+    sessionStorage.setItem(k, '1');
+  } catch { /* bỏ qua */ }
+  rpcFire('vt_visit', { p_page: page, p_source: s });
+}
 let cfgPromise = null;
 let loaded = false;
 const queue = [];

@@ -58,6 +58,20 @@
   </section>
 
   <section class="panel">
+    <article class="quick" id="quickCard">
+      <div class="quick-head">
+        <h2>Làm video trong 3 bước</h2>
+        <button id="modeBtn" class="link-btn" type="button">Hiện tất cả tuỳ chọn</button>
+      </div>
+      <ol class="quick-steps">
+        <li data-q="1"><span class="qn">1</span><div><strong>Dán vị trí căn nhà</strong><span>Toạ độ hoặc link chia sẻ từ Google Maps</span></div></li>
+        <li data-q="2"><span class="qn">2</span><div><strong>Quét tiện ích</strong><span>App tự chọn trường, chợ, bệnh viện, đường lớn</span></div></li>
+        <li data-q="3"><span class="qn">3</span><div><strong>Tạo giọng đọc, xuất video</strong><span>Thêm số điện thoại, giá ở mục Video nếu muốn</span></div></li>
+      </ol>
+      <button id="quickGo" class="btn btn-primary btn-block" type="button">Dán vị trí căn nhà</button>
+      <p id="quickMsg" class="hint small"><button id="quickDemo" class="link-btn" type="button">Hoặc thử ngay với toạ độ ví dụ</button></p>
+    </article>
+    <div class="mode-bar" id="modeBar"><button id="modeBtn2" class="link-btn" type="button">Về chế độ 3 bước đơn giản</button></div>
     <article class="step" id="step1">
       <header class="step-head"><span class="step-no">1</span><h2>Vị trí căn nhà</h2></header>
       <label class="field">
@@ -68,6 +82,16 @@
         </div>
       </label>
       <p id="coordMsg" class="hint" aria-live="polite"></p>
+      <div class="proj-row">
+        <button id="saveProjBtn" class="btn btn-quiet" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h11l3 3v15H5zM8 3v6h7V3M8 21v-7h8v7" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+          Lưu căn này
+        </button>
+        <button id="projListBtn" class="btn btn-quiet" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v11H3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+          Căn đã lưu
+        </button>
+      </div>
 
       <div class="field">
         <span class="field-label">Loại bất động sản</span>
@@ -78,7 +102,7 @@
           <button type="button" role="radio" data-v="VỊ TRÍ DỰ ÁN">Dự án</button>
         </div>
       </div>
-      <div class="grid2">
+      <div class="grid2 adv">
         <label class="field">
           <span class="field-label">Nhãn trên ghim</span>
           <input autocomplete="off" id="labelInput" class="input" type="text" maxlength="28">
@@ -88,7 +112,7 @@
           <input autocomplete="off" id="subInput" class="input" type="text" maxlength="48" placeholder="Xã, huyện…">
         </label>
       </div>
-      <label class="field">
+      <label class="field adv">
         <span class="field-label">Bán kính quét <output id="radiusOut" class="mono">5 km</output></span>
         <input autocomplete="off" id="radiusInput" type="range" min="1" max="10" step="0.5" value="5">
       </label>
@@ -138,7 +162,7 @@
           <button type="button" role="radio" data-v="s">Vuông 1:1</button>
         </div>
       </div>
-      <div class="field">
+      <div class="field adv">
         <span class="field-label">Nhịp máy lia</span>
         <div class="seg" id="speedSeg" role="radiogroup" aria-label="Nhịp máy lia">
           <button type="button" role="radio" data-v="cham">Chậm</button>
@@ -187,14 +211,14 @@
         <label class="check"><input autocomplete="off" id="logoBg" type="checkbox" checked> Nền trắng sau logo (logo màu tối nên bật)</label>
         <span class="hint small">Logo lưu trên máy này, lần sau mở app vẫn còn.</span>
       </div>
-      <label class="check"><input autocomplete="off" id="subsOn" type="checkbox" checked> Hiện phụ đề chạy chữ theo giọng đọc AI</label>
-      <p class="hint small">Phần lớn người xem Facebook, TikTok để tắt tiếng. Phụ đề hiện sau khi bấm Tạo giọng đọc AI.</p>
+      <label class="check adv"><input autocomplete="off" id="subsOn" type="checkbox" checked> Hiện phụ đề chạy chữ theo giọng đọc AI</label>
+      <p class="hint small adv">Phần lớn người xem Facebook, TikTok để tắt tiếng. Phụ đề hiện sau khi bấm Tạo giọng đọc AI.</p>
 
-      <div class="field">
+      <div class="field adv">
         <span class="field-label">Màu line trục đường lớn</span>
         <div class="swatches" id="roadThemeRow" role="radiogroup" aria-label="Màu line trục đường lớn"></div>
       </div>
-      <div class="field">
+      <div class="field adv">
         <span class="field-label">Màu line đường tới tiện ích</span>
         <div class="swatches" id="routeThemeRow" role="radiogroup" aria-label="Màu line đường tới tiện ích"></div>
       </div>
@@ -210,7 +234,7 @@
           <button type="button" role="radio" data-v="nam-bac">Nam miền Bắc</button>
         </div>
       </div>
-      <div class="field">
+      <div class="field adv">
         <span class="field-label">Tốc độ đọc</span>
         <div class="seg" id="vspeedSeg" role="radiogroup" aria-label="Tốc độ đọc">
           <button type="button" role="radio" data-v="-1">Chậm</button>
@@ -218,12 +242,12 @@
           <button type="button" role="radio" data-v="1">Nhanh</button>
         </div>
       </div>
-      <div class="field">
+      <div class="field adv">
         <span class="field-label">Kịch bản lời đọc theo từng cảnh <span class="lbl-acts"><button id="altScriptBtn" class="link-btn" type="button">Đổi cách viết</button><button id="aiScriptBtn" class="link-btn" type="button" hidden>Viết lại bằng AI</button></span></span>
         <div id="scriptList" class="script-list"></div>
         <p class="hint small">Số thập phân viết dấu phẩy hay dấu chấm đều được: "1,5 km" hoặc "1.5km" sẽ đọc là "một phẩy năm ki lô mét". Dòng "Máy đọc" dưới mỗi câu cho thấy giọng AI sẽ đọc ra sao.</p>
       </div>
-      <div class="ai-actions">
+      <div class="ai-actions adv">
         <button id="ttsBtn" class="btn btn-quiet" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z" fill="currentColor"/></svg>
           Tạo giọng đọc AI
@@ -234,7 +258,7 @@
 
       <div class="sub-head">Âm thanh</div>
       <div class="audio-row">
-        <div class="field">
+        <div class="field adv">
           <span class="field-label">Hiệu ứng âm thanh (SFX)</span>
           <label class="check"><input autocomplete="off" id="sfxOn" type="checkbox" checked> Bật whoosh, ding, pop theo hình</label>
           <label class="vol"><span>Âm lượng</span><input autocomplete="off" id="sfxVol" type="range" min="0" max="1" step="0.05" value="0.7"></label>
@@ -251,7 +275,7 @@
           <label class="vol"><span>Âm lượng</span><input autocomplete="off" id="musicVol" type="range" min="0" max="1" step="0.05" value="0.8"></label>
         </div>
       </div>
-      <details class="script">
+      <details class="script adv">
         <summary>Hoặc dùng file giọng tự ghi âm</summary>
         <div class="file-row">
           <label class="btn btn-quiet file-btn">Chọn file<input autocomplete="off" id="voiceFile" type="file" accept="audio/*,video/mp4"></label>
@@ -265,7 +289,7 @@
 
     <article class="step" id="step4">
       <header class="step-head"><span class="step-no">4</span><h2>Xuất video</h2></header>
-      <div class="field">
+      <div class="field adv">
         <span class="field-label">Chất lượng</span>
         <div class="seg" id="qualSeg" role="radiogroup" aria-label="Chất lượng">
           <button type="button" role="radio" data-v="1080">1080p</button>
@@ -380,6 +404,22 @@
     <button id="acLogout" class="btn btn-quiet btn-block" type="button">Đăng xuất</button>
   </div>
 </dialog>
+<dialog id="projDlg" class="dlg" aria-labelledby="projTitle">
+  <div class="dlg-card">
+    <button class="dlg-x" type="button" data-close aria-label="Đóng">×</button>
+    <h3 id="projTitle">Căn nhà đã lưu</h3>
+    <p class="hint">Lưu theo tài khoản, mở lại trên điện thoại hay máy tính đều được. Video xuất xong cũng tự lưu vào đây.</p>
+    <label class="field"><span class="field-label">Tên căn đang mở</span>
+      <div class="input-row"><input id="projName" class="input" type="text" maxlength="80" autocomplete="off"><button id="projSaveBtn" class="btn btn-primary" type="button">Lưu</button></div>
+    </label>
+    <p id="projMsg" class="hint" aria-live="polite"></p>
+    <div id="projList" class="proj-list"></div>
+  </div>
+</dialog>
+<a id="zaloFab" class="zalo-fab zalo-link" href="#" target="_blank" rel="noopener" hidden aria-label="Nhắn Zalo hỗ trợ">
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3C6.5 3 2 6.9 2 11.6c0 2.6 1.4 5 3.7 6.5L5 21.5l3.9-2c1 .3 2 .4 3.1.4 5.5 0 10-3.9 10-8.6S17.5 3 12 3z" fill="currentColor"/><path d="M7.5 9.5h4l-4 4.5h4M13.2 9.5v4.5M15.5 9.5v4.5h2" fill="none" stroke="#0b6cff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  <span>Hỗ trợ</span>
+</a>
 <div id="toast" class="toast" role="status" hidden></div>
 
 <script type="module" src="js/app.js"></script>

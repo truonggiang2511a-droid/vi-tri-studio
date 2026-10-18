@@ -38,6 +38,13 @@
   .badge.pending, .badge.amount_low { background: var(--accent-soft); color: var(--ink); }
   .badge.cancelled, .badge.locked, .badge.no_code, .badge.unknown_code { background: color-mix(in srgb, var(--pin) 14%, transparent); color: var(--pin); }
   .edit-row td { background: var(--surface-2); }
+  .fun-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .fun-step { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; position: relative; }
+  .fun-step b { font: 700 22px var(--mono); font-variant-numeric: tabular-nums; }
+  .fun-step span { font-size: 12.5px; color: var(--muted); }
+  .fun-step em { font-style: normal; font-size: 12.5px; font-weight: 700; color: var(--focus); }
+  .fun-step.money { border-color: var(--accent); }
+  .mini-bar { display: inline-block; height: 8px; border-radius: 4px; background: var(--accent); vertical-align: middle; margin-left: 8px; }
   .edit-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; align-items: end; }
   .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
   .card h2 { margin: 0; font-size: 16px; }
@@ -79,6 +86,7 @@
     <section class="stats" id="stats"></section>
     <nav class="tabs" role="tablist">
       <button type="button" role="tab" data-tab="orders" aria-selected="true">Đơn hàng</button>
+      <button type="button" role="tab" data-tab="funnel">Phễu &amp; chăm sóc</button>
       <button type="button" role="tab" data-tab="users">Khách hàng</button>
       <button type="button" role="tab" data-tab="payments">Giao dịch ngân hàng</button>
       <button type="button" role="tab" data-tab="settings">Cài đặt &amp; gói giá</button>
@@ -97,6 +105,26 @@
       </div>
       <p class="hint" style="margin:8px 0">Đơn có SePay sẽ tự xác nhận. Nếu khách chuyển sai nội dung, đối chiếu sao kê rồi bấm <strong>Đã nhận tiền</strong>.</p>
       <div class="tbl-wrap"><table><thead><tr><th>Mã đơn</th><th>Khách</th><th>Gói</th><th>Số tiền</th><th>Trạng thái</th><th>Tạo lúc</th><th></th></tr></thead><tbody id="orderRows"></tbody></table></div>
+    </section>
+
+    <section data-pane="funnel" hidden style="display:flex;flex-direction:column;gap:14px">
+      <div class="bar">
+        <div class="seg" id="funDays" role="radiogroup" aria-label="Khoảng thời gian">
+          <button type="button" role="radio" data-v="7">7 ngày</button>
+          <button type="button" role="radio" data-v="30" aria-checked="true">30 ngày</button>
+          <button type="button" role="radio" data-v="90">90 ngày</button>
+        </div>
+        <button id="funReload" class="btn btn-quiet" type="button">Tải lại</button>
+      </div>
+      <div id="funSteps" class="fun-steps"></div>
+      <p class="hint">Lượt vào trang đếm mỗi phiên trình duyệt một lần. Nguồn lấy từ link quảng cáo (utm_source, fbclid, ttclid) hoặc trang dẫn tới. Gắn <span class="code">?utm_source=facebook</span> hoặc <span class="code">?utm_source=tiktok</span> vào link quảng cáo để tách nguồn rõ hơn.</p>
+      <h2>Theo nguồn khách</h2>
+      <div class="tbl-wrap"><table><thead><tr><th>Nguồn</th><th>Vào trang giới thiệu</th><th>Vào app</th><th>Đăng ký</th><th>Đã xuất video</th><th>Đã mua</th><th>Tỷ lệ mua</th></tr></thead><tbody id="funSrc"></tbody></table></div>
+      <h2>Theo ngày</h2>
+      <div class="tbl-wrap"><table><thead><tr><th>Ngày</th><th>Lượt vào</th><th>Đăng ký</th><th>Video xuất</th><th>Đơn đã trả</th></tr></thead><tbody id="funDaily"></tbody></table></div>
+      <h2>Khách cần chăm sóc</h2>
+      <p class="hint">Đã xuất video, còn 0–1 lượt nhưng chưa mua (90 ngày gần đây). Nhắn hỏi cảm nhận, tặng thêm lượt hoặc ưu đãi gói đầu để chốt.</p>
+      <div class="tbl-wrap"><table><thead><tr><th>Khách</th><th>Lượt còn</th><th>Đã xuất</th><th>Lần xuất cuối</th><th>Nguồn</th><th></th></tr></thead><tbody id="funFollow"></tbody></table></div>
     </section>
 
     <section data-pane="users" hidden>
