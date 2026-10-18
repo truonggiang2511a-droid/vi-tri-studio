@@ -1,0 +1,472 @@
+// Tài khoản khách hàng: đăng ký/đăng nhập, số lượt, mua thêm lượt bằng VietQR.
+// Mọi kiểm tra lượt nằm ở các hàm vt_* trên Supabase; trình duyệt chỉ gọi và hiển thị.
+import qrcode from 'qrcode-generator';
+
+export const SB_URL = 'https://crzinaydjgqepffatqoo.supabase.co';
+export const SB_KEY = 'sb_publishable_NhyivL-3owNWC6unb8GbZA_d135dx3i';
+const TOKEN_KEY = 'vitri.session.v1';
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+export const money = n => Math.round(n || 0).toLocaleString('vi-VN') + 'đ';
+const fmtDate = (d, withTime = true) => {
+  if (!d) return '';
+  const x = new Date(d);
+  const dd = `${String(x.getDate()).padStart(2, '0')}/${String(x.getMonth() + 1).padStart(2, '0')}`;
+  return withTime ? `${String(x.getHours()).padStart(2, '0')}:${String(x.getMinutes()).padStart(2, '0')} ${dd}` : dd + '/' + x.getFullYear();
+};
+
+const S = {
+  token: null,
+  profile: null,
+  info: null,          // gói, ngân hàng, số lượt dùng thử
+  reexportUntil: null, // còn được xuất lại miễn phí vị trí hiện tại tới lúc nào
+  loc: null,
+  order: null,         // đơn đang chờ thanh toán
+};
+let toast = m => console.log(m);
+const listeners = new Set();
+const emit = () => { renderBadge(); for (const f of listeners) f(S); };
+const hideToast = () => { const t = $('toast'); if (t) t.hidden = true; };
+export const account = S;
+export const onAccountChange = f => listeners.add(f);
+
+function readToken() { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } }
+function writeToken(t) { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch { /* bỏ qua */ } }
+
+export async function rpc(fn, args = {}) {
+  let res;
+  try {
+    res = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, {
+      method: 'POST',
+      headers: { apikey: SB_KEY, 'content-type': 'application/json' },
+      body: JSON.stringify(args),
+    });
+  } catch {
+    const e = new Error('Không kết nối được máy chủ tài khoản. Kiểm tra mạng rồi thử lại.');
+    e.hint = 'NET';
+    throw e;
+  }
+  const j = await res.json().catch(() => null);
+  if (!res.ok) {
+    const e = new Error(j?.message || 'Máy chủ tài khoản lỗi ' + res.status);
+    e.hint = j?.hint || '';
+    throw e;
+  }
+  return j;
+}
+
+function setSession(token, profile) {
+  S.token = token;
+  S.profile = profile;
+  writeToken(token);
+  emit();
+}
+function clearSession() {
+  S.token = null; S.profile = null; S.reexportUntil = null; S.order = null;
+  writeToken(null);
+  emit();
+}
+
+export const authHeaders = () => (S.token ? { authorization: 'Bearer ' + S.token } : {});
+
+export async function refreshAccount() {
+  if (!S.token) { emit(); return; }
+  try {
+    const r = await rpc('vt_me', { p_token: S.token, p_lat: S.loc?.lat ?? null, p_lng: S.loc?.lng ?? null });
+    S.profile = r.profile;
+    S.reexportUntil = r.reexport_until;
+    if (r.pending) S.order = S.order?.code === r.pending.code ? S.order : { ...r.pending };
+  } catch (e) {
+    if (e.hint === 'AUTH' || e.hint === 'LOCKED') clearSession();
+  }
+  emit();
+}
+
+let locTimer;
+export function setAccountLocation(loc) {
+  S.loc = loc ? { lat: loc.lat, lng: loc.lng } : null;
+  clearTimeout(locTimer);
+  if (S.token) locTimer = setTimeout(refreshAccount, 700);
+}
+
+async function loadInfo() {
+  if (S.info) return S.info;
+  try { S.info = await rpc('vt_public_info'); } catch { /* thử lại khi mở bảng giá */ }
+  if (S.info) {
+    const z = S.info.bank?.zalo;
+    for (const a of document.querySelectorAll('.zalo-link')) { a.href = z || '#'; a.hidden = !z; }
+    for (const el of document.querySelectorAll('.zalo-alt')) el.hidden = !!z;
+    for (const el of document.querySelectorAll('.trial-n')) el.textContent = S.info.trial_credits;
+  }
+  return S.info;
+}
+
+// ---------- Huy hiệu trên thanh trên cùng + ghi chú ở bước xuất ----------
+function creditText(p) {
+  if (!p) return '';
+  if (p.unlimited) return 'Không giới hạn';
+  return `${p.credits} lượt`;
+}
+function renderBadge() {
+  const btn = $('acctBtn');
+  if (!btn) return;
+  const p = S.profile;
+  if (!p) {
+    btn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Đăng nhập`;
+    btn.classList.remove('has-acct');
+  } else {
+    const init = (p.name || p.login || '?').trim().charAt(0).toUpperCase();
+    btn.innerHTML = `<span class="credit-pill${!p.unlimited && p.credits <= 0 ? ' empty' : ''}">${esc(creditText(p))}</span><span class="avatar">${esc(init)}</span>`;
+    btn.classList.add('has-acct');
+  }
+  const note = $('creditNote');
+  if (note) {
+    const trial = S.info?.trial_credits ?? 3;
+    if (!p) {
+      note.innerHTML = `Đăng ký miễn phí để nhận <strong>${trial} video</strong> dùng thử. <button type="button" class="link-btn" data-act="register">Đăng ký</button>`;
+    } else if (S.reexportUntil && new Date(S.reexportUntil) > new Date()) {
+      note.innerHTML = `Vị trí này xuất lại <strong>miễn phí</strong> tới ${fmtDate(S.reexportUntil)}.`;
+    } else if (p.unlimited) {
+      note.innerHTML = `Gói không giới hạn tới ${fmtDate(p.unlimited_until, false)}.`;
+    } else if (p.credits > 0) {
+      note.innerHTML = `Còn <strong>${p.credits} lượt</strong>. Mỗi vị trí trừ 1 lượt, xuất lại trong 24 giờ không trừ thêm.`;
+    } else {
+      note.innerHTML = `Đã hết lượt. <button type="button" class="link-btn" data-act="buy">Mua thêm lượt</button>`;
+    }
+  }
+}
+
+// ---------- Đăng nhập / đăng ký ----------
+let authResolve = null;
+let authTab = 'register';
+function setAuthTab(tab) {
+  authTab = tab;
+  for (const b of $('authTabs').querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.tab === tab));
+  const reg = tab === 'register';
+  $('nameField').hidden = !reg;
+  $('authTitle').textContent = reg ? 'Tạo tài khoản' : 'Đăng nhập';
+  $('authSubmit').textContent = reg ? 'Đăng ký và nhận lượt dùng thử' : 'Đăng nhập';
+  $('authPass').autocomplete = reg ? 'new-password' : 'current-password';
+  $('trialLine').hidden = !reg;
+  $('authMsg').textContent = '';
+}
+
+export function requireLogin(reason = '', tab) {
+  if (S.profile) return Promise.resolve(true);
+  loadInfo();
+  return new Promise(resolve => {
+    authResolve?.(false);
+    authResolve = resolve;
+    $('authReason').textContent = reason;
+    $('authReason').hidden = !reason;
+    let had = false;
+    try { had = !!localStorage.getItem('vitri.hasAcct'); } catch { /* bỏ qua */ }
+    setAuthTab(tab || (had ? 'login' : 'register'));
+    const dlg = $('authDlg');
+    hideToast();
+    if (!dlg.open) dlg.showModal();
+    setTimeout(() => (authTab === 'register' ? $('authName') : $('authLogin')).focus(), 60);
+  });
+}
+
+async function submitAuth(e) {
+  e.preventDefault();
+  const login = $('authLogin').value.trim();
+  const pass = $('authPass').value;
+  const msg = $('authMsg');
+  if (!login) { msg.textContent = 'Nhập số điện thoại hoặc email.'; return; }
+  if (pass.length < 6) { msg.textContent = 'Mật khẩu cần ít nhất 6 ký tự.'; return; }
+  const btn = $('authSubmit');
+  btn.disabled = true;
+  msg.textContent = '';
+  try {
+    let r;
+    if (authTab === 'register') {
+      r = await rpc('vt_register', { p_login: login, p_password: pass, p_name: $('authName').value.trim() });
+    } else {
+      r = await rpc('vt_login', { p_login: login, p_password: pass });
+      if (!r.ok) { msg.textContent = r.message; return; }
+    }
+    try { localStorage.setItem('vitri.hasAcct', '1'); } catch { /* bỏ qua */ }
+    setSession(r.token, r.profile);
+    $('authPass').value = '';
+    $('authDlg').close();
+    toast(authTab === 'register'
+      ? `Đã tạo tài khoản. Anh/chị có ${r.profile.credits} lượt dùng thử.`
+      : `Xin chào ${r.profile.name || ''}`.trim() + '.', 3500);
+    refreshAccount();
+    const f = authResolve; authResolve = null; f?.(true);
+  } catch (err) {
+    msg.textContent = err.message;
+    if (err.hint === 'EXISTS') setTimeout(() => { setAuthTab('login'); $('authMsg').textContent = err.message; }, 0);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---------- Xuất video: trừ lượt trên máy chủ ----------
+export async function beginExport(loc) {
+  if (!S.profile) {
+    const ok = await requireLogin(`Đăng ký miễn phí để xuất video. Tài khoản mới được tặng ${S.info?.trial_credits ?? 3} video.`);
+    if (!ok) return null;
+  }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await rpc('vt_export_begin', { p_token: S.token, p_lat: loc.lat, p_lng: loc.lng });
+      S.profile = r.profile;
+      if (!r.ok) {
+        emit();
+        if (r.code === 'NO_CREDIT') openPricing(r.message);
+        else toast(r.message, 5000);
+        return null;
+      }
+      S.reexportUntil = r.until;
+      emit();
+      return r;
+    } catch (e) {
+      if ((e.hint === 'AUTH') && attempt === 0) {
+        clearSession();
+        const ok = await requireLogin('Phiên đăng nhập đã hết hạn, mời đăng nhập lại.', 'login');
+        if (!ok) return null;
+        continue;
+      }
+      toast(e.message, 5000);
+      return null;
+    }
+  }
+  return null;
+}
+
+// Lỗi từ /api/tts, /api/script: mở đúng hộp thoại. Trả về true nếu đã xử lý.
+export async function handleAiError(status, j) {
+  if (status === 401 || j?.code === 'AUTH') {
+    clearSession();
+    await requireLogin('Đăng nhập để dùng giọng đọc AI.', 'login');
+    return true;
+  }
+  if (status === 402 || j?.code === 'NO_CREDIT') { openPricing(j?.error || 'Đã hết lượt.'); return true; }
+  return false;
+}
+
+// ---------- Bảng giá + VietQR ----------
+function tlv(id, v) { return id + String(v.length).padStart(2, '0') + v; }
+function crc16(s) {
+  let crc = 0xFFFF;
+  for (let i = 0; i < s.length; i++) {
+    crc ^= s.charCodeAt(i) << 8;
+    for (let b = 0; b < 8; b++) crc = crc & 0x8000 ? ((crc << 1) ^ 0x1021) & 0xFFFF : (crc << 1) & 0xFFFF;
+  }
+  return crc.toString(16).toUpperCase().padStart(4, '0');
+}
+// Chuỗi VietQR (chuẩn EMVCo của NAPAS) để app ngân hàng nào cũng quét được
+export function vietqrPayload({ bin, account, amount, info }) {
+  const acc = tlv('00', 'A000000727') + tlv('01', tlv('00', bin) + tlv('01', account)) + tlv('02', 'QRIBFTTA');
+  const s = tlv('00', '01') + tlv('01', amount ? '12' : '11') + tlv('38', acc) + tlv('53', '704')
+    + (amount ? tlv('54', String(Math.round(amount))) : '') + tlv('58', 'VN')
+    + (info ? tlv('62', tlv('08', info)) : '') + '6304';
+  return s + crc16(s);
+}
+function drawQr(canvas, text) {
+  const qr = qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+  const n = qr.getModuleCount();
+  const quiet = 3;
+  const cell = Math.max(3, Math.floor(260 / (n + quiet * 2)));
+  const size = cell * (n + quiet * 2);
+  canvas.width = size; canvas.height = size;
+  const c = canvas.getContext('2d');
+  c.fillStyle = '#fff'; c.fillRect(0, 0, size, size);
+  c.fillStyle = '#0b1210';
+  for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (qr.isDark(r, k)) c.fillRect((k + quiet) * cell, (r + quiet) * cell, cell, cell);
+}
+
+function payView(v) {
+  $('payPick').hidden = v !== 'pick';
+  $('payQr').hidden = v !== 'qr';
+  $('payDone').hidden = v !== 'done';
+}
+
+export async function openPricing(reason = '') {
+  if (!S.profile) {
+    const ok = await requireLogin('Đăng nhập để mua thêm lượt.');
+    if (!ok) return;
+  }
+  const dlg = $('payDlg');
+  $('payReason').textContent = reason;
+  $('payReason').hidden = !reason;
+  payView('pick');
+  hideToast();
+  if (!dlg.open) dlg.showModal();
+  const list = $('pkgList');
+  list.innerHTML = '<p class="hint">Đang tải bảng giá…</p>';
+  S.info = null;
+  const info = await loadInfo();
+  if (!info) { list.innerHTML = '<p class="hint err">Không tải được bảng giá. Kiểm tra mạng rồi thử lại.</p>'; return; }
+  list.innerHTML = info.packages.map(p => {
+    const per = p.credits ? `${money(p.price / p.credits)}/video` : `${p.days} ngày`;
+    return `<button type="button" class="pkg${p.highlight ? ' hot' : ''}" data-pkg="${esc(p.id)}">
+      ${p.highlight ? '<span class="pkg-tag">Nhiều người chọn</span>' : ''}
+      <span class="pkg-name">${esc(p.name)}</span>
+      <span class="pkg-price">${money(p.price)}</span>
+      <span class="pkg-per">${esc(per)}</span>
+      <span class="pkg-desc">${esc(p.description)}</span>
+    </button>`;
+  }).join('') || '<p class="hint">Chưa có gói nào đang bán.</p>';
+  if (S.order && S.order.status === 'pending') {
+    list.insertAdjacentHTML('afterbegin', `<button type="button" class="pending-order" data-resume="1">Đơn <strong class="mono">${esc(S.order.code)}</strong> đang chờ thanh toán (${money(S.order.amount)}). Mở lại mã QR</button>`);
+  }
+}
+
+let pollTimer = null;
+function stopPoll() { clearInterval(pollTimer); pollTimer = null; }
+
+function showOrder(order, bank) {
+  S.order = { ...order, bank };
+  $('payTitle').textContent = order.package_name;
+  $('pBank').textContent = bank.name || '';
+  $('pAcc').textContent = bank.account;
+  $('pHolder').textContent = bank.holder || '—';
+  $('pHolderRow').hidden = !bank.holder;
+  $('pAmount').textContent = money(order.amount);
+  $('pAmount').dataset.raw = String(order.amount);
+  $('pCode').textContent = order.code;
+  $('payHelpZalo').hidden = !bank.zalo;
+  drawQr($('qrCanvas'), vietqrPayload({ bin: bank.bin, account: bank.account, amount: order.amount, info: order.code }));
+  $('payStatus').className = 'pay-status';
+  $('payStatus').innerHTML = '<span class="spinner" aria-hidden="true"></span> Đang chờ ngân hàng báo về…';
+  payView('qr');
+  stopPoll();
+  const started = Date.now();
+  pollTimer = setInterval(async () => {
+    if (!$('payDlg').open) { stopPoll(); return; }
+    if (Date.now() - started > 30 * 60 * 1000) { stopPoll(); return; }
+    try {
+      const r = await rpc('vt_order_status', { p_token: S.token, p_code: order.code });
+      if (r.order.status === 'paid') {
+        stopPoll();
+        S.profile = r.profile;
+        S.order = null;
+        emit();
+        const p = r.profile;
+        $('payDoneText').textContent = p.unlimited
+          ? `Đã nhận ${money(order.amount)}. Gói không giới hạn tới ${fmtDate(p.unlimited_until, false)}.`
+          : `Đã nhận ${money(order.amount)}. Tài khoản hiện có ${p.credits} lượt.`;
+        payView('done');
+        toast('Thanh toán thành công, đã cộng lượt.', 4000);
+      }
+    } catch { /* thử lại ở vòng sau */ }
+  }, 4000);
+}
+
+async function pickPackage(id) {
+  const list = $('pkgList');
+  list.classList.add('busy');
+  try {
+    const r = await rpc('vt_create_order', { p_token: S.token, p_package: id });
+    showOrder(r.order, r.bank);
+  } catch (e) {
+    if (e.hint === 'AUTH') { clearSession(); $('payDlg').close(); requireLogin('Phiên đăng nhập đã hết hạn.', 'login'); return; }
+    toast(e.message, 5000);
+  } finally {
+    list.classList.remove('busy');
+  }
+}
+
+async function copyText(text, label) {
+  try { await navigator.clipboard.writeText(text); toast('Đã chép ' + label + '.'); }
+  catch { toast('Không chép được, hãy chép tay: ' + text, 4000); }
+}
+
+// ---------- Bảng tài khoản ----------
+async function openAccount() {
+  if (!S.profile) { requireLogin(); return; }
+  const p = S.profile;
+  $('acName').textContent = p.name || 'Tài khoản của anh/chị';
+  $('acLogin').textContent = p.login;
+  $('acCredits').innerHTML = p.unlimited
+    ? `<strong>Không giới hạn</strong><span>tới ${fmtDate(p.unlimited_until, false)}${p.credits ? ` · còn ${p.credits} lượt lẻ` : ''}</span>`
+    : `<strong>${p.credits}</strong><span>lượt xuất video</span>`;
+  $('acHist').innerHTML = '';
+  $('acHistBox').open = false;
+  $('pwMsg').textContent = '';
+  $('acctDlg').showModal();
+}
+async function loadHistory() {
+  const box = $('acHist');
+  box.innerHTML = '<p class="hint">Đang tải…</p>';
+  try {
+    const r = await rpc('vt_history', { p_token: S.token });
+    const st = { pending: 'Chờ thanh toán', paid: 'Đã thanh toán', cancelled: 'Đã huỷ' };
+    const orders = r.orders.map(o => `<li><span>${fmtDate(o.created_at)}</span><span>${esc(o.package_name)} · ${money(o.amount)}</span><span class="st st-${o.status}">${st[o.status] || o.status}</span></li>`).join('');
+    const usage = r.usage.map(u => `<li><span>${fmtDate(u.at)}</span><span>${esc(u.note)}</span><span class="${u.kind === 'grant' ? 'plus' : 'minus'}">${u.kind === 'grant' ? (u.credits ? '+' + u.credits : '') : (u.credits ? '−' + u.credits : '0')}</span></li>`).join('');
+    box.innerHTML = `<h4>Thanh toán</h4>${orders ? `<ul class="hist-list">${orders}</ul>` : '<p class="hint">Chưa có đơn nào.</p>'}
+      <h4>Lượt dùng</h4>${usage ? `<ul class="hist-list">${usage}</ul>` : '<p class="hint">Chưa dùng lượt nào.</p>'}`;
+  } catch (e) { box.innerHTML = `<p class="hint err">${esc(e.message)}</p>`; }
+}
+
+export async function initAccount(opts = {}) {
+  if (opts.toast) toast = opts.toast;
+  S.token = readToken();
+  $('acctBtn').addEventListener('click', () => (S.profile ? openAccount() : requireLogin()));
+  $('authTabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) setAuthTab(b.dataset.tab); });
+  $('authForm').addEventListener('submit', submitAuth);
+  $('authDlg').addEventListener('close', () => { const f = authResolve; authResolve = null; f?.(false); });
+  for (const d of document.querySelectorAll('dialog.dlg')) {
+    d.addEventListener('click', e => {
+      if (e.target === d || e.target.closest('[data-close]')) d.close();
+    });
+  }
+  $('payDlg').addEventListener('close', stopPoll);
+  $('pkgList').addEventListener('click', e => {
+    if (e.target.closest('[data-resume]') && S.order?.bank) { showOrder(S.order, S.order.bank); return; }
+    if (e.target.closest('[data-resume]')) { pickPackage(S.order.package_id); return; }
+    const b = e.target.closest('button[data-pkg]');
+    if (b) pickPackage(b.dataset.pkg);
+  });
+  $('payBack').addEventListener('click', () => { stopPoll(); openPricing(); });
+  $('payQr').addEventListener('click', e => {
+    const b = e.target.closest('button[data-copy]');
+    if (!b) return;
+    if (b.dataset.copy === 'amount') copyText($('pAmount').dataset.raw, 'số tiền');
+    else if (b.dataset.copy === 'acc') copyText($('pAcc').textContent, 'số tài khoản');
+    else copyText($('pCode').textContent, 'nội dung chuyển khoản');
+  });
+  $('payCancel').addEventListener('click', async () => {
+    const code = S.order?.code;
+    stopPoll();
+    if (code) { try { await rpc('vt_cancel_order', { p_token: S.token, p_code: code }); } catch { /* bỏ qua */ } }
+    S.order = null;
+    openPricing();
+  });
+  $('payDoneBtn').addEventListener('click', () => $('payDlg').close());
+  $('acBuy').addEventListener('click', () => { $('acctDlg').close(); openPricing(); });
+  $('acHistBox').addEventListener('toggle', e => { if (e.target.open) loadHistory(); });
+  $('acLogout').addEventListener('click', async () => {
+    const t = S.token;
+    clearSession();
+    $('acctDlg').close();
+    toast('Đã đăng xuất.');
+    try { await rpc('vt_logout', { p_token: t }); } catch { /* bỏ qua */ }
+  });
+  $('pwBtn').addEventListener('click', async () => {
+    const msg = $('pwMsg');
+    try {
+      const r = await rpc('vt_change_password', { p_token: S.token, p_old: $('pwOld').value, p_new: $('pwNew').value });
+      msg.textContent = r.ok ? 'Đã đổi mật khẩu.' : r.message;
+      msg.className = 'hint ' + (r.ok ? 'ok' : 'err');
+      if (r.ok) { $('pwOld').value = ''; $('pwNew').value = ''; }
+    } catch (e) { msg.textContent = e.message; msg.className = 'hint err'; }
+  });
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    if (b.dataset.act === 'register') requireLogin('', 'register');
+    else if (b.dataset.act === 'buy') openPricing();
+  });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && S.token) refreshAccount(); });
+  emit();
+  loadInfo().then(emit);
+  if (S.token) await refreshAccount();
+}

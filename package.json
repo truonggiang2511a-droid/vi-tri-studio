@@ -1,0 +1,10 @@
+{
+  "name": "vi-tri-studio",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@mapbox/vector-tile": "2.0.3",
+    "pbf": "4.0.1",
+    "qrcode-generator": "^1.4.4"
+  }
+}

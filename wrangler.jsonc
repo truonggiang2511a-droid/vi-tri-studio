@@ -1,0 +1,14 @@
+// Chỉ dùng khi dự án Cloudflare là "Worker". Dự án "Pages" bỏ qua file này
+// (Pages cần đặt Build output directory = site trong phần cài đặt).
+{
+  "name": "vi-tri-studio",
+  "main": "worker.js",
+  "compatibility_date": "2026-09-01",
+  "keep_vars": true,
+  "assets": {
+    "directory": "./site",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/api/*"]
+  }
+}

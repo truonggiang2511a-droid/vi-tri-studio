@@ -1,0 +1,1531 @@
+// Dựng khung hình phối cảnh nghiêng: ảnh vệ tinh + đường vẽ trên "mặt đất" (canvas phụ), sau đó
+// bẻ phối cảnh bằng các dải ngang; ghim, thẻ chữ, chữ 3D đứng vẽ sau cùng lên màn hình.
+// Mọi thứ phụ thuộc thời gian t nên cùng một hàm dùng cho xem trước và xuất video từng khung.
+import { project, unproject, haversineKm, metersPerPixel, formatKm, fitZoom } from './geo.js';
+import { drawIcon } from './icons.js';
+import { CATEGORIES } from './data.js';
+
+export const FONT = '"Be Vietnam Pro", "Segoe UI", system-ui, sans-serif';
+export const MAXZ = 17;
+export const FORMATS = {
+  v: { LW: 540, LH: 960, label: 'Dọc 9:16', safe: { top: 96, bottom: 176, x: 22 } },
+  h: { LW: 960, LH: 540, label: 'Ngang 16:9', safe: { top: 54, bottom: 58, x: 40 } },
+  s: { LW: 540, LH: 540, label: 'Vuông 1:1', safe: { top: 60, bottom: 60, x: 24 } },
+};
+export const SPEEDS = { cham: 1, vua: 0.82, nhanh: 0.66 };
+export const CAT_COLORS = {
+  truong: '#3D8BFF', yte: '#FF4D5E', cho: '#FF9F1C', hanhchinh: '#A78BFA',
+  congvien: '#2FBF71', kcn: '#8FA3B8', giaothong: '#1FB8CC', nganhang: '#E9B949',
+};
+const HOUSE = '#FF3B30';
+const GOLD = '#FFD166';
+const PINK = '#FF2E7E';
+const CYAN = '#5EEAF5';
+const ROAD = {
+  3: { core: '#FF8A1F', glow: '#FF6A00', w: 4.8 },
+  2: { core: '#FFC93C', glow: '#FFA200', w: 4.2 },
+  1: { core: '#FFE59A', glow: '#FFC94D', w: 3.4 },
+};
+export const LINE_THEMES = {
+  auto:  { label: 'Theo cấp đường' },
+  vang:  { label: 'Vàng kim',  core: '#FFC93C', glow: '#FFA200' },
+  cam:   { label: 'Cam neon',  core: '#FF8A1F', glow: '#FF5A00' },
+  xanh:  { label: 'Xanh neon', core: '#5EEAF5', glow: '#00B8FF' },
+  hong:  { label: 'Hồng neon', core: '#FF4FA3', glow: '#FF1F7A' },
+  la:    { label: 'Xanh lá',   core: '#5BF08A', glow: '#10C255' },
+  trang: { label: 'Trắng bạc', core: '#F4F7FA', glow: '#9EC9FF' },
+  do:    { label: 'Đỏ',        core: '#FF5A4E', glow: '#FF1E1E' },
+  tim:   { label: 'Tím',       core: '#B48CFF', glow: '#7C4DFF' },
+};
+function mixHex(hex, other, f) {
+  const a = parseInt(hex.slice(1), 16), b = parseInt(other.slice(1), 16);
+  const ch = (x, y) => Math.round(x + (y - x) * f);
+  const r = ch((a >> 16) & 255, (b >> 16) & 255), g = ch((a >> 8) & 255, (b >> 8) & 255), bl = ch(a & 255, b & 255);
+  return '#' + ((1 << 24) | (r << 16) | (g << 8) | bl).toString(16).slice(1);
+}
+function roadStyle(scene, level) {
+  const base = ROAD[level] || ROAD[1];
+  const th = LINE_THEMES[scene.roadTheme];
+  if (!th || !th.core) return base;
+  return { core: level === 1 ? mixHex(th.core, '#FFFFFF', 0.25) : th.core, glow: th.glow, w: base.w };
+}
+function routeStyle(scene) {
+  const th = LINE_THEMES[scene.routeTheme] || LINE_THEMES.vang;
+  const core = th.core || GOLD;
+  return { core, glow: th.glow || '#FFB800', done: mixHex(core, '#FFFFFF', 0.45) };
+}
+export const ATTRIBUTION = 'Ảnh vệ tinh: Esri, Maxar · Dữ liệu: © OpenStreetMap, Overture Maps';
+const NOTE = 'Ranh giới hành chính và đường đi theo OpenStreetMap (tham khảo) · thời gian ô tô ước tính';
+const PMAX = 40;
+const PITCH = { region: 0, houseTop: 0, house: 30, overview: 40, roads: 40, boundary: 38, poi: 34, summary: 28, outro: 32 };
+
+// Cho phép môi trường thử nghiệm (Node) thay cách tạo canvas phụ
+let makeCanvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+export function setCanvasFactory(fn) { makeCanvas = fn; }
+
+// ---------- Ảnh vệ tinh ----------
+const TILE_URL = (z, x, y) =>
+  `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+
+export class TileCache {
+  constructor(onLoad) {
+    this.map = new Map();
+    this.queue = [];
+    this.active = 0;
+    this.max = 12;
+    this.onLoad = onLoad;
+  }
+  key(z, x, y) { return z + '/' + x + '/' + y; }
+  ready(z, x, y) {
+    const e = this.map.get(this.key(z, x, y));
+    return e && e.ok ? e.img : null;
+  }
+  request(z, x, y, urgent = false) {
+    const k = this.key(z, x, y);
+    let e = this.map.get(k);
+    if (e) return e.promise;
+    e = { ok: false, failed: false, tries: 0 };
+    e.promise = new Promise(res => (e.resolve = res));
+    this.map.set(k, e);
+    const job = { z, x, y, e };
+    if (urgent) this.queue.push(job); else this.queue.unshift(job);
+    this.pump();
+    return e.promise;
+  }
+  pump() {
+    while (this.active < this.max && this.queue.length) {
+      const job = this.queue.pop();
+      this.active++;
+      this.load(job).finally(() => { this.active--; this.pump(); });
+    }
+  }
+  load(job) {
+    const { z, x, y, e } = job;
+    return new Promise(done => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.decoding = 'async';
+      img.onload = () => { e.img = img; e.ok = true; e.resolve(true); this.onLoad?.(); done(); };
+      img.onerror = () => {
+        e.tries++;
+        if (e.tries < 3) setTimeout(() => { this.queue.push(job); this.pump(); }, 400 * e.tries);
+        else { e.failed = true; e.resolve(false); }
+        done();
+      };
+      img.src = TILE_URL(z, x, y);
+    });
+  }
+}
+
+// ---------- Phối cảnh ----------
+// Mặt đất: gốc ở tâm ngắm, x sang phải, y xuống (về phía người xem). Màn hình: LW x LH.
+function proj(pitch, LW, LH) {
+  const p = Math.max(0, Math.min(PMAX, pitch || 0));
+  const th = p * Math.PI / 180;
+  const c = Math.cos(th), s = Math.sin(th), D = 1.7 * LH;
+  const Fy = LH * (0.5 + 0.07 * p / PMAX);
+  const Ytop = Fy / (c - Fy * s / D);
+  const Ybot = (Fy - LH) / (c + (LH - Fy) * s / D);
+  return { pitch: p, c, s, D, Fy, Ytop, Ybot, wTop: 1 + Ytop * s / D, LW, LH };
+}
+function g2s(P, gx, gy) {
+  const Y = -gy;
+  const w = 1 + Y * P.s / P.D;
+  return { x: P.LW / 2 + gx / w, y: P.Fy - Y * P.c / w, w };
+}
+function s2g(P, sx, sy) {
+  const yu = P.Fy - sy;
+  const Y = yu / (P.c - yu * P.s / P.D);
+  const w = 1 + Y * P.s / P.D;
+  return { x: (sx - P.LW / 2) * w, y: -Y, w };
+}
+function viewOf(cam) {
+  const k = Math.pow(2, cam.zoom);
+  const c = project(cam.lat, cam.lng, 0);
+  return { k, cx: c.x * k, cy: c.y * k, zoom: cam.zoom };
+}
+const gOf = (v, x0, y0) => ({ x: x0 * v.k - v.cx, y: y0 * v.k - v.cy });
+function gLL(v, lat, lng) { const p = project(lat, lng, 0); return gOf(v, p.x, p.y); }
+
+function groundDims(LW, LH) {
+  const A = proj(PMAX, LW, LH), B = proj(0, LW, LH);
+  const GW = Math.ceil(LW * A.wTop) + 16;
+  const top = Math.ceil(Math.max(A.Ytop, B.Ytop)) + 8;
+  const bot = Math.ceil(Math.max(-A.Ybot, -B.Ybot)) + 8;
+  return { GW, GH: top + bot, GOX: GW / 2, GOY: top };
+}
+const groundCache = new Map();
+function groundCanvas(tl, gs) {
+  const key = tl.fmt + ':' + gs.toFixed(3);
+  let c = groundCache.get(key);
+  if (!c) {
+    if (groundCache.size > 3) groundCache.clear();
+    c = makeCanvas(Math.ceil(tl.G.GW * gs), Math.ceil(tl.G.GH * gs));
+    groundCache.set(key, c);
+  }
+  return c;
+}
+
+// ---------- Ô ảnh ----------
+function tileZoomFor(zoom, gs) {
+  return Math.max(1, Math.min(MAXZ, Math.round(zoom + Math.log2(gs) - 0.35)));
+}
+function tileSpan(cam, rect, gs) {
+  const tz = tileZoomFor(cam.zoom, gs);
+  const kt = Math.pow(2, cam.zoom - tz);
+  const c = project(cam.lat, cam.lng, tz);
+  const n = Math.pow(2, tz);
+  return {
+    tz, kt, c, n,
+    x0: Math.floor((c.x + rect.x0 / kt) / 256), x1: Math.floor((c.x + rect.x1 / kt) / 256),
+    y0: Math.max(0, Math.floor((c.y + rect.y0 / kt) / 256)), y1: Math.min(n - 1, Math.floor((c.y + rect.y1 / kt) / 256)),
+  };
+}
+function drawTiles(g, cache, cam, rect, gs, request) {
+  g.fillStyle = '#17221e';
+  g.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
+  const T = tileSpan(cam, rect, gs);
+  const ds = 256 * T.kt;
+  for (let ty = T.y0; ty <= T.y1; ty++) {
+    for (let tx = T.x0; tx <= T.x1; tx++) {
+      const wx = ((tx % T.n) + T.n) % T.n;
+      const dx = (tx * 256 - T.c.x) * T.kt, dy = (ty * 256 - T.c.y) * T.kt;
+      const img = cache.ready(T.tz, wx, ty);
+      if (img) { g.drawImage(img, dx, dy, ds + 0.6, ds + 0.6); continue; }
+      if (request) cache.request(T.tz, wx, ty, true);
+      for (let d = 1; d <= 6; d++) {
+        const pz = T.tz - d;
+        if (pz < 0) break;
+        const px = wx >> d, py = ty >> d;
+        const pimg = cache.ready(pz, px, py);
+        if (pimg) {
+          const sub = 256 / Math.pow(2, d);
+          g.drawImage(pimg, (wx - (px << d)) * sub, (ty - (py << d)) * sub, sub, sub, dx, dy, ds + 0.6, ds + 0.6);
+          break;
+        }
+      }
+    }
+  }
+}
+function groundRect(P) {
+  return { x0: -P.LW * P.wTop / 2 - 6, x1: P.LW * P.wTop / 2 + 6, y0: -P.Ytop - 6, y1: -P.Ybot + 6 };
+}
+
+// Bẻ phối cảnh: mỗi dải ngang trên màn hình lấy một dải mặt đất có độ rộng tương ứng
+function warp(ctx, G, P, gs, Gd, scale) {
+  const { LW, LH } = P;
+  if (P.pitch < 0.25) {
+    ctx.drawImage(G, (Gd.GOX - LW / 2) * gs, (Gd.GOY - P.Fy) * gs, LW * gs, LH * gs, 0, 0, LW, LH);
+    return;
+  }
+  const band = Math.max(1, 2.6 / scale);
+  for (let sy = 0; sy < LH; sy += band) {
+    const sy1 = Math.min(LH, sy + band);
+    const a = s2g(P, LW / 2, sy), b = s2g(P, LW / 2, sy1);
+    const wm = (a.w + b.w) / 2;
+    ctx.drawImage(G,
+      (Gd.GOX - LW / 2 * wm) * gs, (Gd.GOY + a.y) * gs, LW * wm * gs, Math.max(0.5, (b.y - a.y) * gs),
+      0, sy, LW, sy1 - sy + 0.6);
+  }
+}
+
+// ---------- Nội suy ----------
+const clamp01 = v => Math.max(0, Math.min(1, v));
+const smooth = t => t * t * t * (t * (t * 6 - 15) + 10);
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+const easeOutBack = t => { const c1 = 1.4, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+function easeOutBounce(x) {
+  const n1 = 7.5625, d1 = 2.75;
+  if (x < 1 / d1) return n1 * x * x;
+  if (x < 2 / d1) return n1 * (x -= 1.5 / d1) * x + 0.75;
+  if (x < 2.5 / d1) return n1 * (x -= 2.25 / d1) * x + 0.9375;
+  return n1 * (x -= 2.625 / d1) * x + 0.984375;
+}
+function fadeWin(t, a, b, fin = 0.4, fout = 0.4) {
+  if (t < a || t > b) return 0;
+  return Math.min(clamp01((t - a) / fin), clamp01((b - t) / fout));
+}
+function lerpCam(a, b, e) {
+  const pa = project(a.lat, a.lng, 0), pb = project(b.lat, b.lng, 0);
+  const z = a.zoom + (b.zoom - a.zoom) * e;
+  let w = e;
+  if (Math.abs(b.zoom - a.zoom) > 0.5) {
+    const sa = Math.pow(2, -a.zoom), sb = Math.pow(2, -b.zoom), s = Math.pow(2, -z);
+    w = (sa - s) / (sa - sb);
+    if (!Number.isFinite(w)) w = e;
+  }
+  const c = unproject(pa.x + (pb.x - pa.x) * w, pa.y + (pb.y - pa.y) * w, 0);
+  return { lat: c.lat, lng: c.lng, zoom: z, pitch: (a.pitch || 0) + ((b.pitch || 0) - (a.pitch || 0)) * e };
+}
+
+// ---------- Camera ----------
+function anchorCam(lat, lng, zoom, pitch, LW, LH, fx, fy) {
+  const P = proj(pitch, LW, LH);
+  const g = s2g(P, fx * LW, fy * LH);
+  const k = Math.pow(2, zoom);
+  const h = project(lat, lng, 0);
+  const c = unproject(h.x - g.x / k, h.y - g.y / k, 0);
+  return { lat: c.lat, lng: c.lng, zoom, pitch };
+}
+function fitCam(points, LW, LH, pad, pitch, minZ, maxZ) {
+  const flat = fitZoom(points, LW, LH, pad, minZ, maxZ);
+  if (!flat) return null;
+  let cam = { ...flat, pitch };
+  for (let it = 0; it < 5; it++) {
+    const P = proj(pitch, LW, LH);
+    const v = viewOf(cam);
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of points) {
+      const g = gLL(v, p.lat, p.lng);
+      const s = g2s(P, g.x, g.y);
+      x0 = Math.min(x0, s.x); x1 = Math.max(x1, s.x); y0 = Math.min(y0, s.y); y1 = Math.max(y1, s.y);
+    }
+    const aw = LW - pad.left - pad.right, ah = LH - pad.top - pad.bottom;
+    const f = Math.min(aw / Math.max(1, x1 - x0), ah / Math.max(1, y1 - y0));
+    const gm = s2g(P, (x0 + x1) / 2, (y0 + y1) / 2);
+    const gt = s2g(P, pad.left + aw / 2, pad.top + ah / 2);
+    const c0 = project(cam.lat, cam.lng, 0);
+    const c = unproject(c0.x + (gm.x - gt.x) / v.k, c0.y + (gm.y - gt.y) / v.k, 0);
+    cam = { lat: c.lat, lng: c.lng, zoom: Math.max(minZ, Math.min(maxZ, cam.zoom + Math.log2(f) * 0.85)), pitch };
+  }
+  return cam;
+}
+
+function prepLine(coords) {
+  const n = coords.length;
+  const xs = new Float64Array(n), ys = new Float64Array(n), cum = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const p = project(coords[i][0], coords[i][1], 0);
+    xs[i] = p.x; ys[i] = p.y;
+    if (i) cum[i] = cum[i - 1] + Math.hypot(xs[i] - xs[i - 1], ys[i] - ys[i - 1]);
+  }
+  return { xs, ys, cum, len: cum[n - 1] || 0, coords };
+}
+function nearestOn(c, ways) {
+  const kx = 111.32 * Math.cos(c.lat * Math.PI / 180), ky = 110.57;
+  let best = null;
+  for (const w of ways) {
+    for (let i = 1; i < w.length; i++) {
+      const ax = (w[i - 1][1] - c.lng) * kx, ay = (w[i - 1][0] - c.lat) * ky;
+      const bx = (w[i][1] - c.lng) * kx, by = (w[i][0] - c.lat) * ky;
+      const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+      const t = L ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L)) : 0;
+      const px = ax + dx * t, py = ay + dy * t, d = Math.hypot(px, py);
+      if (!best || d < best.d) best = { d, lat: c.lat + py / ky, lng: c.lng + px / kx };
+    }
+  }
+  return best;
+}
+// Lấy mẫu dọc đường: mỗi điểm có toạ độ, khoảng cách tới điểm gốc và hướng đoạn
+function sampleLines(lines, stepKm) {
+  const out = [];
+  for (const l of lines) {
+    const c = l.coords;
+    for (let i = 1; i < c.length; i++) {
+      const segKm = haversineKm({ lat: c[i - 1][0], lng: c[i - 1][1] }, { lat: c[i][0], lng: c[i][1] });
+      const n = Math.max(1, Math.ceil(segKm / stepKm));
+      for (let j = 0; j < n; j++) {
+        const f = j / n;
+        out.push({
+          lat: c[i - 1][0] + (c[i][0] - c[i - 1][0]) * f,
+          lng: c[i - 1][1] + (c[i][1] - c[i - 1][1]) * f,
+          dist: l.dist[i - 1] + (l.dist[i] - l.dist[i - 1]) * f,
+          a: c[i - 1], b: c[i],
+        });
+      }
+    }
+  }
+  return out;
+}
+
+// Khoảng cách hiện dần đo DỌC THEO tuyến, tính từ điểm gần `from` nhất trên tuyến đó
+// (cộng thêm quãng từ `from` tới điểm ấy), để line chạy ra hai phía liền mạch, không nhảy cóc
+function prepReveal(ways, from) {
+  const kx = 111.32 * Math.cos(from.lat * Math.PI / 180), ky = 110.57;
+  return ways.map(w => {
+    const l = prepLine(w);
+    const n = w.length;
+    const ckm = new Float64Array(n);
+    for (let i = 1; i < n; i++) ckm[i] = ckm[i - 1] + haversineKm({ lat: w[i - 1][0], lng: w[i - 1][1] }, { lat: w[i][0], lng: w[i][1] });
+    let best = { d: Infinity, s: 0 };
+    for (let i = 1; i < n; i++) {
+      const ax = (w[i - 1][1] - from.lng) * kx, ay = (w[i - 1][0] - from.lat) * ky;
+      const bx = (w[i][1] - from.lng) * kx, by = (w[i][0] - from.lat) * ky;
+      const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+      const t = L ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L)) : 0;
+      const d = Math.hypot(ax + dx * t, ay + dy * t);
+      if (d < best.d) best = { d, s: ckm[i - 1] + (ckm[i] - ckm[i - 1]) * t };
+    }
+    if (n === 1) best = { d: haversineKm(from, { lat: w[0][0], lng: w[0][1] }), s: 0 };
+    l.dist = Array.from(ckm, c => best.d + Math.abs(c - best.s));
+    return l;
+  });
+}
+
+// ---------- Kịch bản dựng ----------
+export function buildTimeline(scene, fmtKey, opts = {}) {
+  const F = FORMATS[fmtKey];
+  const { LW, LH, safe } = F;
+  const H = scene.house;
+  const R = scene.radiusKm;
+  const sp = SPEEDS[scene.speed] || 1;
+
+  const pois = scene.pois.map(p => {
+    const line = p.route ? prepLine(p.route.coords) : prepLine([[H.lat, H.lng], [p.lat, p.lng]]);
+    return { ...p, line, approx: !p.route, distKm: p.route ? p.route.km : p.km };
+  });
+  const roads = scene.roads.map(g => {
+    const P = nearestOn(H, g.ways) || { lat: H.lat, lng: H.lng, d: g.nearKm };
+    const lines = prepReveal(g.ways, P);
+    const maxD = Math.max(0.5, ...lines.map(l => Math.max(...l.dist)));
+    const samples = sampleLines(lines, 0.06);
+    return { ...g, P, nearKm: P.d ?? g.nearKm, lines, samples, rrMax: Math.min(maxD, R * 1.4 + 1) };
+  });
+  let boundary = null;
+  if (scene.boundary && scene.boundary.ways?.length) {
+    const b = scene.boundary;
+    const lines = prepReveal(b.ways, b.P);
+    const maxD = Math.max(0.5, ...lines.map(l => Math.max(...l.dist)));
+    const kx = 111.32 * Math.cos(H.lat * Math.PI / 180), ky = 110.57;
+    let nx = (b.P.lng - H.lng) * kx, ny = (b.P.lat - H.lat) * ky;
+    const nl = Math.hypot(nx, ny) || 1;
+    nx /= nl; ny /= nl;
+    const off = Math.max(0.5, Math.min(1.6, nl * 0.8));
+    const across = { lat: b.P.lat + ny * off / ky, lng: b.P.lng + nx * off / kx };
+    const own = { lat: H.lat - ny * Math.max(0.3, off * 0.7) / ky, lng: H.lng - nx * Math.max(0.3, off * 0.7) / kx };
+    const routeLine = b.route ? prepLine(b.route.coords) : prepLine([[H.lat, H.lng], [b.P.lat, b.P.lng]]);
+    boundary = { ...b, lines, rrMax: Math.min(maxD, 6), across, own, routeLine, approx: !b.route };
+  }
+
+  // Camera từng đoạn
+  const camHouseTop = anchorCam(H.lat, H.lng, 16.1, 0, LW, LH, 0.5, 0.56);
+  const camRegion = { lat: H.lat, lng: H.lng, zoom: 11.2, pitch: 0 };
+  const camHouse = anchorCam(H.lat, H.lng, 15.9, PITCH.house, LW, LH, 0.5, fmtKey === 'v' ? 0.6 : 0.62);
+  const dLat = R / 111.32, dLng = R / (111.32 * Math.cos(H.lat * Math.PI / 180));
+  const ringPts = [
+    { lat: H.lat + dLat, lng: H.lng }, { lat: H.lat - dLat, lng: H.lng },
+    { lat: H.lat, lng: H.lng + dLng }, { lat: H.lat, lng: H.lng - dLng },
+  ];
+  const padStd = { left: safe.x + 16, right: safe.x + 16, top: safe.top + 40, bottom: safe.bottom + 20 };
+  const camOverview = fitCam(ringPts, LW, LH, padStd, PITCH.overview, 8.5, 15.5);
+  const roadPts = [H];
+  for (const r of roads) {
+    roadPts.push(r.P);
+    const near = r.samples.filter(q => q.dist <= 1.3);
+    const stepN = Math.max(1, Math.floor(near.length / 10));
+    for (let i = 0; i < near.length; i += stepN) roadPts.push(near[i]);
+  }
+  const camRoads = roads.length
+    ? fitCam(roadPts, LW, LH,
+      { left: safe.x + 30, right: safe.x + 30, top: safe.top + 90, bottom: safe.bottom + 40 }, PITCH.roads, Math.max(11.5, camOverview.zoom), 14.8)
+    : null;
+  const cardH = 104;
+  const camBoundary = boundary
+    ? fitCam([H, boundary.P, boundary.across, boundary.own], LW, LH,
+      fmtKey === 'h'
+        ? { left: safe.x + 30, right: safe.x + 30, top: safe.top + 70, bottom: safe.bottom + cardH + 20 }
+        : { left: safe.x + 40, right: safe.x + 40, top: safe.top + 90, bottom: safe.bottom + cardH + 40 },
+      PITCH.boundary, 11, 15.8)
+    : null;
+  const summaryRows = Math.min(6, pois.length + (boundary ? 1 : 0));
+  const panelH = 58 + summaryRows * 34;
+  const sumPad = fmtKey === 'h'
+    ? { left: safe.x + 40, right: 384 + safe.x + 30, top: safe.top + 40, bottom: safe.bottom + 30 }
+    : { left: safe.x + 34, right: safe.x + 34, top: safe.top + 60, bottom: safe.bottom + panelH + 30 };
+  const camSummary = (pois.length || boundary)
+    ? fitCam([H, ...pois, ...(boundary ? [boundary.P] : [])], LW, LH, sumPad, PITCH.summary, 9, 15.4)
+    : camOverview;
+  const camEnd = anchorCam(H.lat, H.lng, 15.6, PITCH.outro, LW, LH, 0.5, fmtKey === 'v' ? 0.56 : 0.58);
+
+  const raw = [];
+  raw.push({ type: 'intro', d: 5.0, to: camHouseTop, move: 1, vkey: 'intro' });
+  raw.push({ type: 'house', d: 3.8, to: camHouse, move: 0.95, vkey: 'house' });
+  raw.push({ type: 'overview', d: 3.6, to: camOverview, move: 0.8, drift: 0.02, vkey: 'overview' });
+  roads.forEach((r, i) => raw.push({ type: 'road', d: 3.1, to: camRoads, move: i === 0 ? 0.6 : 1, drift: i === 0 ? 0 : 0.02, road: i, vkey: 'road:' + r.id }));
+  if (boundary) raw.push({ type: 'boundary', d: 7.6, to: camBoundary, move: 0.42, drift: 0.015, vkey: 'boundary' });
+  pois.forEach((p, i) => {
+    const pts = [H, p];
+    const L = p.line;
+    for (let j = 0; j < L.xs.length; j += Math.max(1, Math.floor(L.xs.length / 24))) pts.push(unproject(L.xs[j], L.ys[j], 0));
+    const cam = fitCam(pts, LW, LH,
+      { left: safe.x + 50, right: safe.x + 50, top: safe.top + 120, bottom: safe.bottom + 50 }, PITCH.poi, 11, 16);
+    raw.push({ type: 'poi', d: 3.5, to: cam, move: 0.6, drift: 0.02, poi: i, vkey: 'poi:' + p.id });
+  });
+  if (pois.length || boundary) raw.push({ type: 'summary', d: 5.6, to: camSummary, move: 0.5, drift: 0.012, vkey: 'summary' });
+  raw.push({ type: 'outro', d: 3.4, to: camEnd, move: 0.7, drift: 0.02, vkey: 'outro' });
+
+  let total = raw.reduce((s, p) => s + p.d, 0) / sp;
+  let k = 1 / sp;
+  // Có giọng AI theo từng đoạn: mỗi đoạn kéo dài đủ cho câu đọc của nó
+  const vd = opts.voice || null;
+  if (vd) {
+    for (const p of raw) {
+      const dur = vd[p.vkey];
+      if (!dur) continue;
+      const lead = p.type === 'intro' ? 0.5 : 0.3;
+      p.d = Math.max(p.d, (dur + lead + 0.45) * sp);
+    }
+    total = raw.reduce((s, p) => s + p.d, 0) / sp;
+  }
+  if (!vd && opts.fitDuration && opts.fitDuration > 0) {
+    const f = Math.max(0.55, Math.min(3, opts.fitDuration / total));
+    k *= f;
+    total *= f;
+  }
+  let t = 0;
+  let prev = camRegion;
+  const phases = raw.map(p => {
+    const ph = { ...p, t0: t, t1: t + p.d * k, from: prev };
+    t = ph.t1;
+    prev = camAtPhase(ph, ph.t1);
+    return ph;
+  });
+  const first = type => phases.find(p => p.type === type);
+  const tl = {
+    fmt: fmtKey, LW, LH, safe, duration: t, phases, scene, panelH,
+    G: groundDims(LW, LH),
+    intro: first('intro'), house: first('house'), overview: first('overview'), boundaryPh: first('boundary'),
+    summary: first('summary'), outro: first('outro'),
+    roadPhases: phases.filter(p => p.type === 'road'), poiPhases: phases.filter(p => p.type === 'poi'),
+    pois, roads, boundary,
+  };
+  tl.roadsEnd = tl.roadPhases.length ? tl.roadPhases[tl.roadPhases.length - 1].t1 : tl.overview.t1;
+  tl.roadLabels = camRoads ? placeRoadLabels(tl, camRoads) : [];
+  return tl;
+}
+
+function camAtPhase(ph, t) {
+  const d = ph.t1 - ph.t0;
+  const e = smooth(clamp01((t - ph.t0) / (d * (ph.move || 1))));
+  const cam = lerpCam(ph.from, ph.to, e);
+  if (ph.drift) cam.zoom += ph.drift * Math.max(0, t - ph.t0);
+  return cam;
+}
+export function camAt(tl, t) {
+  let ph = tl.phases[tl.phases.length - 1];
+  for (const p of tl.phases) if (t < p.t1) { ph = p; break; }
+  return camAtPhase(ph, Math.min(t, ph.t1));
+}
+
+function labelText(g) {
+  return (g.label || '').toUpperCase();
+}
+function roadFontSize(text) {
+  return text.length > 24 ? 18 : text.length > 16 ? 22 : 27;
+}
+
+// Chọn chỗ đặt chữ 3D cho từng trục đường: trên đường, trong khung, không đè nhau, không đè căn nhà.
+// Khung chữ tính theo góc xoay thật; không tìm được chỗ đẹp thì nới dần điều kiện để tuyến nào cũng có tên.
+function placeRoadLabels(tl, cam) {
+  const { LW, LH, safe } = tl;
+  const P = proj(cam.pitch, LW, LH);
+  const v = viewOf(cam);
+  const H = tl.scene.house;
+  const hg = gLL(v, H.lat, H.lng);
+  const hs = g2s(P, hg.x, hg.y);
+  const house = { x: hs.x - 34, y: hs.y - 72, w: 68, h: 84 };
+  const placed = [house];
+  for (const r of tl.roads) {
+    const pg = gLL(v, r.P.lat, r.P.lng), ps = g2s(P, pg.x, pg.y);
+    placed.push({ x: (hs.x + ps.x) / 2 - 48, y: (hs.y + ps.y) / 2 - 14, w: 96, h: 28 });
+  }
+  const hit = (r, list) => list.some(p => r.x < p.x + p.w + 6 && r.x + r.w + 6 > p.x && r.y < p.y + p.h + 6 && r.y + r.h + 6 > p.y);
+  const out = [];
+  tl.roads.forEach((g, gi) => {
+    let text = labelText(g);
+    if (text.length > 22 && text.startsWith('CAO TỐC ')) text = 'CT ' + text.slice(8);
+    const target = 0.5 + 0.45 * gi;
+    const base = roadFontSize(text);
+    const cands = [];
+    for (const q of g.samples) {
+      if (q.dist > g.rrMax * 0.9 || q.dist < 0.08) continue;
+      const gp = gLL(v, q.lat, q.lng);
+      const sc = g2s(P, gp.x, gp.y);
+      if (sc.x < 0 || sc.x > LW || sc.y < 0 || sc.y > LH) continue;
+      const ga = gLL(v, q.a[0], q.a[1]), gb = gLL(v, q.b[0], q.b[1]);
+      const sa = g2s(P, ga.x, ga.y), sb = g2s(P, gb.x, gb.y);
+      let ang = Math.atan2(sb.y - sa.y, sb.x - sa.x);
+      cands.push({ q, s: sc, ang, steep: Math.abs(Math.sin(ang)), score: Math.abs(q.dist - target) + Math.abs(Math.sin(ang)) * 0.8 });
+    }
+    cands.sort((a, b) => a.score - b.score);
+    const rectOf = (c, size) => {
+      const w = text.length * size * 0.68 + 18, h = size * 1.7;
+      const cs = Math.abs(Math.cos(c.ang)), sn = Math.abs(Math.sin(c.ang));
+      const bw = w * cs + h * sn, bh = w * sn + h * cs;
+      return { x: c.s.x - bw / 2, y: c.s.y - bh / 2, w: bw, h: bh };
+    };
+    const inSafe = (r, m) => r.x >= safe.x - m && r.x + r.w <= LW - safe.x + m && r.y >= safe.top + 40 - m && r.y + r.h <= LH - safe.bottom + m;
+    let pick = null;
+    // Lượt 1: đúng cỡ chữ, trong vùng an toàn, không đè gì. Lượt 2: chữ nhỏ dần. Lượt 3: cho phép đè nhãn khác. Lượt 4: chỉ cần trong khung.
+    const passes = [
+      { sizes: [base], margin: 0, avoid: placed },
+      { sizes: [base * 0.85, base * 0.72], margin: 0, avoid: placed },
+      { sizes: [base * 0.72, base * 0.62], margin: 8, avoid: [house] },
+      { sizes: [base * 0.62], margin: 40, avoid: [] },
+    ];
+    for (const ps of passes) {
+      for (const size of ps.sizes) {
+        for (const c of cands) {
+          const r = rectOf(c, size);
+          if (!inSafe(r, ps.margin) || hit(r, ps.avoid)) continue;
+          pick = { c, size, r };
+          break;
+        }
+        if (pick) break;
+      }
+      if (pick) break;
+    }
+    if (!pick) return;
+    placed.push(pick.r);
+    const q = pick.c.q;
+    out.push({ road: gi, at: { lat: q.lat, lng: q.lng }, a: q.a, b: q.b, dist: q.dist, text, size: Math.round(pick.size) });
+  });
+  return out;
+}
+
+// Danh sách ô ảnh cần cho cả video (tải trước khi xuất)
+export function collectTiles(tl, scale, step = 1 / 10) {
+  const gs = scale;
+  const set = new Map();
+  for (let t = 0; t <= tl.duration + 1e-6; t += step) {
+    const cam = camAt(tl, t);
+    const P = proj(cam.pitch, tl.LW, tl.LH);
+    const T = tileSpan(cam, groundRect(P), gs);
+    for (let ty = T.y0; ty <= T.y1; ty++) {
+      for (let tx = T.x0; tx <= T.x1; tx++) {
+        const wx = ((tx % T.n) + T.n) % T.n;
+        set.set(T.tz + '/' + wx + '/' + ty, [T.tz, wx, ty]);
+      }
+    }
+  }
+  return [...set.values()];
+}
+
+// ---------- Vẽ trên mặt đất ----------
+function linePath(v, line, upto) {
+  const path = new Path2D();
+  let head = null;
+  if (upto <= 0 || line.xs.length < 2) return { path, head };
+  let p = gOf(v, line.xs[0], line.ys[0]);
+  path.moveTo(p.x, p.y);
+  for (let i = 1; i < line.xs.length; i++) {
+    if (line.cum[i] <= upto) {
+      p = gOf(v, line.xs[i], line.ys[i]);
+      path.lineTo(p.x, p.y);
+      head = p;
+    } else {
+      const seg = line.cum[i] - line.cum[i - 1];
+      const f = seg > 0 ? (upto - line.cum[i - 1]) / seg : 0;
+      head = gOf(v, line.xs[i - 1] + (line.xs[i] - line.xs[i - 1]) * f, line.ys[i - 1] + (line.ys[i] - line.ys[i - 1]) * f);
+      path.lineTo(head.x, head.y);
+      break;
+    }
+  }
+  return { path, head };
+}
+
+// Đường hiện dần tính từ một điểm gốc (khoảng cách dist[] tới điểm gốc), trả về các đầu đang chạy
+function revealPath(v, line, rr, heads) {
+  const path = new Path2D();
+  const n = line.xs.length;
+  let on = false;
+  const at = (i, j) => {
+    const f = (rr - line.dist[i]) / (line.dist[j] - line.dist[i]);
+    return gOf(v, line.xs[i] + (line.xs[j] - line.xs[i]) * f, line.ys[i] + (line.ys[j] - line.ys[i]) * f);
+  };
+  for (let i = 0; i < n; i++) {
+    const inside = line.dist[i] <= rr;
+    const p = gOf(v, line.xs[i], line.ys[i]);
+    if (inside) {
+      if (!on) {
+        if (i > 0) { const q = at(i, i - 1); path.moveTo(q.x, q.y); heads.push(q); path.lineTo(p.x, p.y); }
+        else path.moveTo(p.x, p.y);
+        on = true;
+      } else path.lineTo(p.x, p.y);
+    } else if (on) {
+      const q = at(i - 1, i);
+      path.lineTo(q.x, q.y);
+      heads.push(q);
+      on = false;
+    }
+  }
+  return path;
+}
+
+function glowStroke(g, path, core, glow, w, alpha) {
+  if (alpha <= 0.01) return;
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.strokeStyle = glow;
+  g.globalAlpha = alpha * 0.1; g.lineWidth = w * 5.2; g.stroke(path);
+  g.globalAlpha = alpha * 0.26; g.lineWidth = w * 2.6; g.stroke(path);
+  g.strokeStyle = core;
+  g.globalAlpha = alpha; g.lineWidth = w; g.stroke(path);
+  g.strokeStyle = '#ffffff';
+  g.globalAlpha = alpha * 0.7; g.lineWidth = Math.max(0.8, w * 0.3); g.stroke(path);
+  g.globalAlpha = 1;
+}
+
+function headGlow(g, p, color, r = 15) {
+  const gr = g.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+  gr.addColorStop(0, 'rgba(255,255,255,0.95)');
+  gr.addColorStop(0.25, color);
+  gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr;
+  g.beginPath(); g.arc(p.x, p.y, r, 0, Math.PI * 2); g.fill();
+}
+
+function spacedWidth(ctx, text, sp) {
+  let w = 0;
+  for (const ch of text) w += ctx.measureText(ch).width + sp;
+  return w - sp;
+}
+function fillSpaced(ctx, text, x, y, sp) {
+  let cx = x - spacedWidth(ctx, text, sp) / 2;
+  for (const ch of text) { ctx.fillText(ch, cx, y); cx += ctx.measureText(ch).width + sp; }
+}
+function strokeSpaced(ctx, text, x, y, sp) {
+  let cx = x - spacedWidth(ctx, text, sp) / 2;
+  for (const ch of text) { ctx.strokeText(ch, cx, y); cx += ctx.measureText(ch).width + sp; }
+}
+
+// Khối chữ 3D: các lớp đùn theo vector (ex, ey), mặt trên tô chuyển màu, viền mảnh
+function text3D(ctx, text, size, opt) {
+  const { faceTop, faceBot, side, depth, ex, ey, sp = size * 0.08, glow = null, stroke = 'rgba(0,0,0,0.55)' } = opt;
+  ctx.font = `800 ${size}px ${FONT}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  const steps = Math.max(2, Math.round(depth / 0.9));
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  fillSpaced(ctx, text, ex * (depth + 3), ey * (depth + 3), sp);
+  ctx.fillStyle = side;
+  for (let i = steps; i >= 1; i--) {
+    const f = i / steps * depth;
+    fillSpaced(ctx, text, ex * f, ey * f, sp);
+  }
+  if (glow) {
+    ctx.save();
+    ctx.shadowColor = glow; ctx.shadowBlur = size * 0.55;
+    ctx.fillStyle = faceBot;
+    fillSpaced(ctx, text, 0, 0, sp);
+    ctx.restore();
+  }
+  const gr = ctx.createLinearGradient(0, -size * 0.5, 0, size * 0.5);
+  gr.addColorStop(0, faceTop);
+  gr.addColorStop(1, faceBot);
+  ctx.fillStyle = gr;
+  fillSpaced(ctx, text, 0, 0, sp);
+  ctx.lineWidth = Math.max(0.8, size * 0.035);
+  ctx.strokeStyle = stroke;
+  strokeSpaced(ctx, text, 0, 0, sp);
+}
+
+// Chữ in nằm trên mặt đất theo hướng trục đường (sau khi bẻ phối cảnh sẽ nằm nghiêng theo mặt đất)
+function groundText(g, v, L, color, alpha, rise) {
+  if (alpha <= 0.01) return;
+  const p = gLL(v, L.at.lat, L.at.lng);
+  const a = gLL(v, L.a[0], L.a[1]), b = gLL(v, L.b[0], L.b[1]);
+  let ang = Math.atan2(b.y - a.y, b.x - a.x);
+  if (ang > Math.PI / 2) ang -= Math.PI;
+  if (ang < -Math.PI / 2) ang += Math.PI;
+  g.save();
+  g.globalAlpha = alpha;
+  g.translate(p.x, p.y);
+  g.rotate(ang);
+  const s = 0.9 + 0.1 * rise;
+  g.scale(s, s);
+  const ex = Math.sin(ang), ey = Math.cos(ang);
+  text3D(g, L.text, L.size, {
+    faceTop: '#FFFFFF', faceBot: color, side: shade(color, 0.38),
+    depth: L.size * 0.3 * rise, ex, ey, sp: L.size * 0.07, glow: 'rgba(0,0,0,0.55)', stroke: 'rgba(40,20,0,0.7)',
+  });
+  g.restore();
+}
+
+function shade(hex, f) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.round(((n >> 16) & 255) * f), gg = Math.round(((n >> 8) & 255) * f), b = Math.round((n & 255) * f);
+  return `rgb(${r},${gg},${b})`;
+}
+
+// ---------- Vẽ trên màn hình ----------
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function wrapText(ctx, text, maxW, maxLines) {
+  const words = text.split(' ');
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    const test = cur ? cur + ' ' + w : w;
+    if (ctx.measureText(test).width <= maxW || !cur) cur = test;
+    else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  if (lines.length > maxLines) {
+    const keep = lines.slice(0, maxLines);
+    let last = keep[maxLines - 1];
+    while (ctx.measureText(last + '…').width > maxW && last.length > 1) last = last.slice(0, -1);
+    keep[maxLines - 1] = last.trimEnd() + '…';
+    return keep;
+  }
+  return lines;
+}
+function fitOneLine(ctx, text, maxW) {
+  if (ctx.measureText(text).width <= maxW) return text;
+  let s = text;
+  while (s.length > 1 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
+  return s.trimEnd() + '…';
+}
+function spacedCaps(ctx, text, x, y, sp) {
+  let cx = x;
+  for (const ch of text) { ctx.fillText(ch, cx, y); cx += ctx.measureText(ch).width + sp; }
+  return cx;
+}
+
+function drawPoiPin(ctx, x, y, cat, s, alpha) {
+  if (s <= 0.01) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(x, y);
+  ctx.scale(s, s);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath(); ctx.ellipse(0, 3, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(0, -15, 15, 0, Math.PI * 2);
+  ctx.fillStyle = CAT_COLORS[cat] || '#888';
+  ctx.fill();
+  ctx.lineWidth = 2.6; ctx.strokeStyle = '#fff'; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-5, -2.5); ctx.lineTo(0, 3); ctx.lineTo(5, -2.5); ctx.closePath();
+  ctx.fillStyle = '#fff'; ctx.fill();
+  drawIcon(ctx, CATEGORIES[cat]?.icon || 'house', 0, -15, 16, '#fff');
+  ctx.restore();
+}
+
+function drawFlagPin(ctx, x, y, s) {
+  if (s <= 0.01) return;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(s, s);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath(); ctx.ellipse(0, 2, 10, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(0, 0); ctx.bezierCurveTo(-5, -10, -15, -15, -15, -26);
+  ctx.arc(0, -26, 15, Math.PI, 0, false);
+  ctx.bezierCurveTo(15, -15, 5, -10, 0, 0); ctx.closePath();
+  ctx.fillStyle = PINK; ctx.fill();
+  ctx.lineWidth = 2.4; ctx.strokeStyle = '#fff'; ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(-5, -34, 2, 16);
+  ctx.beginPath(); ctx.moveTo(-3, -34); ctx.lineTo(7, -31); ctx.lineTo(-3, -26); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+function drawHousePin(ctx, x, y, dropT, t, s = 1) {
+  const pulse = (t % 1.8) / 1.8;
+  for (const off of [0, 0.5]) {
+    const q = (pulse + off) % 1;
+    ctx.beginPath();
+    ctx.ellipse(x, y, (8 + q * 40) * s, (8 + q * 40) * 0.42 * s, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255,80,70,${0.75 * (1 - q)})`;
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+  }
+  if (dropT <= 0) return;
+  const e = easeOutBounce(clamp01(dropT));
+  const yy = y - (1 - e) * 140;
+  ctx.save();
+  ctx.globalAlpha = clamp01(dropT * 3);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.beginPath(); ctx.ellipse(x, y + 2, 12 * (0.5 + e * 0.5) * s, 4.5 * s, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.translate(x, yy);
+  ctx.scale(s, s);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.bezierCurveTo(-6, -12, -21, -20, -21, -34);
+  ctx.arc(0, -34, 21, Math.PI, 0, false);
+  ctx.bezierCurveTo(21, -20, 6, -12, 0, 0);
+  ctx.closePath();
+  ctx.fillStyle = HOUSE;
+  ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = '#fff'; ctx.stroke();
+  drawIcon(ctx, 'house', 0, -35, 22, '#fff');
+  ctx.restore();
+}
+
+function labelCard(ctx, cx, bottomY, title, sub, alpha, LW, safe) {
+  if (alpha <= 0.01) return;
+  ctx.save();
+  ctx.font = `800 18px ${FONT}`;
+  const tw = ctx.measureText(title).width;
+  ctx.font = `500 12.5px ${FONT}`;
+  const sw = sub ? Math.min(ctx.measureText(sub).width, 300) : 0;
+  const w = Math.max(tw, sw) + 30, h = sub ? 56 : 38;
+  let x = Math.max(safe.x, Math.min(LW - safe.x - w, cx - w / 2));
+  const y = bottomY - h - 8 + (1 - easeOut(alpha)) * 10;
+  ctx.globalAlpha = alpha;
+  ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 3;
+  roundRect(ctx, x, y, w, h, 11);
+  ctx.fillStyle = 'rgba(12,16,24,0.9)'; ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.beginPath();
+  const px = Math.max(x + 14, Math.min(x + w - 14, cx));
+  ctx.moveTo(px - 7, y + h); ctx.lineTo(px, y + h + 8); ctx.lineTo(px + 7, y + h); ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.font = `800 18px ${FONT}`;
+  ctx.fillText(title, x + w / 2, y + 27);
+  if (sub) {
+    ctx.font = `500 12.5px ${FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.82)';
+    ctx.fillText(fitOneLine(ctx, sub, 300), x + w / 2, y + 46);
+  }
+  ctx.restore();
+}
+
+function poiCard(ctx, poi, px, py, alpha, tl, avoid) {
+  if (alpha <= 0.01) return;
+  const { LW, LH, safe } = tl;
+  ctx.save();
+  ctx.font = `800 15.5px ${FONT}`;
+  const lines = wrapText(ctx, poi.name, 232, 2);
+  const nameW = Math.max(...lines.map(l => ctx.measureText(l).width));
+  ctx.font = `700 10.5px ${FONT}`;
+  const catText = CATEGORIES[poi.cat].short;
+  const catW = ctx.measureText(catText).width + catText.length * 1.2;
+  const dist = formatKm(poi.distKm, poi.approx, '≈ ');
+  ctx.font = `800 13px ${FONT}`;
+  const chipW = ctx.measureText(dist).width + 18;
+  const w = Math.max(nameW, catW, chipW) + 26;
+  const h = 32 + lines.length * 19 + 40;
+  const cands = [
+    { x: px - w / 2, y: py - 42 - h },
+    { x: px - w / 2, y: py + 12 },
+    { x: px + 22, y: py - h / 2 - 14 },
+    { x: px - 22 - w, y: py - h / 2 - 14 },
+  ];
+  let best = null;
+  for (const c of cands) {
+    c.x = Math.max(safe.x, Math.min(LW - safe.x - w, c.x));
+    const inY = c.y >= safe.top + 6 && c.y + h <= LH - safe.bottom;
+    const hit = avoid.some(a => c.x < a.x + a.w && c.x + w > a.x && c.y < a.y + a.h && c.y + h > a.y);
+    if (inY && !hit) { best = c; break; }
+    if (!best && inY) best = c;
+  }
+  if (!best) best = { x: cands[0].x, y: Math.max(safe.top + 6, Math.min(LH - safe.bottom - h, cands[0].y)) };
+  const y = best.y + (1 - easeOut(alpha)) * 10;
+  ctx.globalAlpha = alpha;
+  ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 3;
+  roundRect(ctx, best.x, y, w, h, 11);
+  ctx.fillStyle = 'rgba(12,16,24,0.9)'; ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.font = `700 10.5px ${FONT}`;
+  ctx.fillStyle = CAT_COLORS[poi.cat];
+  spacedCaps(ctx, catText, best.x + 13, y + 22, 1.2);
+  ctx.fillStyle = '#fff';
+  ctx.font = `800 15.5px ${FONT}`;
+  lines.forEach((l, i) => ctx.fillText(l, best.x + 13, y + 42 + i * 19));
+  const cy = y + 42 + (lines.length - 1) * 19 + 12;
+  roundRect(ctx, best.x + 13, cy, chipW, 22, 6);
+  ctx.fillStyle = GOLD; ctx.fill();
+  ctx.fillStyle = '#1b1405';
+  ctx.font = `800 13px ${FONT}`;
+  ctx.fillText(dist, best.x + 22, cy + 15.5);
+  ctx.restore();
+}
+
+function chip(ctx, x, y, text, alpha, color = GOLD) {
+  if (alpha <= 0.01) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = `800 13px ${FONT}`;
+  const w = ctx.measureText(text).width + 20, h = 24;
+  roundRect(ctx, x - w / 2, y - h / 2, w, h, 12);
+  ctx.fillStyle = 'rgba(12,16,24,0.9)'; ctx.fill();
+  ctx.lineWidth = 1.2; ctx.strokeStyle = color; ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, x, y + 0.5);
+  ctx.restore();
+}
+
+function crossingChip(ctx, x, y, short, dist, alpha, tl) {
+  if (alpha <= 0.01) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = `800 13.5px ${FONT}`;
+  const t1 = `QUA RANH ${short.toUpperCase()}`;
+  const w1 = ctx.measureText(t1).width;
+  ctx.font = `600 12px ${FONT}`;
+  const w2 = ctx.measureText(dist).width;
+  const w = Math.max(w1, w2) + 24, h = 44;
+  let bx = Math.max(tl.safe.x, Math.min(tl.LW - tl.safe.x - w, x - w / 2));
+  const by = y - h - 8 + (1 - easeOut(alpha)) * 8;
+  roundRect(ctx, bx, by, w, h, 9);
+  ctx.fillStyle = 'rgba(14,10,22,0.92)'; ctx.fill();
+  ctx.lineWidth = 1.5; ctx.strokeStyle = PINK; ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.font = `800 13.5px ${FONT}`;
+  ctx.fillText(t1, bx + w / 2, by + 19);
+  ctx.fillStyle = '#FFB3D0';
+  ctx.font = `600 12px ${FONT}`;
+  ctx.fillText(dist, bx + w / 2, by + 35);
+  ctx.restore();
+}
+
+function boundaryCard(ctx, tl, b, alpha) {
+  if (alpha <= 0.01) return;
+  const { LW, LH, safe } = tl;
+  const horiz = tl.fmt === 'h';
+  const w = horiz ? 400 : LW - safe.x * 2 - 12, h = 104;
+  const x = horiz ? safe.x : (LW - w) / 2;
+  const y = LH - safe.bottom - h - (horiz ? 0 : 14) + (1 - easeOut(alpha)) * 14;
+  const road = b.route ? formatKm(b.route.km) : formatKm(b.km, true, '≈ ');
+  const mins = b.route && b.route.min ? `~${Math.max(1, Math.round(b.route.min))} phút ô tô` : 'đường chim bay';
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 4;
+  roundRect(ctx, x, y, w, h, 14);
+  ctx.fillStyle = 'rgba(10,12,22,0.93)'; ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.lineWidth = 1.6; ctx.strokeStyle = PINK; ctx.stroke();
+  roundRect(ctx, x + 14, y + 26, 46, 46, 10);
+  ctx.fillStyle = PINK; ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(x + 30, y + 36, 3, 26);
+  ctx.beginPath(); ctx.moveTo(x + 33, y + 36); ctx.lineTo(x + 47, y + 41); ctx.lineTo(x + 33, y + 47); ctx.closePath(); ctx.fill();
+  const tx = x + 74;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.font = `700 10.5px ${FONT}`;
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  spacedCaps(ctx, 'TỪ CĂN NHÀ ĐẾN', tx, y + 22, 1.4);
+  ctx.font = `800 18px ${FONT}`;
+  ctx.fillStyle = '#fff';
+  ctx.fillText('RANH GIỚI ', tx, y + 44);
+  const rw = ctx.measureText('RANH GIỚI ').width;
+  ctx.fillStyle = CYAN;
+  ctx.fillText(fitOneLine(ctx, b.short.toUpperCase(), w - (tx - x) - rw - 14), tx + rw, y + 44);
+  ctx.font = `800 25px ${FONT}`;
+  ctx.fillStyle = GOLD;
+  ctx.fillText(road, tx, y + 74);
+  const dw = ctx.measureText(road).width;
+  ctx.font = `600 12.5px ${FONT}`;
+  ctx.fillStyle = '#fff';
+  ctx.fillText(mins, tx + dw + 10, y + 72);
+  ctx.fillStyle = 'rgba(255,255,255,0.62)';
+  ctx.font = `500 12px ${FONT}`;
+  ctx.fillText(`Chim bay khoảng ${formatKm(b.km)}`, tx, y + 93);
+  ctx.restore();
+}
+
+function drawSummary(ctx, tl, p) {
+  if (p <= 0.01) return;
+  const { LW, LH, safe } = tl;
+  const rows = [];
+  if (tl.boundary) {
+    const b = tl.boundary;
+    rows.push({ flag: true, name: `Ranh ${b.short}`, dist: b.route ? formatKm(b.route.km) : formatKm(b.km, true, '≈ ') });
+  }
+  for (const r of [...tl.pois].sort((a, b) => a.distKm - b.distKm)) {
+    if (rows.length >= 6) break;
+    rows.push({ cat: r.cat, name: r.name, dist: formatKm(r.distKm, r.approx, '≈ ') });
+  }
+  const horiz = tl.fmt === 'h';
+  const w = horiz ? 384 : LW - safe.x * 2;
+  const h = tl.panelH;
+  const x = horiz ? LW - safe.x - w : safe.x;
+  const y = horiz ? (LH - h) / 2 : LH - safe.bottom - h;
+  ctx.save();
+  ctx.globalAlpha = clamp01(p * 2);
+  ctx.translate(0, (1 - easeOut(clamp01(p * 1.6))) * 16);
+  ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 4;
+  roundRect(ctx, x, y, w, h, 14);
+  ctx.fillStyle = 'rgba(10,12,22,0.92)'; ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.lineWidth = 1.4; ctx.strokeStyle = 'rgba(255,209,102,0.7)'; ctx.stroke();
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = GOLD;
+  ctx.font = `700 11px ${FONT}`;
+  spacedCaps(ctx, `TỪ CĂN NHÀ · BÁN KÍNH ${String(tl.scene.radiusKm).replace('.', ',')} KM`, x + 16, y + 27, 1.1);
+  rows.forEach((r, i) => {
+    const rp = clamp01(p * 2.2 - i * 0.12);
+    if (rp <= 0) return;
+    const ry = y + 46 + i * 34;
+    ctx.globalAlpha = rp;
+    roundRect(ctx, x + 17, ry + 1, 22, 22, 6);
+    ctx.fillStyle = r.flag ? PINK : CAT_COLORS[r.cat]; ctx.fill();
+    if (r.flag) {
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(x + 24, ry + 6, 2, 13);
+      ctx.beginPath(); ctx.moveTo(x + 26, ry + 6); ctx.lineTo(x + 34, ry + 9); ctx.lineTo(x + 26, ry + 12); ctx.closePath(); ctx.fill();
+    } else drawIcon(ctx, CATEGORIES[r.cat].icon, x + 28, ry + 12, 13, '#fff');
+    ctx.font = `800 14px ${FONT}`;
+    const dw = ctx.measureText(r.dist).width;
+    ctx.fillStyle = GOLD;
+    ctx.textAlign = 'right';
+    ctx.fillText(r.dist, x + w - 16, ry + 17);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#fff';
+    ctx.font = `700 14px ${FONT}`;
+    ctx.fillText(fitOneLine(ctx, r.name, w - 64 - dw - 26), x + 50, ry + 17);
+  });
+  ctx.restore();
+}
+
+function drawTitle(ctx, tl, text, sub, alpha) {
+  if (alpha <= 0.01 || !text) return;
+  const { LW, safe } = tl;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const size = tl.fmt === 'h' ? 30 : 34;
+  ctx.font = `800 ${size}px ${FONT}`;
+  const lines = wrapText(ctx, text.toUpperCase(), LW - safe.x * 2 - 20, 2);
+  let y = (tl.fmt === 'v' ? safe.top + 8 : safe.top - 6) + (1 - easeOut(alpha)) * -10;
+  ctx.translate(LW / 2, 0);
+  lines.forEach((l, i) => {
+    ctx.save();
+    ctx.translate(0, y + i * (size + 8));
+    ctx.translate(-0, 0);
+    text3DCentered(ctx, l, size, i === lines.length - 1 && lines.length > 1 ? CYAN : '#FFFFFF');
+    ctx.restore();
+  });
+  if (sub) {
+    const sy = y + (lines.length - 1) * (size + 8) + size * 0.95;
+    ctx.font = `600 13px ${FONT}`;
+    const w = ctx.measureText(sub).width + 22;
+    roundRect(ctx, -w / 2, sy - 12, w, 24, 6);
+    ctx.fillStyle = 'rgba(10,12,22,0.85)'; ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(sub, 0, sy + 0.5);
+  }
+  ctx.restore();
+}
+
+// Chữ 3D đứng (bảng hiệu): đùn xuống dưới, tâm tại gốc toạ độ hiện tại
+function text3DCentered(ctx, text, size, color, rise = 1, glow = null) {
+  const isCyan = color === CYAN;
+  text3D(ctx, text, size, {
+    faceTop: '#FFFFFF', faceBot: color, side: isCyan ? '#0E6E79' : '#5B6670',
+    depth: size * 0.16 * rise, ex: 0, ey: 1, sp: size * 0.07, glow,
+  });
+}
+
+function drawBrand(ctx, tl, text, phone, alpha) {
+  if ((!text && !phone) || alpha <= 0.01) return;
+  const { LW, LH, safe } = tl;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const rise = (1 - easeOut(alpha)) * 12;
+  const bottom = LH - safe.bottom + (tl.fmt === 'v' ? -6 : 0) + rise;
+  if (phone) {
+    // Thẻ liên hệ: số điện thoại to, tên thương hiệu nhỏ phía trên
+    ctx.font = `800 22px ${FONT}`;
+    const ph = 'Gọi xem nhà  ' + phone;
+    const pw = Math.min(LW - safe.x * 2 - 20, ctx.measureText(ph).width + 40), h = 46;
+    const y = bottom - h;
+    if (text) {
+      ctx.font = `700 13px ${FONT}`;
+      const t = fitOneLine(ctx, text, LW - safe.x * 2 - 40);
+      const tw = ctx.measureText(t).width + 26;
+      roundRect(ctx, (LW - tw) / 2, y - 34, tw, 26, 13);
+      ctx.fillStyle = 'rgba(8,16,14,0.78)'; ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(t, LW / 2, y - 21);
+    }
+    roundRect(ctx, (LW - pw) / 2, y, pw, h, 23);
+    ctx.fillStyle = GOLD; ctx.fill();
+    ctx.fillStyle = '#1b1405';
+    ctx.font = `800 22px ${FONT}`;
+    ctx.fillText(fitOneLine(ctx, ph, pw - 24), LW / 2, y + h / 2 + 1);
+  } else {
+    ctx.font = `800 16px ${FONT}`;
+    const t = fitOneLine(ctx, text, LW - safe.x * 2 - 40);
+    const w = ctx.measureText(t).width + 34, h = 38;
+    const y = bottom - h;
+    roundRect(ctx, (LW - w) / 2, y, w, h, 19);
+    ctx.fillStyle = GOLD; ctx.fill();
+    ctx.fillStyle = '#1b1405';
+    ctx.fillText(t, LW / 2, y + h / 2 + 1);
+  }
+  ctx.restore();
+}
+
+// ---------- Khung hình ----------
+export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
+  const { LW, LH, safe, scene } = tl;
+  const T = tl.duration;
+  const cam = camAt(tl, t);
+  const P = proj(cam.pitch, LW, LH);
+  const gs = scale;
+  const G = groundCanvas(tl, gs);
+  const g = G.getContext('2d');
+  g.setTransform(gs, 0, 0, gs, tl.G.GOX * gs, tl.G.GOY * gs);
+  const rect = groundRect(P);
+  drawTiles(g, cache, cam, rect, gs, request);
+
+  // Tông màu như video mẫu: xanh lục tối, giảm chói
+  g.globalCompositeOperation = 'multiply';
+  g.fillStyle = '#9fc4be';
+  g.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
+  g.globalCompositeOperation = 'source-over';
+  g.fillStyle = 'rgba(6,14,18,0.12)';
+  g.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
+
+  const v = viewOf(cam);
+  const H = scene.house;
+  const hg = gLL(v, H.lat, H.lng);
+  const ov = tl.overview, ho = tl.house, sm = tl.summary, ou = tl.outro, bp = tl.boundaryPh;
+  const roadsEnd = tl.roadsEnd;
+  const firstPoi = tl.poiPhases[0];
+  const inRoads = t >= ov.t0 && t < roadsEnd;
+
+  // Vòng bán kính
+  let ringA = 0, ringP = 0;
+  if (t >= ov.t0) {
+    const d = ov.t1 - ov.t0;
+    ringP = clamp01((t - ov.t0 - 0.3 * d) / (0.6 * d));
+    ringA = t < roadsEnd ? 1 : Math.max(0, 1 - (t - roadsEnd) / 0.6);
+    if (sm && t >= sm.t0) ringA = Math.min(0.7, clamp01((t - sm.t0) / 0.8));
+    if (t >= ou.t0) ringA = Math.max(0, 0.7 - (t - ou.t0) / 0.8);
+  }
+  const rpx = scene.radiusKm * 1000 / metersPerPixel(H.lat, cam.zoom);
+  if (ringP > 0 && ringA > 0.01) {
+    g.save();
+    g.globalAlpha = ringA;
+    g.beginPath();
+    g.arc(hg.x, hg.y, rpx, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ringP);
+    g.setLineDash([10, 8]);
+    g.strokeStyle = 'rgba(255,255,255,0.9)';
+    g.lineWidth = 2.2;
+    g.stroke();
+    g.setLineDash([]);
+    if (ringP >= 1) {
+      g.fillStyle = 'rgba(94,234,245,0.05)';
+      g.beginPath(); g.arc(hg.x, hg.y, rpx, 0, Math.PI * 2); g.fill();
+    }
+    g.restore();
+  }
+
+  // Trục đường lớn: vẽ dần từng tuyến từ điểm gần nhà nhất toả ra hai phía
+  let roadAlpha = 0;
+  if (tl.roadPhases.length && t >= tl.roadPhases[0].t0) {
+    roadAlpha = t < roadsEnd ? 1 : Math.max(0.26, 1 - (t - roadsEnd) / 0.7);
+    if (sm && t >= sm.t0) roadAlpha = 0.26 + 0.34 * clamp01((t - sm.t0) / 0.8);
+    if (t >= ou.t0) roadAlpha = Math.max(0.3, 0.6 - (t - ou.t0) / 0.8);
+  }
+  const roadHeads = [];
+  tl.roadPhases.forEach(ph => {
+    if (t < ph.t0) return;
+    const r = tl.roads[ph.road];
+    const d = ph.t1 - ph.t0;
+    const p = t >= ph.t1 ? 1 : clamp01((t - ph.t0 - 0.12 * d) / (0.68 * d));
+    const rr = smooth(p) * r.rrMax;
+    const st = roadStyle(scene, r.level);
+    const heads = [];
+    const paths = r.lines.map(l => revealPath(v, l, rr, heads));
+    for (const path of paths) glowStroke(g, path, st.core, st.glow, st.w, roadAlpha);
+    if (p > 0 && p < 1) for (const hd of heads) roadHeads.push({ p: hd, c: st.core });
+    // Đường nối nhà → trục đường (chỉ trong đoạn của tuyến này)
+    const ca = fadeWin(t, ph.t0 + 0.05 * d, ph.t1 + 0.1, 0.4, 0.35);
+    if (ca > 0) {
+      const pg = gLL(v, r.P.lat, r.P.lng);
+      g.save();
+      g.globalAlpha = ca;
+      g.setLineDash([3, 6]);
+      g.lineCap = 'round';
+      g.strokeStyle = '#ffffff';
+      g.lineWidth = 2;
+      g.beginPath(); g.moveTo(hg.x, hg.y); g.lineTo(pg.x, pg.y); g.stroke();
+      g.setLineDash([]);
+      g.beginPath(); g.arc(pg.x, pg.y, 5, 0, Math.PI * 2);
+      g.fillStyle = st.core; g.fill();
+      g.lineWidth = 2; g.stroke();
+      g.restore();
+    }
+  });
+  for (const hd of roadHeads) headGlow(g, hd.p, hd.c, 16);
+
+  // Chữ 3D in trên trục đường
+  const roadLabelA = t < roadsEnd ? 1 : Math.max(0, 1 - (t - roadsEnd) / 0.5);
+  if (roadLabelA > 0) {
+    for (const L of tl.roadLabels) {
+      const ph = tl.roadPhases[L.road];
+      if (!ph || t < ph.t0) continue;
+      const d = ph.t1 - ph.t0;
+      const rise = clamp01((t - ph.t0 - 0.5 * d) / 0.7);
+      if (rise <= 0) continue;
+      const st = roadStyle(scene, tl.roads[L.road].level);
+      groundText(g, v, L, st.core, Math.min(roadLabelA, clamp01(rise * 1.5)), easeOut(rise));
+    }
+  }
+
+  // Ranh giới tỉnh/thành: chỉ hiện trong đoạn riêng, sau đó ẩn cho đỡ rối
+  const B = tl.boundary;
+  let bA = 0, bRR = 0;
+  if (B && bp && t >= bp.t0) {
+    const d = bp.t1 - bp.t0;
+    bRR = smooth(clamp01((t - bp.t0 - 0.16 * d) / (0.44 * d))) * B.rrMax;
+    bA = t < bp.t1 ? 1 : Math.max(0, 1 - (t - bp.t1) / 0.6);
+    if (sm && t >= sm.t0) { bA = 0.45 * clamp01((t - sm.t0) / 0.8); bRR = B.rrMax; }
+    if (t >= ou.t0) bA = Math.max(0, 0.45 - (t - ou.t0) / 0.6);
+  }
+  if (bA > 0.01 && bRR > 0) {
+    const heads = [];
+    const paths = B.lines.map(l => revealPath(v, l, bRR, heads));
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    for (const path of paths) {
+      g.globalAlpha = bA * 0.16; g.strokeStyle = CYAN; g.lineWidth = 20; g.stroke(path);
+      g.globalAlpha = bA * 0.45; g.strokeStyle = PINK; g.lineWidth = 10; g.stroke(path);
+      g.globalAlpha = bA; g.lineWidth = 4.6; g.stroke(path);
+      g.save();
+      g.globalAlpha = bA * 0.95; g.strokeStyle = '#ffffff'; g.lineWidth = 2.4;
+      g.setLineDash([0.1, 9]); g.lineDashOffset = -t * 16;
+      g.stroke(path);
+      g.restore();
+    }
+    g.globalAlpha = 1;
+    if (t < bp.t1) for (const hd of heads) headGlow(g, hd, PINK, 18);
+    // Đường từ nhà tới chỗ qua ranh
+    if (t < bp.t1 + 0.6 && t >= bp.t0) {
+      const d = bp.t1 - bp.t0;
+      const rp = clamp01((t - bp.t0 - 0.56 * d) / (0.24 * d));
+      if (rp > 0) {
+        const L = B.routeLine;
+        const { path, head } = linePath(v, L, L.len * smooth(rp));
+        if (B.approx) g.setLineDash([8, 7]);
+        const rs = routeStyle(scene);
+        glowStroke(g, path, rs.core, rs.glow, 3.6, Math.min(1, bA * 1.2));
+        g.setLineDash([]);
+        if (head && rp < 1) headGlow(g, head, rs.core, 13);
+      }
+    }
+  }
+
+  // Đường đi tới tiện ích (giữ như cũ, anh đã duyệt)
+  const curIdx = tl.poiPhases.findIndex(ph => t >= ph.t0 && t < ph.t1);
+  const afterAll = tl.poiPhases.length && t >= tl.poiPhases[tl.poiPhases.length - 1].t1;
+  tl.poiPhases.forEach((ph, i) => {
+    if (t < ph.t0) return;
+    const poi = tl.pois[i];
+    const L = poi.line;
+    const d = ph.t1 - ph.t0;
+    const p = clamp01((t - ph.t0 - 0.14 * d) / (0.46 * d));
+    const done = t >= ph.t1;
+    let a = done ? (afterAll ? 0.6 : 0.4) : 1;
+    if (t >= ou.t0) a = Math.max(0.25, 0.6 - (t - ou.t0) / 0.8);
+    if (poi.approx) g.setLineDash([7, 6]);
+    const { path, head } = linePath(v, L, L.len * (done ? 1 : smooth(p)));
+    const rs = routeStyle(scene);
+    glowStroke(g, path, done ? rs.done : rs.core, rs.glow, done ? 2.4 : 3.4, a);
+    g.setLineDash([]);
+    if (!done && head && p > 0 && p < 1) headGlow(g, head, rs.core, 13);
+  });
+
+  // ---- Bẻ phối cảnh lên màn hình ----
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#0c1513';
+  ctx.fillRect(0, 0, LW, LH);
+  ctx.imageSmoothingEnabled = true;
+  if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+  warp(ctx, G, P, gs, tl.G, scale);
+
+  // Sương xa + viền tối
+  if (P.pitch > 1) {
+    const fog = ctx.createLinearGradient(0, 0, 0, LH * 0.34);
+    fog.addColorStop(0, `rgba(16,34,38,${0.62 * P.pitch / PMAX})`);
+    fog.addColorStop(1, 'rgba(16,34,38,0)');
+    ctx.fillStyle = fog;
+    ctx.fillRect(0, 0, LW, LH * 0.34);
+  }
+  const vg = ctx.createRadialGradient(LW / 2, LH * 0.55, Math.min(LW, LH) * 0.35, LW / 2, LH * 0.55, Math.max(LW, LH) * 0.75);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.5)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, LW, LH);
+  const tg = ctx.createLinearGradient(0, 0, 0, safe.top + 90);
+  tg.addColorStop(0, 'rgba(0,0,0,0.55)'); tg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = tg; ctx.fillRect(0, 0, LW, safe.top + 90);
+
+  const S = (lat, lng) => { const q = gLL(v, lat, lng); return g2s(P, q.x, q.y); };
+  const hs = g2s(P, hg.x, hg.y);
+  const depthScale = w => Math.max(0.82, Math.min(1.2, 1 / w));
+
+  // Nhãn vòng bán kính
+  if (ringP > 0.05 && ringA > 0.05) {
+    const top = g2s(P, hg.x, hg.y - rpx);
+    if (top.y > safe.top + 14 && top.y < LH - safe.bottom) {
+      const txt = `BÁN KÍNH ${String(scene.radiusKm).replace('.', ',')} KM`;
+      ctx.save();
+      ctx.globalAlpha = ringA;
+      ctx.font = `800 11.5px ${FONT}`;
+      const w = ctx.measureText(txt).width + 22;
+      roundRect(ctx, top.x - w / 2, top.y - 12, w, 24, 12);
+      ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fill();
+      ctx.fillStyle = '#10161d'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(txt, top.x, top.y + 0.5);
+      ctx.restore();
+    }
+  }
+
+  // Khoảng cách tới từng trục đường
+  tl.roadPhases.forEach(ph => {
+    const r = tl.roads[ph.road];
+    const d = ph.t1 - ph.t0;
+    const a = fadeWin(t, ph.t0 + 0.2 * d, ph.t1 + 0.1, 0.4, 0.35);
+    if (a <= 0) return;
+    const ps = S(r.P.lat, r.P.lng);
+    const far = Math.hypot(ps.x - hs.x, ps.y - hs.y) > 110;
+    const cx = far ? (hs.x + ps.x) / 2 : ps.x + (ps.x >= hs.x ? 58 : -58);
+    const cy = far ? (hs.y + ps.y) / 2 : ps.y + 4;
+    chip(ctx, Math.max(safe.x + 50, Math.min(LW - safe.x - 50, cx)), cy, `cách ${formatKm(r.nearKm, true, '≈ ')}`, a, roadStyle(scene, r.level).core);
+  });
+
+  // Ghim tiện ích
+  tl.poiPhases.forEach((ph, i) => {
+    if (t < ph.t0) return;
+    const poi = tl.pois[i];
+    const d = ph.t1 - ph.t0;
+    const s = S(poi.lat, poi.lng);
+    const pop = clamp01((t - ph.t0 - 0.55 * d) / 0.5);
+    const sc = i === curIdx ? easeOutBack(pop) : (t >= ph.t1 ? 0.8 : easeOutBack(pop));
+    drawPoiPin(ctx, s.x, s.y, poi.cat, sc * depthScale(s.w), 1);
+  });
+
+  // Ranh giới: cờ qua ranh, chữ địa phận 3D, thẻ khoảng cách
+  if (B && bp) {
+    const d = bp.t1 - bp.t0;
+    const la = fadeWin(t, bp.t0 + 0.48 * d, bp.t1 + 0.3, 0.6, 0.5);
+    if (la > 0) {
+      const rise = easeOut(clamp01((t - bp.t0 - 0.48 * d) / 0.8));
+      const own = S(B.own.lat, B.own.lng), acr = S(B.across.lat, B.across.lng);
+      const cardTop = LH - safe.bottom - 104 - (tl.fmt === 'h' ? 0 : 14);
+      own.y = Math.min(own.y, cardTop - 46);
+      // Không cho chữ địa phận đè lên ghim căn nhà: thử đặt dưới, trên, rồi hai bên ghim
+      const ownW = Math.max(120, (scene.provinceShort || '').length * 30), ownH = 70;
+      const hitHouse = (x, y) => Math.abs(x - hs.x) < ownW / 2 + 26 && y + ownH / 2 > hs.y - 62 && y - ownH / 2 < hs.y + 12;
+      if (hitHouse(own.x, own.y)) {
+        const tries = [[hs.x, hs.y + 70], [hs.x, hs.y - 110], [hs.x + ownW / 2 + 60, hs.y - 20], [hs.x - ownW / 2 - 60, hs.y - 20]];
+        for (const [x, y] of tries) {
+          if (y > safe.top + 30 && y < cardTop - 46 && x > safe.x + ownW / 2 && x < LW - safe.x - ownW / 2) { own.x = x; own.y = y; break; }
+        }
+      }
+      own.x = Math.max(safe.x + ownW / 2, Math.min(LW - safe.x - ownW / 2, own.x));
+      acr.x = Math.max(safe.x + 90, Math.min(LW - safe.x - 90, acr.x));
+      acr.y = Math.max(safe.top + 34, Math.min(cardTop - 40, acr.y));
+      tl._acr = acr;
+      const ownName = (scene.provinceShort || '').toUpperCase();
+      ctx.save();
+      ctx.globalAlpha = la;
+      if (ownName) {
+        ctx.save();
+        ctx.translate(own.x, own.y);
+        text3DCentered(ctx, ownName, tl.fmt === 'h' ? 34 : 38, '#FFFFFF', rise);
+        if (scene.commune) {
+          ctx.font = `700 12.5px ${FONT}`;
+          ctx.fillStyle = 'rgba(255,255,255,0.85)';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 4;
+          ctx.fillText(scene.commune.toUpperCase(), 0, 30);
+        }
+        ctx.restore();
+      }
+      ctx.save();
+      ctx.translate(acr.x, acr.y);
+      text3DCentered(ctx, B.short.toUpperCase(), tl.fmt === 'h' ? 38 : 44, CYAN, rise, 'rgba(94,234,245,0.55)');
+      ctx.restore();
+      ctx.restore();
+    }
+    if (t >= bp.t0 && t < bp.t1 + 0.4) {
+      const ps = S(B.P.lat, B.P.lng);
+      const pop = clamp01((t - bp.t0 - 0.74 * d) / 0.5);
+      const fa = t < bp.t1 ? 1 : Math.max(0, 1 - (t - bp.t1) / 0.4);
+      ctx.save(); ctx.globalAlpha = fa;
+      drawFlagPin(ctx, ps.x, ps.y, easeOutBack(pop) * depthScale(ps.w));
+      ctx.restore();
+      const dist = (B.route ? formatKm(B.route.km) : formatKm(B.km, true, '≈ ')) + (B.route && B.route.min ? ` · ~${Math.max(1, Math.round(B.route.min))} phút` : '');
+      const acr = tl._acr;
+      const above = !acr || Math.abs(acr.x - ps.x) > 150 || acr.y > ps.y || ps.y - 40 - 52 > acr.y + 34;
+      crossingChip(ctx, ps.x, above ? ps.y - 40 : ps.y + 62, B.short, dist, fadeWin(t, bp.t0 + 0.78 * d, bp.t1 + 0.3, 0.4, 0.3), tl);
+    }
+    boundaryCard(ctx, tl, B, fadeWin(t, bp.t0 + 0.62 * d, bp.t1 + 0.3, 0.6, 0.4));
+  }
+
+  // Ghim căn nhà
+  const dropT = t >= ho.t0 ? (t - ho.t0) / 0.75 : 0;
+  if (t > tl.intro.t0 + (tl.intro.t1 - tl.intro.t0) * 0.6 || dropT > 0) drawHousePin(ctx, hs.x, hs.y, dropT, t, depthScale(hs.w));
+
+  // Tiêu đề + thẻ căn nhà
+  drawTitle(ctx, tl, scene.title, scene.titleSub, fadeWin(t, 0.3, ov.t0 + 0.5, 0.6, 0.6));
+  const houseCardA = Math.max(fadeWin(t, ho.t0 + 0.5, ov.t0 + 0.4, 0.45, 0.4), fadeWin(t, ou.t0 + 0.5, T + 10, 0.45, 0.4));
+  labelCard(ctx, hs.x, hs.y - 60 * depthScale(hs.w), scene.label, scene.sub, houseCardA, LW, safe);
+
+  // Thẻ tiện ích
+  tl.poiPhases.forEach((ph, i) => {
+    const d = ph.t1 - ph.t0;
+    const a = fadeWin(t, ph.t0 + 0.6 * d, ph.t1 + 0.2, 0.4, 0.3);
+    if (a <= 0) return;
+    const poi = tl.pois[i];
+    const s = S(poi.lat, poi.lng);
+    poiCard(ctx, poi, s.x, s.y, a, tl, [{ x: hs.x - 26, y: hs.y - 64, w: 52, h: 68 }]);
+  });
+
+  if (sm) {
+    const p = t < sm.t0 ? 0 : (t < ou.t0 + 0.4 ? clamp01((t - sm.t0 - 0.3 * (sm.t1 - sm.t0)) / 0.9) : Math.max(0, 1 - (t - ou.t0 - 0.4) / 0.4));
+    drawSummary(ctx, tl, p);
+  }
+  drawBrand(ctx, tl, scene.brand, scene.phone, fadeWin(t, ou.t0 + 0.8, T + 10, 0.5, 0.4));
+
+  // Nguồn dữ liệu (bắt buộc giữ)
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 3;
+  ctx.fillStyle = 'rgba(255,255,255,0.72)';
+  ctx.font = `500 8px ${FONT}`;
+  if (B) ctx.fillText(NOTE, LW / 2, LH - 17);
+  ctx.font = `500 8.5px ${FONT}`;
+  ctx.fillText(ATTRIBUTION, LW / 2, LH - 6);
+  ctx.restore();
+}
+
+// Khung tĩnh để dời ghim: nhìn thẳng từ trên xuống, có hướng dẫn
+export function renderEdit(ctx, house, fmtKey, { cache, scale = 1 }, zoom = 17) {
+  const { LW, LH } = FORMATS[fmtKey];
+  const cam = { lat: house.lat, lng: house.lng, zoom };
+  ctx.setTransform(scale, 0, 0, scale, LW / 2 * scale, LH / 2 * scale);
+  drawTiles(ctx, cache, cam, { x0: -LW / 2, x1: LW / 2, y0: -LH / 2, y1: LH / 2 }, scale, true);
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  ctx.fillStyle = 'rgba(8,12,18,0.12)';
+  ctx.fillRect(0, 0, LW, LH);
+  drawHousePin(ctx, LW / 2, LH / 2, 1, (typeof performance !== 'undefined' ? performance.now() : 0) / 1000);
+  ctx.save();
+  ctx.font = `700 14px ${FONT}`;
+  const txt = 'Chạm vào đúng căn nhà để dời ghim';
+  const w = ctx.measureText(txt).width + 28;
+  roundRect(ctx, (LW - w) / 2, 18, w, 34, 17);
+  ctx.fillStyle = 'rgba(14,18,24,0.88)'; ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(txt, LW / 2, 35.5);
+  ctx.font = `500 8.5px ${FONT}`;
+  ctx.fillStyle = 'rgba(255,255,255,0.78)';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(ATTRIBUTION, LW / 2, LH - 7);
+  ctx.restore();
+  return cam;
+}
+
+export function editTapToLatLng(house, fmtKey, fx, fy, zoom = 17) {
+  const { LW, LH } = FORMATS[fmtKey];
+  const c = project(house.lat, house.lng, zoom);
+  return unproject(c.x + (fx * LW - LW / 2), c.y + (fy * LH - LH / 2), zoom);
+}

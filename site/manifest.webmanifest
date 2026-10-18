@@ -1,0 +1,18 @@
+{
+  "name": "Vị Trí Studio",
+  "short_name": "Vị Trí",
+  "description": "Dán toạ độ căn nhà, quét tiện ích 5 km, vẽ quốc lộ, cao tốc và xuất video vị trí MP4.",
+  "lang": "vi",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0e1815",
+  "theme_color": "#0e1815",
+  "categories": ["productivity", "business", "photo"],
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
