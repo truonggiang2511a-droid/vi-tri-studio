@@ -375,7 +375,21 @@ function showOrder(order, bank) {
   $('pAmount').dataset.raw = String(order.amount);
   $('pCode').textContent = order.code;
   $('payHelpZalo').hidden = !bank.zalo;
-  drawQr($('qrCanvas'), vietqrPayload({ bin: bank.bin, account: bank.account, amount: order.amount, info: order.code }));
+  // Ảnh QR của SePay (vietqr.app) có sẵn số tiền + nội dung là mã đơn để tự cộng lượt.
+  // Ảnh không tải được thì vẽ mã VietQR ngay trên máy (cùng tài khoản, cùng số tiền, cùng nội dung).
+  const qs = new URLSearchParams({ acc: bank.account, bank: bank.bin, amount: String(order.amount), des: order.code, template: 'compact', showinfo: 'true' });
+  if (bank.holder) qs.set('holder', bank.holder);
+  const qrUrl = 'https://vietqr.app/img?' + qs.toString();
+  const img = $('qrImg'), cv = $('qrCanvas');
+  const fallback = () => {
+    img.hidden = true; cv.hidden = false;
+    drawQr(cv, vietqrPayload({ bin: bank.bin, account: bank.account, amount: order.amount, info: order.code }));
+  };
+  img.onerror = fallback;
+  img.onload = () => { img.hidden = false; cv.hidden = true; };
+  img.src = qrUrl;
+  $('qrDownload').href = qrUrl + '&download=true';
+  setTimeout(() => { if (!img.complete || !img.naturalWidth) fallback(); }, 6000);
   $('payStatus').className = 'pay-status';
   $('payStatus').innerHTML = '<span class="spinner" aria-hidden="true"></span> Đang chờ ngân hàng báo về…';
   payView('qr');

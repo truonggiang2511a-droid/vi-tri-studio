@@ -359,7 +359,12 @@
     <div id="payQr" hidden>
       <button class="link-btn" type="button" id="payBack">← Chọn gói khác</button>
       <h3 id="payTitle"></h3>
-      <div class="qr-wrap"><canvas id="qrCanvas" aria-label="Mã VietQR chuyển khoản"></canvas><span class="qr-cap">Mở app ngân hàng → Quét mã</span></div>
+      <div class="qr-wrap">
+        <img id="qrImg" class="qr-img" alt="Mã VietQR chuyển khoản (SePay)" hidden>
+        <canvas id="qrCanvas" aria-label="Mã VietQR chuyển khoản" hidden></canvas>
+        <span class="qr-cap">Mở app ngân hàng → Quét mã. Số tiền và nội dung đã điền sẵn.</span>
+        <a id="qrDownload" class="link-btn qr-dl" target="_blank" rel="noopener">Đang dùng điện thoại? Tải ảnh QR rồi mở app ngân hàng chọn "Quét từ ảnh"</a>
+      </div>
       <dl class="pay-info">
         <div><dt>Ngân hàng</dt><dd id="pBank"></dd></div>
         <div><dt>Số tài khoản</dt><dd><span id="pAcc" class="mono"></span><button class="copy" type="button" data-copy="acc">Chép</button></dd></div>
