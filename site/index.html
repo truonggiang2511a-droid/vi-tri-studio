@@ -29,9 +29,9 @@
     </div>
   </div>
   <div class="top-actions">
-    <button id="installBtn" class="btn btn-ghost" type="button" hidden>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0-4-4m4 4 4-4M5 17v3h14v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      Cài app
+    <button id="installBtn" class="btn install-btn" type="button" data-install aria-label="Cài app lên màn hình chính">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0-4-4m4 4 4-4M5 17v3h14v-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Cài app</span>
     </button>
     <button id="acctBtn" class="btn btn-ghost acct-btn" type="button">Đăng nhập</button>
   </div>
@@ -43,6 +43,7 @@
     <div class="stage-inner">
       <div id="canvasWrap" class="canvas-wrap" data-fmt="v">
         <canvas id="preview" aria-label="Khung xem trước video vị trí"></canvas>
+        <button id="bigPlay" class="big-play" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>Xem thử video</button>
         <div id="stageStatus" class="stage-status" hidden></div>
       </div>
       <div class="transport">
@@ -312,6 +313,10 @@
           <button id="shareBtn" class="btn btn-quiet" type="button" hidden>Chia sẻ / Lưu vào Ảnh</button>
         </div>
         <p id="resultMeta" class="hint"></p>
+        <div id="resultInstall" class="result-install" data-install>
+          <div><strong>Cài app lên màn hình chính</strong><span>Lần sau mở thẳng Vị Trí Studio, không phải tìm lại link.</span></div>
+          <span class="btn btn-quiet">Cài app</span>
+        </div>
       </div>
       <p class="hint">Video dựng ngay trên máy, không tải lên đâu cả. Giữ màn hình mở cho tới khi xong.</p>
     </article>
@@ -323,10 +328,6 @@
   </section>
 </main>
 
-<div id="iosTip" class="ios-tip" hidden>
-  <p><strong>Cài lên iPhone:</strong> bấm nút Chia sẻ <span aria-hidden="true">⎋</span> ở thanh Safari, chọn <strong>Thêm vào MH chính</strong>.</p>
-  <button id="iosTipClose" class="link-btn" type="button">Đã hiểu</button>
-</div>
 <dialog id="authDlg" class="dlg" aria-labelledby="authTitle">
   <form id="authForm" class="dlg-card" novalidate>
     <button class="dlg-x" type="button" data-close aria-label="Đóng">×</button>

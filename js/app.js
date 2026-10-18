@@ -10,6 +10,7 @@ import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, can
 import { initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc } from './account.js';
 import { splitVoice, joinForTts } from './voicesplit.js';
 import { loadConfig, initTracking, countVisit } from './track.js';
+import { initInstall } from './install.js';
 import { speakNumbers, speakPhones } from './vinum.js';
 
 const $ = id => document.getElementById(id);
@@ -241,7 +242,7 @@ function layoutCanvas() {
   const transportH = 52;
   const availH = desktop
     ? inner.clientHeight - transportH - 10
-    : Math.min(window.innerHeight * (state.fmt === 'v' ? 0.62 : 0.5), 760);
+    : Math.min(window.innerHeight * (state.fmt === 'v' ? (state.pois.length ? 0.62 : 0.4) : 0.5), 760);
   const ratio = F.LW / F.LH;
   let w = Math.min(availW, availH * ratio);
   w = Math.max(160, w);
@@ -254,7 +255,13 @@ function layoutCanvas() {
   dirty = true;
 }
 
+// Nút "Xem thử video" giữa khung: hiện khi đã quét xong, đang dừng ở đầu video
+function updateBigPlay() {
+  const b = $('bigPlay');
+  if (b) b.hidden = !(tl && state.pois.length && !playing && !editing && !exporting && t < 0.05);
+}
 function updateTimeUi() {
+  updateBigPlay();
   if (!tl) return;
   $('scrub').value = String(Math.round(t / tl.duration * 1000));
   $('timeLabel').textContent = fmtTime(t) + ' / ' + fmtTime(tl.duration);
@@ -294,6 +301,7 @@ async function play() {
   lastFrame = performance.now();
   $('playBtn').classList.add('playing');
   $('playBtn').setAttribute('aria-label', 'Tạm dừng');
+  updateBigPlay();
   await startAudio();
 }
 function pause() {
@@ -301,6 +309,7 @@ function pause() {
   $('playBtn').classList.remove('playing');
   $('playBtn').setAttribute('aria-label', 'Phát xem trước');
   stopAudio();
+  updateBigPlay();
 }
 
 async function startAudio() {
@@ -347,6 +356,7 @@ function toggleEdit(on) {
   $('editPinBtn').setAttribute('aria-pressed', String(editing));
   $('canvasWrap').classList.toggle('editing', editing);
   dirty = true;
+  updateBigPlay();
 }
 
 // ---------- Toạ độ ----------
@@ -992,6 +1002,7 @@ async function doExport() {
   } finally {
     exporting = false;
     dirty = true;
+    updateBigPlay();
     $('exportBtn').disabled = false;
     $('exportBox').hidden = true;
     try { await wake?.release(); } catch { /* bỏ qua */ }
@@ -1039,7 +1050,12 @@ function updateQuick() {
   $('quickGo').textContent = st === 1 ? 'Dán vị trí căn nhà' : st === 2 ? 'Quét tiện ích quanh nhà'
     : st === 3 ? 'Tạo giọng đọc AI & xem thử' : 'Xuất video MP4';
   $('quickMsg').hidden = st !== 1;
+  // Khung xem trước đổi cỡ khi vừa quét xong (điện thoại)
+  const fresh = !state.pois.length;
+  if (fresh !== lastFresh) { lastFresh = fresh; layoutCanvas(); }
+  updateBigPlay();
 }
+let lastFresh = null;
 function setSimple(on) {
   state.simple = !!on;
   document.body.classList.toggle('simple', state.simple);
@@ -1279,34 +1295,6 @@ function clearAudio(kind) {
   scheduleRebuild();
 }
 
-// ---------- Cài app ----------
-let deferredPrompt = null;
-function setupInstall() {
-  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
-  window.addEventListener('beforeinstallprompt', e => {
-    e.preventDefault();
-    deferredPrompt = e;
-    $('installBtn').hidden = false;
-  });
-  window.addEventListener('appinstalled', () => { $('installBtn').hidden = true; toast('Đã cài app lên máy.'); });
-  if (isIos && !standalone) $('installBtn').hidden = false;
-  $('installBtn').addEventListener('click', async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      await deferredPrompt.userChoice;
-      deferredPrompt = null;
-      $('installBtn').hidden = true;
-    } else if (isIos) {
-      $('iosTip').hidden = false;
-    } else {
-      toast('Mở menu trình duyệt, chọn "Cài đặt ứng dụng" hoặc "Thêm vào màn hình chính".', 4000);
-    }
-  });
-  $('iosTipClose').addEventListener('click', () => ($('iosTip').hidden = true));
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-}
-
 // ---------- Gắn sự kiện ----------
 function init() {
   countVisit('app');
@@ -1529,6 +1517,7 @@ function init() {
     dirty = true;
   });
   $('editPinBtn').addEventListener('click', () => toggleEdit());
+  $('bigPlay').addEventListener('click', e => { e.stopPropagation(); play(); });
   canvas.addEventListener('click', e => {
     if (!editing) { playing ? pause() : play(); return; }
     const rect = canvas.getBoundingClientRect();
@@ -1560,7 +1549,7 @@ function init() {
   $('saveBtn').addEventListener('click', saveResult);
   $('shareBtn').addEventListener('click', shareResult);
 
-  setupInstall();
+  initInstall({ toast, onChange: () => {} });
   setAccountLocation(state.house);
   initAccount({ toast }).then(() => {
     // Link từ trang giới thiệu: /#dangky mở đăng ký, /#mua mở bảng giá

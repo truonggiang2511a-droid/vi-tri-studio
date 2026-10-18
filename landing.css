@@ -132,3 +132,44 @@ h2 { font-size: clamp(26px, 3.4vw, 38px); line-height: 1.2; margin: 0 0 12px; le
   font: 700 14px/1 var(--font); text-decoration: none; box-shadow: 0 8px 24px rgba(11, 108, 255, .4); }
 .zalo-fab svg { width: 26px; height: 26px; }
 .zalo-fab[hidden] { display: none; }
+
+[hidden] { display: none !important; }
+
+/* Nút Cài app trên thanh trên cùng */
+.btn-install { background: transparent; color: var(--gold); border-color: var(--gold); min-height: 40px; padding: 0 14px; font-size: 15px; }
+.btn-install svg { width: 18px; height: 18px; }
+@media (max-width: 420px) {
+  .top .wrap { gap: 10px; }
+  .logo { font-size: 16px; }
+  .nav { gap: 8px; }
+  .nav .btn { padding: 0 12px; font-size: 14px; }
+}
+
+/* Phần cài app */
+.install-sec { background: linear-gradient(180deg, rgba(241, 178, 60, .08), transparent 70%); border-top: 1px solid var(--line); }
+.install-grid { display: grid; grid-template-columns: 1.1fr .9fr; gap: 32px; align-items: center; }
+.install-cards { display: grid; gap: 12px; }
+.install-cards .card { padding: 16px 18px; }
+.install-cards h3 { margin: 0 0 4px; font-size: 16px; }
+.install-cards b { color: var(--ink); }
+@media (max-width: 900px) { .install-grid { grid-template-columns: 1fr; gap: 22px; } }
+
+/* Thanh nút dính dưới cùng (điện thoại) */
+.sticky-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; display: none; gap: 10px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  background: rgba(11, 19, 17, .94); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-top: 1px solid var(--line);
+  transform: translateY(110%); transition: transform .25s ease; }
+.sticky-bar .btn { min-height: 48px; padding: 0 14px; font-size: 15px; }
+.sticky-bar .btn-primary { flex: 1; }
+.sticky-bar.show { transform: none; }
+@media (max-width: 720px) {
+  .sticky-bar { display: flex; }
+  body.bar-on .zalo-fab { bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+  body.bar-on .foot { padding-bottom: 100px; }
+  .zalo-fab { padding: 0; width: 52px; height: 52px; justify-content: center; transition: bottom .25s ease; }
+  .zalo-fab span { display: none; }
+  .zalo-fab svg { width: 30px; height: 30px; }
+}
+@media (prefers-reduced-motion: reduce) { .sticky-bar { transition: none; } }
+
+.l-toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(90px + env(safe-area-inset-bottom, 0px)); width: min(440px, calc(100% - 32px)); z-index: 60;
+  background: var(--ink); color: var(--bg); border-radius: 12px; padding: 12px 16px; font-weight: 600; text-align: center; box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }

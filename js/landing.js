@@ -1,6 +1,7 @@
 // Trang giới thiệu (/gioi-thieu): video mẫu chạy thật bằng chính bộ dựng của app, bảng giá lấy từ máy chủ.
 import { initTracking, track, countVisit } from './track.js';
 import { SB_URL, SB_KEY } from './sb.js';
+import { initInstall } from './install.js';
 const REF_KEY = 'vitri.ref.v1';
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -100,3 +101,32 @@ document.addEventListener('click', e => {
   if (e.target.closest('[data-cta]')) track('trial_click');
 });
 $('year').textContent = new Date().getFullYear();
+
+// ---------- Cài app + thanh nút dưới cùng ----------
+let toastTimer;
+function toast(msg, ms = 3200) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (el.hidden = true), ms);
+}
+// Trang giới thiệu chưa có hộp cài sẵn thì chuyển sang app (cài từ app để biểu tượng mở thẳng vào app)
+initInstall({ toast, redirect: true });
+const bar = $('stickyBar');
+const heroCta = document.querySelector('.hero .cta-row');
+const finalCta = document.querySelector('.final .cta-row');
+if (bar && heroCta && 'IntersectionObserver' in window) {
+  const seen = new Map();
+  const io = new IntersectionObserver(es => {
+    for (const e of es) seen.set(e.target, e.isIntersecting);
+    const top = heroCta.getBoundingClientRect().bottom < 0;
+    const show = top && !seen.get(finalCta);
+    bar.classList.toggle('show', show);
+    bar.setAttribute('aria-hidden', String(!show));
+    for (const el of bar.querySelectorAll('a,button')) el.tabIndex = show ? 0 : -1;
+    document.body.classList.toggle('bar-on', show);
+  });
+  io.observe(heroCta);
+  if (finalCta) io.observe(finalCta);
+}

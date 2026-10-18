@@ -143,12 +143,14 @@ function renderBadge() {
   if (!btn) return;
   const p = S.profile;
   if (!p) {
-    btn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>Đăng nhập`;
+    btn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="acct-label">Đăng nhập</span>`;
     btn.classList.remove('has-acct');
+    btn.setAttribute('aria-label', 'Đăng nhập');
   } else {
     const init = (p.name || p.login || '?').trim().charAt(0).toUpperCase();
     btn.innerHTML = `<span class="credit-pill${!p.unlimited && p.credits <= 0 ? ' empty' : ''}">${esc(creditText(p))}</span><span class="avatar">${esc(init)}</span>`;
     btn.classList.add('has-acct');
+    btn.setAttribute('aria-label', 'Tài khoản');
   }
   const low = $('lowBanner');
   if (low) {

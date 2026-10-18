@@ -1,6 +1,6 @@
 // Service worker: giữ khung app để mở được nhanh và cài lên màn hình chính.
 // Ảnh vệ tinh, dữ liệu tiện ích và đường đi luôn lấy mới từ mạng.
-const VERSION = 'vitri-v13';
+const VERSION = 'vitri-v14';
 const SHELL = [
   './',
   'index.html',

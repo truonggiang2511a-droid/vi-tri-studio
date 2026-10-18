@@ -306,7 +306,7 @@ async function savePackage(e) {
 // ---------- Phễu & chăm sóc ----------
 let funDays = 30;
 const pct = (a, b) => (b > 0 ? Math.round(100 * a / b) + '%' : '—');
-const SRC_NAME = { facebook: 'Facebook', tiktok: 'TikTok', google: 'Google', zalo: 'Zalo', youtube: 'YouTube', 'truc-tiep': 'Trực tiếp / không rõ', 'khong-ro': 'Trước khi đo nguồn', 'gioi-thieu-ban': 'Bạn bè giới thiệu' };
+const SRC_NAME = { facebook: 'Facebook', tiktok: 'TikTok', google: 'Google', zalo: 'Zalo', youtube: 'YouTube', 'truc-tiep': 'Trực tiếp / không rõ', 'khong-ro': 'Trước khi đo nguồn', 'gioi-thieu-ban': 'Bạn bè giới thiệu', 'app-da-cai': 'Mở từ app đã cài' };
 async function loadFunnel() {
   const steps = $('funSteps');
   steps.innerHTML = '<p class="hint">Đang tải…</p>';
@@ -315,7 +315,8 @@ async function loadFunnel() {
     const card = (n, label, sub, cls = '') => `<div class="fun-step ${cls}"><b>${n}</b><span>${label}</span>${sub ? `<em>${sub}</em>` : ''}</div>`;
     steps.innerHTML = [
       card(Number(f.visits_landing).toLocaleString('vi-VN'), 'Lượt vào trang giới thiệu'),
-      card(Number(f.visits_app).toLocaleString('vi-VN'), 'Lượt vào app'),
+      card(Number(f.visits_app).toLocaleString('vi-VN'), 'Lượt vào app', f.opens_installed ? `${f.opens_installed} lượt mở từ app đã cài` : ''),
+      card(f.installs ?? 0, 'Lượt cài app', 'Android, máy tính (iPhone không báo)'),
       card(f.signups, 'Đăng ký mới', f.visits_landing ? `${pct(f.signups, f.visits_landing)} so với lượt vào trang giới thiệu` : ''),
       card(f.exported, 'Đã xuất video', `${pct(f.exported, f.signups)} người đăng ký`),
       card(f.paid, 'Đã mua gói', `${pct(f.paid, f.signups)} người đăng ký`),
@@ -329,7 +330,7 @@ async function loadFunnel() {
     $('funSrc').innerHTML = list.map(r => `<tr><td>${esc(SRC_NAME[r.source] || r.source)}</td><td class="num">${r.landing}</td><td class="num">${r.app}</td><td class="num">${r.signups}</td><td class="num">${r.exported}</td><td class="num">${r.paid}</td><td class="num">${pct(r.paid, r.signups)}</td></tr>`).join('')
       || '<tr><td colspan="7" class="muted">Chưa có dữ liệu.</td></tr>';
     const maxV = Math.max(1, ...f.daily.map(d => d.visits));
-    $('funDaily').innerHTML = f.daily.map(d => `<tr><td class="num">${String(d.day).split('-').reverse().join('/')}</td><td class="num">${d.visits}<span class="mini-bar" style="width:${Math.round(80 * d.visits / maxV)}px"></span></td><td class="num">${d.signups}</td><td class="num">${d.exports}</td><td class="num">${d.paid}</td></tr>`).join('');
+    $('funDaily').innerHTML = f.daily.map(d => `<tr><td class="num">${String(d.day).split('-').reverse().join('/')}</td><td class="num">${d.visits}<span class="mini-bar" style="width:${Math.round(80 * d.visits / maxV)}px"></span></td><td class="num">${d.installs ?? 0}</td><td class="num">${d.signups}</td><td class="num">${d.exports}</td><td class="num">${d.paid}</td></tr>`).join('');
   } catch (e) { steps.innerHTML = `<p class="hint err">${esc(e.message)}</p>`; }
   loadFollowups();
 }

@@ -38,7 +38,10 @@ export function firstSource() { return readSrc(); }
 
 // Đếm một lượt vào trang (mỗi phiên trình duyệt một lần cho mỗi trang)
 export function countVisit(page) {
-  const s = detectSource() || readSrc() || 'truc-tiep';
+  let installed = false;
+  try { installed = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch { /* bỏ qua */ }
+  // Mở từ biểu tượng app đã cài: đếm riêng, không ghi đè nguồn khách ban đầu
+  const s = installed ? 'app-da-cai' : (detectSource() || readSrc() || 'truc-tiep');
   try {
     const k = 'vitri.visit.' + page;
     if (sessionStorage.getItem(k)) return;

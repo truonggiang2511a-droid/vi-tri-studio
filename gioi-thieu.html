@@ -12,6 +12,10 @@
 <meta name="theme-color" content="#0b1311">
 <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Vị Trí">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap">
@@ -28,6 +32,10 @@
       <a href="#cach-lam">Cách làm</a>
       <a href="#bang-gia">Bảng giá</a>
       <a href="#hoi-dap">Hỏi đáp</a>
+      <button class="btn btn-install" type="button" data-install aria-label="Cài app lên màn hình chính">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0-4-4m4 4 4-4M5 17v3h14v-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Cài app
+      </button>
       <a class="btn btn-primary" href="/#dangky" data-cta>Dùng thử</a>
     </nav>
   </div>
@@ -41,7 +49,7 @@
         <h1>Dán toạ độ, vài phút có <em>video vị trí căn nhà</em> để đăng ngay</h1>
         <p class="lead">Tự quét trường học, chợ, bệnh viện, khu công nghiệp và đường lớn quanh nhà, vẽ đường đi thật, có giọng đọc AI, phụ đề, logo và số điện thoại của anh/chị.</p>
         <div class="cta-row">
-          <a class="btn btn-primary btn-lg" href="/#dangky" data-cta>Làm video miễn phí · tặng <span class="trial-n">3</span> video</a>
+          <a class="btn btn-primary btn-lg" href="/#dangky" data-cta><span>Làm video miễn phí · tặng <span class="trial-n">3</span> video</span></a>
           <a class="btn btn-ghost btn-lg" href="#bang-gia">Xem bảng giá</a>
         </div>
         <p id="refNote" class="ref-note" hidden></p>
@@ -119,6 +127,24 @@
     </div>
   </section>
 
+  <section id="cai-app" class="install-sec">
+    <div class="wrap install-grid">
+      <div>
+        <h2>Cài app lên điện thoại, mở nhanh như app thật</h2>
+        <p class="sec-lead">Không cần App Store hay CH Play, không tốn bộ nhớ. Có biểu tượng riêng trên màn hình chính, mở toàn màn hình, đang dẫn khách đi xem nhà cũng làm video được ngay.</p>
+        <button class="btn btn-primary btn-lg" type="button" data-install>
+          <svg viewBox="0 0 24 24" aria-hidden="true" width="22" height="22"><path d="M12 3v11m0 0-4-4m4 4 4-4M5 17v3h14v-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Cài app ngay
+        </button>
+      </div>
+      <div class="install-cards">
+        <div class="card"><h3>iPhone (Safari)</h3><p>Bấm nút <b>Chia sẻ</b> ở thanh dưới, chọn <b>Thêm vào MH chính</b>, bấm <b>Thêm</b>.</p></div>
+        <div class="card"><h3>Android (Chrome)</h3><p>Bấm <b>Cài app</b> ở trên. Hoặc bấm <b>⋮</b> góc trên, chọn <b>Cài đặt ứng dụng</b>.</p></div>
+        <div class="card"><h3>Mở trong Zalo, Facebook?</h3><p>Bấm <b>⋯</b> góc trên, chọn <b>Mở bằng trình duyệt</b> trước, rồi mới cài được.</p></div>
+      </div>
+    </div>
+  </section>
+
   <section class="final">
     <div class="wrap">
       <h2>Làm thử video đầu tiên ngay bây giờ</h2>
@@ -138,6 +164,14 @@
     <p>© <span id="year">2026</span> Vị Trí Studio</p>
   </div>
 </footer>
+<div id="stickyBar" class="sticky-bar" aria-hidden="true">
+  <button class="btn btn-ghost" type="button" data-install tabindex="-1">
+    <svg viewBox="0 0 24 24" aria-hidden="true" width="20" height="20"><path d="M12 3v11m0 0-4-4m4 4 4-4M5 17v3h14v-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Cài app
+  </button>
+  <a class="btn btn-primary" href="/#dangky" data-cta tabindex="-1">Làm video miễn phí</a>
+</div>
+<div id="toast" class="l-toast" role="status" hidden></div>
 <a class="zalo-fab zalo-link" href="#" target="_blank" rel="noopener" hidden aria-label="Nhắn Zalo hỗ trợ">
   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3C6.5 3 2 6.9 2 11.6c0 2.6 1.4 5 3.7 6.5L5 21.5l3.9-2c1 .3 2 .4 3.1.4 5.5 0 10-3.9 10-8.6S17.5 3 12 3z" fill="currentColor"/><path d="M7.5 9.5h4l-4 4.5h4M13.2 9.5v4.5M15.5 9.5v4.5h2" fill="none" stroke="#0b6cff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
   <span>Hỏi Zalo</span>
