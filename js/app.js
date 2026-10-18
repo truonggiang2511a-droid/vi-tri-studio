@@ -3,7 +3,7 @@ import { parseCoords, haversineKm, formatKm } from './geo.js';
 import { CATEGORIES, scanArea, autoPick, routeTo, searchPlaces, guessCategory } from './data.js';
 import { ICON_PATHS } from './icons.js';
 import {
-  FORMATS, TileCache, buildTimeline, render, renderEdit, editTapToLatLng, CAT_COLORS, FONT, LINE_THEMES,
+  FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, CAT_COLORS, FONT, LINE_THEMES,
 } from './render.js';
 import { sfxEvents } from './sfx.js';
 import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4 } from './export.js';
@@ -174,6 +174,8 @@ function voiceSegsFor(T) {
 const canvas = $('preview');
 const ctx = canvas.getContext('2d');
 const cache = new TileCache(() => (dirty = true));
+// Khoá ảnh vệ tinh thương mại (nếu đã đặt ARCGIS_KEY trên máy chủ)
+fetch('/api/config', { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).then(c => c?.arcgis && setImageryToken(c.arcgis)).catch(() => {});
 let tl = null;
 let t = 0;
 let playing = false;

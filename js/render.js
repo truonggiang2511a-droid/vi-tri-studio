@@ -64,8 +64,15 @@ let makeCanvas = (w, h) => { const c = document.createElement('canvas'); c.width
 export function setCanvasFactory(fn) { makeCanvas = fn; }
 
 // ---------- Ảnh vệ tinh ----------
-const TILE_URL = (z, x, y) =>
+// Có khoá ArcGIS Location Platform (biến ARCGIS_KEY trên Cloudflare) thì lấy ảnh qua tài khoản thương mại,
+// khoá lỗi hoặc hết hạn thì tự quay về máy chủ ảnh công khai để video không bị trống.
+let IMG_TOKEN = '';
+let keyedOk = 0, keyedFail = 0;
+export function setImageryToken(t) { IMG_TOKEN = String(t || '').trim(); keyedOk = keyedFail = 0; }
+const PUBLIC_TILE = (z, x, y) =>
   `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+const KEYED_TILE = (z, x, y) =>
+  `https://ibasemaps-api.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}?token=${encodeURIComponent(IMG_TOKEN)}`;
 
 export class TileCache {
   constructor(onLoad) {
@@ -105,14 +112,19 @@ export class TileCache {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.decoding = 'async';
-      img.onload = () => { e.img = img; e.ok = true; e.resolve(true); this.onLoad?.(); done(); };
+      const keyed = !!IMG_TOKEN && !e.publicOnly;
+      img.onload = () => { if (keyed) keyedOk++; e.img = img; e.ok = true; e.resolve(true); this.onLoad?.(); done(); };
       img.onerror = () => {
+        if (keyed) {
+          e.publicOnly = true;
+          if (++keyedFail >= 6 && !keyedOk) IMG_TOKEN = '';
+        }
         e.tries++;
         if (e.tries < 3) setTimeout(() => { this.queue.push(job); this.pump(); }, 400 * e.tries);
         else { e.failed = true; e.resolve(false); }
         done();
       };
-      img.src = TILE_URL(z, x, y);
+      img.src = keyed ? KEYED_TILE(z, x, y) : PUBLIC_TILE(z, x, y);
     });
   }
 }

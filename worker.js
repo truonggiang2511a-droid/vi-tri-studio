@@ -5,8 +5,9 @@ import { handleTts } from './lib/tts.js';
 import { handleScript } from './lib/script.js';
 import { handleSepay } from './lib/sepay.js';
 import { handleResolve } from './lib/resolve.js';
+import { handleConfig } from './lib/config.js';
 
-const ROUTES = { '/api/tts': handleTts, '/api/script': handleScript, '/api/sepay': handleSepay, '/api/resolve': handleResolve };
+const ROUTES = { '/api/tts': handleTts, '/api/script': handleScript, '/api/sepay': handleSepay, '/api/resolve': handleResolve, '/api/config': handleConfig };
 
 export default {
   async fetch(request, env) {
