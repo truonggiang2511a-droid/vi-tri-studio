@@ -209,3 +209,12 @@ begin
     end if;
   end loop;
 end $$;
+
+-- Kiểm tra mã giới thiệu có thật không (để trang chỉ hứa thưởng khi mã đúng)
+create or replace function public.vt_ref_valid(p_code text) returns boolean
+language sql stable security definer set search_path = public, extensions as $$
+  select exists (select 1 from vt_users where ref_code = lower(btrim(coalesce(p_code, ''))) and status = 'active')
+    and (select ref_bonus from vt_config where id = 1) > 0
+$$;
+revoke all on function public.vt_ref_valid(text) from public, anon, authenticated;
+grant execute on function public.vt_ref_valid(text) to anon, authenticated;

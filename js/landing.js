@@ -30,6 +30,15 @@ async function loadInfo() {
     return res.ok ? await res.json() : null;
   } catch { return null; }
 }
+async function refValid(code) {
+  if (!code) return false;
+  try {
+    const res = await fetch(`${SB_URL}/rest/v1/rpc/vt_ref_valid`, {
+      method: 'POST', headers: { apikey: SB_KEY, 'content-type': 'application/json' }, body: JSON.stringify({ p_code: code }),
+    });
+    return res.ok ? (await res.json()) === true : false;
+  } catch { return false; }
+}
 function renderInfo(info, hasRef) {
   const trial = info?.trial_credits ?? 3;
   const bonus = info?.ref_bonus ?? 2;
@@ -139,7 +148,7 @@ async function startDemo() {
 const ref = captureRef();
 loadConfig().then(c => c?.arcgis && setImageryToken(c.arcgis));
 initTracking().then(() => track('view'));
-loadInfo().then(info => renderInfo(info, !!ref));
+Promise.all([loadInfo(), refValid(ref)]).then(([info, ok]) => renderInfo(info, ok));
 startDemo();
 document.addEventListener('click', e => {
   if (e.target.closest('[data-cta]')) track('trial_click');

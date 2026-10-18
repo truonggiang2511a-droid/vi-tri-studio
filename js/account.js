@@ -121,7 +121,13 @@ async function loadInfo() {
     for (const el of document.querySelectorAll('.trial-n')) el.textContent = S.info.trial_credits;
     const rb = S.info.ref_bonus || 0;
     const refLine = $('refLine');
-    if (refLine) { refLine.hidden = !(getRef() && rb > 0); refLine.textContent = `Anh/chị đăng ký qua link giới thiệu: được tặng thêm ${rb} lượt.`; }
+    const code = getRef();
+    if (refLine && code && rb > 0) {
+      rpc('vt_ref_valid', { p_code: code }).then(ok => {
+        refLine.hidden = ok !== true;
+        refLine.textContent = `Anh/chị đăng ký qua link giới thiệu: được tặng thêm ${rb} lượt.`;
+      }).catch(() => {});
+    }
   }
   return S.info;
 }
