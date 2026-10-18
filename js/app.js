@@ -288,7 +288,9 @@ function frame(now) {
   }
   lastFrame = now;
   if (playing || dirty) {
-    render(ctx, tl, t, { cache, scale, request: true });
+    // Đang dừng ở đầu video: hiện khung có tiêu đề làm ảnh bìa thay vì khung trống
+    const rt = !playing && t === 0 && tl.intro ? Math.min(1.6, (tl.intro.t1 - tl.intro.t0) * 0.35) : t;
+    render(ctx, tl, rt, { cache, scale, request: true });
     dirty = false;
   }
 }

@@ -462,7 +462,7 @@ body.simple .adv{display:none !important}
 /* Nút xem thử to giữa khung xem trước */
 .big-play { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 8px;
   padding: 12px 18px 12px 14px; border-radius: 999px; border: 0; background: rgba(0, 0, 0, .62); color: #fff; font: 800 15px/1 var(--font);
-  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); cursor: pointer; box-shadow: 0 8px 24px rgba(0, 0, 0, .35); }
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); cursor: pointer; box-shadow: 0 8px 24px rgba(0, 0, 0, .35); white-space: nowrap; }
 .big-play svg { width: 26px; height: 26px; color: var(--accent); }
 .canvas-wrap { position: relative; }
 
