@@ -61,7 +61,16 @@ async function serveMedia(request, env) {
 
 export default {
   async fetch(request, env, ctx) {
-    const path = new URL(request.url).pathname.replace(/\/+$/, '');
+    const url = new URL(request.url);
+    // Tên miền chính: địa chỉ cũ (…workers.dev) và www chuyển hẳn về vitristudio.com.
+    // Riêng /api/* giữ nguyên để webhook SePay, Telegram đã đăng ký theo địa chỉ cũ vẫn chạy.
+    const canon = (env.APP_URL || 'https://vitristudio.com').replace(/\/+$/, '');
+    const canonHost = new URL(canon).hostname;
+    if ((url.hostname === 'vi-tri-studio.truonggiang2511a.workers.dev' || url.hostname === 'www.' + canonHost)
+        && (request.method === 'GET' || request.method === 'HEAD') && !url.pathname.startsWith('/api/')) {
+      return Response.redirect(canon + url.pathname + url.search, 301);
+    }
+    const path = url.pathname.replace(/\/+$/, '');
     if (path.startsWith('/api/map/')) { setEnv(env); return handleMap(request, ctx); }
     if (path.startsWith('/can/')) { setEnv(env); return handleCan(request); }
     if (path.startsWith('/m/')) { setEnv(env); return handleMedia(request, ctx); }
