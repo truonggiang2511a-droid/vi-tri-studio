@@ -34,6 +34,7 @@ except ImportError:
 PY
 cp manifest.webmanifest _headers 404.html gioi-thieu.html chinh-sach-bao-mat.html dieu-khoan.html demo.mp4 demo-poster.jpg og.jpg site/
 cp -r poi site/poi
+cp -r l site/l
 cp -r music site/music
 # Độ dài các file video để worker trả từng đoạn (Range) cho Safari/iPhone
 python3 - <<'PY'

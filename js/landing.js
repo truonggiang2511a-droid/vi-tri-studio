@@ -130,3 +130,8 @@ if (bar && heroCta && 'IntersectionObserver' in window) {
   io.observe(heroCta);
   if (finalCta) io.observe(finalCta);
 }
+
+// Mẫu phong cách: bấm để xem cảnh mở đầu (điện thoại không có di chuột)
+for (const b of document.querySelectorAll('.sty')) {
+  b.addEventListener('click', () => b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true')));
+}

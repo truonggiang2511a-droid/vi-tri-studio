@@ -173,3 +173,34 @@ h2 { font-size: clamp(26px, 3.4vw, 38px); line-height: 1.2; margin: 0 0 12px; le
 
 .l-toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(90px + env(safe-area-inset-bottom, 0px)); width: min(440px, calc(100% - 32px)); z-index: 60;
   background: var(--ink); color: var(--bg); border-radius: 12px; padding: 12px 16px; font-weight: 600; text-align: center; box-shadow: 0 10px 30px rgba(0, 0, 0, .35); }
+
+/* Ra khách: các bước + ảnh minh hoạ */
+#ra-khach .eyebrow { margin-bottom: 12px; }
+.flow { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
+.flow-steps { display: grid; gap: 14px; }
+.fs { display: flex; gap: 14px; background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 18px; }
+.fs > b { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--gold); color: var(--gold-ink); font-weight: 800; }
+.fs h3 { margin: 4px 0 4px; font-size: 17px; }
+.fs p { margin: 0; color: var(--muted); font-size: 15px; }
+.flow-shots { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.flow-shots figure { margin: 0; }
+.flow-shots figure:last-child { margin-top: 48px; }
+.flow-shots img { width: 100%; height: auto; display: block; border-radius: 22px; border: 6px solid #1c2925; box-shadow: 0 24px 60px rgba(0,0,0,.45); }
+.flow-shots figcaption { color: var(--muted); font-size: 13px; text-align: center; margin-top: 10px; }
+
+/* 4 phong cách */
+.styles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.sty { display: flex; flex-direction: column; gap: 4px; text-align: left; background: none; border: 0; padding: 0; color: var(--ink); cursor: pointer; font: inherit; }
+.sty-img { position: relative; display: block; border-radius: 16px; overflow: hidden; aspect-ratio: 9/16; border: 1px solid var(--line); margin-bottom: 8px; box-shadow: 0 16px 40px rgba(0,0,0,.35); }
+.sty-img img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity .35s; }
+.sty-img img.alt { opacity: 0; }
+.sty:hover .sty-img img.alt, .sty[aria-pressed="true"] .sty-img img.alt { opacity: 1; }
+.sty b { font-size: 18px; }
+.sty > span:last-child { color: var(--muted); font-size: 14px; }
+@media (max-width: 900px) {
+  .flow { grid-template-columns: 1fr; gap: 28px; }
+  .styles { grid-template-columns: repeat(2, 1fr); gap: 14px; }
+}
+@media (max-width: 480px) {
+  .flow-shots figure:last-child { margin-top: 28px; }
+}
