@@ -260,3 +260,6 @@ end $$;
 
 -- Bản 2: máy chủ gọi thay khách nên truyền IP thật (p_ip) để giới hạn số lần gửi; thêm giới hạn theo trang
 -- (đã chạy: migration vt_lead_submit2_ip). vt_me trả thêm leads_new, tg_linked (migration vt_me_leads_new).
+
+-- Bản 3 (migration vt_cron_reminders_weekly): nhắc gọi lại khách sau 2 giờ, báo cáo tuần, đổi trạng thái khách từ nút Telegram.
+-- Khoá máy chủ = TELEGRAM_SECRET, được lưu (dạng băm) khi chủ app bấm "Kết nối bot Telegram" trong trang quản trị.

@@ -5,6 +5,8 @@
   "main": "worker.js",
   "compatibility_date": "2026-09-01",
   "keep_vars": true,
+  // Nhắc gọi lại khách mỗi 30 phút; báo cáo tuần 8h sáng thứ Hai giờ Việt Nam (1h UTC)
+  "triggers": { "crons": ["*/30 * * * *", "0 1 * * 1"] },
   "assets": {
     "directory": "./site",
     "binding": "ASSETS",

@@ -11,7 +11,7 @@ import { initAccount, setAccountLocation, beginExport, requireLogin, authHeaders
 import { splitVoice, joinForTts } from './voicesplit.js';
 import { loadConfig, initTracking, countVisit } from './track.js';
 import { initInstall } from './install.js';
-import { initLeads, downloadPageQr, pageUrl } from './leads.js';
+import { initLeads, downloadPageQr, pageUrl, openLeads } from './leads.js';
 import { SB_URL, SB_KEY } from './sb.js';
 import { speakNumbers, speakPhones } from './vinum.js';
 
@@ -1861,7 +1861,8 @@ function init() {
   initAccount({ toast }).then(() => {
     // Link từ trang giới thiệu: /#dangky mở đăng ký, /#mua mở bảng giá
     const h = location.hash;
-    if (h === '#dangky' || h === '#mua') history.replaceState(null, '', location.pathname + location.search);
+    if (h === '#dangky' || h === '#mua' || h === '#khach') history.replaceState(null, '', location.pathname + location.search);
+    if (h === '#khach') openLeads('leads');
     if (h === '#dangky' && !account.profile) requireLogin('', 'register');
     else if (h === '#mua') openPricing();
   });

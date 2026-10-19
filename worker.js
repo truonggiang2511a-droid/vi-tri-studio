@@ -8,7 +8,7 @@ import { handleResolve } from './lib/resolve.js';
 import { handleConfig } from './lib/config.js';
 import { MEDIA_SIZES } from './lib/media-sizes.js';
 import { handleMap } from './lib/map.js';
-import { handleMedia, handleLead, handleTelegram, handleCan, handlePageEvent, handleCallLink } from './lib/pages.js';
+import { handleMedia, handleLead, handleTelegram, handleCan, handlePageEvent, handleCallLink, runCron } from './lib/pages.js';
 
 const ROUTES = { '/api/tts': handleTts, '/api/script': handleScript, '/api/sepay': handleSepay, '/api/resolve': handleResolve, '/api/config': handleConfig };
 
@@ -73,5 +73,9 @@ export default {
     if (handler) { setEnv(env); return handler(request); }
     if (/\.mp4$/.test(path) && (request.method === 'GET' || request.method === 'HEAD')) return serveMedia(request, env);
     return env.ASSETS.fetch(request);
+  },
+  async scheduled(event, env, ctx) {
+    setEnv(env);
+    ctx.waitUntil(runCron(event.cron).catch(e => console.log('cron', e.message)));
   },
 };
