@@ -395,6 +395,14 @@ $('pkgAdd').addEventListener('click', () => $('pkgRows').insertAdjacentHTML('bef
 
 (async () => {
   try { adminKey = sessionStorage.getItem(KEY) || ''; } catch { adminKey = ''; }
+  $('tgSetup')?.addEventListener('click', async () => {
+    const m = $('tgSetupMsg');
+    m.textContent = 'Đang kết nối…';
+    try {
+      const r = await fetch('/api/telegram/setup', { method: 'POST', headers: { 'x-admin-key': adminKey } }).then(x => x.json());
+      m.textContent = r.ok ? `Đã kết nối bot @${r.bot}. Môi giới bấm Khách quan tâm › Thông báo › Kết nối Telegram là nhận tin.` : (r.error || r.detail || 'Chưa kết nối được');
+    } catch (e) { m.textContent = e.message; }
+  });
   if (adminKey) {
     try { await call('vt_admin_overview'); enter(); return; } catch { /* nhập lại */ }
   }
