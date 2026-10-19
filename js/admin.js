@@ -289,7 +289,16 @@ async function saveConfig(e) {
 async function savePackage(e) {
   const b = e.target.closest('button[data-save]');
   if (!b) return;
-  const row = b.closest('.pkg-edit');
+  await savePkgRow(b.closest('.pkg-edit'));
+}
+// Bấm tick "Đang bán"/"Nổi bật" là lưu luôn gói đó (gói đã có mã)
+function pkgToggle(e) {
+  const c = e.target.closest('input[type="checkbox"][data-k]');
+  if (!c) return;
+  const row = c.closest('.pkg-edit');
+  if (row.dataset.pkg) savePkgRow(row);
+}
+async function savePkgRow(row) {
   const v = k => row.querySelector(`[data-k="${k}"]`);
   const p = {
     id: v('id').value.trim().toLowerCase(), name: v('name').value.trim(), description: v('description').value.trim(),
@@ -391,6 +400,7 @@ $('orderRows').addEventListener('click', orderAction);
 $('userRows').addEventListener('click', e => { const b = e.target.closest('button[data-edit]'); if (b) openUserEdit(b.dataset.edit); });
 $('cfgForm').addEventListener('submit', saveConfig);
 $('pkgRows').addEventListener('click', savePackage);
+$('pkgRows').addEventListener('change', pkgToggle);
 $('pkgAdd').addEventListener('click', () => $('pkgRows').insertAdjacentHTML('beforeend', pkgRow()));
 
 (async () => {
