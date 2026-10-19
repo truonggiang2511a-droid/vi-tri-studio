@@ -7,7 +7,7 @@ import {
 } from './render.js';
 import { sfxEvents } from './sfx.js';
 import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4 } from './export.js';
-import { initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc } from './account.js';
+import { initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount } from './account.js';
 import { splitVoice, joinForTts } from './voicesplit.js';
 import { loadConfig, initTracking, countVisit } from './track.js';
 import { initInstall } from './install.js';
@@ -314,19 +314,29 @@ function pause() {
   updateBigPlay();
 }
 
+// Mỗi lần phát có một số thứ tự: lần phát cũ chưa kịp bắt đầu thì bỏ, tránh hai giọng đọc chồng lên nhau
+let audioGen = 0;
+const liveSources = new Set();
 async function startAudio() {
   stopAudio();
+  const gen = audioGen;
   const buf = await ensureMix();
-  if (!buf || !playing) return;
+  if (!buf || !playing || gen !== audioGen) return;
   audioCtx ||= new AudioContext();
   if (audioCtx.state === 'suspended') await audioCtx.resume();
-  audioSrc = audioCtx.createBufferSource();
-  audioSrc.buffer = buf;
-  audioSrc.connect(audioCtx.destination);
-  audioSrc.start(0, Math.min(t, buf.duration - 0.01));
+  if (!playing || gen !== audioGen) return;
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  src.connect(audioCtx.destination);
+  src.onended = () => liveSources.delete(src);
+  liveSources.add(src);
+  audioSrc = src;
+  src.start(0, Math.min(t, buf.duration - 0.01));
 }
 function stopAudio() {
-  try { audioSrc?.stop(); } catch { /* đã dừng */ }
+  audioGen++;
+  for (const s of liveSources) { try { s.stop(); } catch { /* đã dừng */ } }
+  liveSources.clear();
   audioSrc = null;
 }
 
@@ -863,6 +873,13 @@ async function generateVoices() {
   const todo = segs.filter(s => { const cur = media.voiceSegs.get(s.key); return !(cur && cur.ck === voiceKey(s.text)); });
   const msg = $('ttsMsg');
   if (!todo.length) { msg.textContent = 'Giọng đọc đã khớp với kịch bản hiện tại.'; return; }
+  // Tạo giọng ở căn mới tính 1 lượt (xuất video căn này trong thời hạn xuất lại không mất thêm)
+  const p0 = account.profile;
+  const freeHere = account.reexportUntil && new Date(account.reexportUntil) > new Date();
+  if (ai.gated && p0 && !p0.unlimited && !freeHere) {
+    if (p0.credits <= 0) { openPricing('Đã hết lượt. Mua thêm lượt để tạo giọng đọc và xuất video.'); return; }
+    if (!confirm(`Tạo giọng đọc sẽ dùng 1 lượt cho căn này (còn ${p0.credits} lượt).\nSau đó tạo lại giọng hoặc xuất video căn này trong 24 giờ không mất thêm lượt.\n\nTiếp tục?`)) return;
+  }
   ttsBusy = true;
   const btn = $('ttsBtn');
   btn.disabled = true;
@@ -893,6 +910,7 @@ async function generateVoices() {
       made += grp.length;
       renderScript();
     }
+    refreshAccount();
     state.aiVoiceOn = true; $('aiVoiceOn').checked = true;
     msg.textContent = `Đã tạo giọng cho ${made} câu. Video đã giãn theo lời đọc, bấm phát để nghe.`;
     media.mixKey = '';
@@ -1050,7 +1068,7 @@ function updateQuick() {
     li.classList.toggle('cur', q === Math.min(st, 3));
   }
   $('quickGo').textContent = st === 1 ? 'Dán vị trí căn nhà' : st === 2 ? 'Quét tiện ích quanh nhà'
-    : st === 3 ? 'Tạo giọng đọc AI & xem thử' : 'Xuất video MP4';
+    : st === 3 ? 'Tạo giọng đọc AI' : 'Xuất video MP4';
   $('quickMsg').hidden = st !== 1;
   // Khung xem trước đổi cỡ khi vừa quét xong (điện thoại)
   const fresh = !state.pois.length;
@@ -1077,11 +1095,15 @@ async function quickGo() {
   }
   if (st === 2) { await scan(); return; }
   if (st === 3) {
+    // Chỉ tạo giọng, không tự phát: khách tự bấm Xem thử để nghe (tránh phát chồng khi video đang giãn theo giọng)
+    pause();
     await generateVoices();
     if (voiceDurations()) {
+      rebuild();
       t = 0;
+      updateTimeUi();
       if (window.matchMedia('(max-width: 979px)').matches) $('canvasWrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      play();
+      toast('Đã tạo giọng đọc. Bấm ▶ Xem thử để nghe, ưng rồi bấm Xuất video MP4.', 4500);
     }
     return;
   }

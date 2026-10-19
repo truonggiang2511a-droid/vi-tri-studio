@@ -91,10 +91,17 @@ function clearSession() {
 
 export const authHeaders = () => (S.token ? { authorization: 'Bearer ' + S.token } : {});
 
+let devSent = false;
 export async function refreshAccount() {
   if (!S.token) { emit(); return; }
   try {
     const r = await rpc('vt_me', { p_token: S.token, p_lat: S.loc?.lat ?? null, p_lng: S.loc?.lng ?? null });
+    // Ghi nhận máy đang dùng tài khoản này (một lần mỗi lần mở app) để tài khoản tạo thêm trên máy này không nhận lại lượt dùng thử
+    if (!devSent) {
+      devSent = true;
+      const tok = S.token;
+      Promise.all([deviceId(), fingerprint()]).then(([d, f]) => rpc('vt_set_device', { p_token: tok, p_device: d, p_fp: f })).catch(() => {});
+    }
     S.profile = r.profile;
     S.reexportUntil = r.reexport_until;
     S.ref = r.ref || null;
