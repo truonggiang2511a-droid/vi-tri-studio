@@ -538,3 +538,4 @@ body.simple .adv{display:none !important}
 .page-result { display: grid; gap: 8px; margin-top: 10px; }
 .page-acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .page-acts .btn { flex: 1 1 auto; justify-content: center; }
+.lead-phone a, .page-acts a { text-decoration: none; }
