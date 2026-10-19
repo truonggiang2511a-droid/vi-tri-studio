@@ -2,6 +2,7 @@
 // Mọi kiểm tra lượt nằm ở các hàm vt_* trên Supabase; trình duyệt chỉ gọi và hiển thị.
 import qrcode from 'qrcode-generator';
 import { track, firstSource } from './track.js';
+import { deviceId, fingerprint } from './device.js';
 
 import { SB_URL, SB_KEY } from './sb.js';
 export { SB_URL, SB_KEY };
@@ -223,21 +224,25 @@ async function submitAuth(e) {
   try {
     let r;
     if (authTab === 'register') {
-      r = await rpc('vt_signup', { p_login: login, p_password: pass, p_name: $('authName').value.trim(), p_ref: getRef() });
+      const [dev, fp] = await Promise.all([deviceId().catch(() => null), fingerprint().catch(() => null)]);
+      r = await rpc('vt_signup2', { p_login: login, p_password: pass, p_name: $('authName').value.trim(), p_ref: getRef(), p_device: dev, p_fp: fp });
       track('register');
       rpc('vt_set_source', { p_token: r.token, p_source: firstSource() || (getRef() ? 'gioi-thieu-ban' : 'truc-tiep') }).catch(() => {});
       try { localStorage.removeItem(REF_KEY); } catch { /* bỏ qua */ }
     } else {
       r = await rpc('vt_login', { p_login: login, p_password: pass });
       if (!r.ok) { msg.textContent = r.message; return; }
+      // Ghi nhận máy này đã có tài khoản (tài khoản tạo thêm trên máy này sẽ không được tặng lượt dùng thử lần nữa)
+      Promise.all([deviceId(), fingerprint()]).then(([d, f]) => rpc('vt_set_device', { p_token: r.token, p_device: d, p_fp: f })).catch(() => {});
     }
     try { localStorage.setItem('vitri.hasAcct', '1'); } catch { /* bỏ qua */ }
     setSession(r.token, r.profile);
     $('authPass').value = '';
     $('authDlg').close();
-    toast(authTab === 'register'
-      ? `Đã tạo tài khoản. Anh/chị có ${r.profile.credits} lượt dùng thử${r.ref_bonus ? ` (đã gồm ${r.ref_bonus} lượt thưởng giới thiệu)` : ''}.`
-      : `Xin chào ${r.profile.name || ''}`.trim() + '.', 3500);
+    toast(authTab !== 'register' ? `Xin chào ${r.profile.name || ''}`.trim() + '.'
+      : r.trial_blocked ? 'Đã tạo tài khoản. Máy này đã nhận lượt dùng thử trước đó nên tài khoản mới không được tặng thêm. Mua gói để xuất video.'
+      : `Đã tạo tài khoản. Anh/chị có ${r.profile.credits} lượt dùng thử${r.ref_bonus ? ` (đã gồm ${r.ref_bonus} lượt thưởng giới thiệu)` : ''}.`,
+    r.trial_blocked ? 6500 : 3500);
     refreshAccount();
     const f = authResolve; authResolve = null; f?.(true);
   } catch (err) {
