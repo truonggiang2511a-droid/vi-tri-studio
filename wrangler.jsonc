@@ -11,6 +11,6 @@
     "directory": "./site",
     "binding": "ASSETS",
     "not_found_handling": "404-page",
-    "run_worker_first": ["/api/*", "/demo.mp4", "/can/*", "/m/*", "/goi/*"]
+    "run_worker_first": ["/api/*", "/demo.mp4", "/can/*", "/m/*", "/goi/*", "/", "/index.html", "/gioi-thieu*", "/admin*", "/dieu-khoan*", "/chinh-sach-bao-mat*"]
   }
 }
