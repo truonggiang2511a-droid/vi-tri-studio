@@ -464,6 +464,9 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     raw.push({ type: 'poi', d: 3.5, to: cam, move: 0.6, drift: 0.02, poi: i, vkey: 'poi:' + p.id });
   });
   if (pois.length || boundary) raw.push({ type: 'summary', d: 5.6, to: camSummary, move: 0.5, drift: 0.012, vkey: 'summary' });
+  // Ảnh thực tế căn nhà: phủ kín khung, camera bản đồ phía dưới bay dần về căn nhà để nối vào cảnh kết
+  const photos = (scene.photos || []).filter(im => im && im.width && im.height).slice(0, 6);
+  if (photos.length) raw.push({ type: 'photos', d: Math.max(3.2, photos.length * 2.4 + 0.6), to: camEnd, move: 1, vkey: 'photos' });
   raw.push({ type: 'outro', d: 3.4, to: camEnd, move: 0.7, drift: 0.02, vkey: 'outro' });
 
   let total = raw.reduce((s, p) => s + p.d, 0) / sp;
@@ -498,7 +501,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     fmt: fmtKey, LW, LH, safe, duration: t, phases, scene, panelH,
     G: groundDims(LW, LH),
     intro: first('intro'), house: first('house'), overview: first('overview'), boundaryPh: first('boundary'),
-    summary: first('summary'), outro: first('outro'),
+    summary: first('summary'), outro: first('outro'), photosPh: first('photos'), photos,
     roadPhases: phases.filter(p => p.type === 'road'), poiPhases: phases.filter(p => p.type === 'poi'),
     pois, roads, boundary, captions,
   };
@@ -1348,6 +1351,97 @@ function drawCaption(ctx, L, alpha) {
   });
   ctx.restore();
 }
+// ---------- Ảnh thực tế căn nhà ----------
+// Mỗi ảnh chạy chậm (phóng/trượt nhẹ), chuyển ảnh mờ dần. Ảnh lệch khung nhiều thì đặt trên nền chính ảnh đó làm mờ.
+function photoLayer(ctx, tl, img, x, y, w, h, k, dir, alpha) {
+  const { LW, LH } = tl;
+  const ar = img.width / img.height, fr = LW / LH;
+  const close = Math.max(ar, fr) / Math.min(ar, fr) < 1.3;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const cover = Math.max(LW / img.width, LH / img.height);
+  if (!close) {
+    // Nền: ảnh phủ kín, làm mờ + tối
+    const cw = img.width * cover * 1.08, ch = img.height * cover * 1.08;
+    try { ctx.filter = 'blur(18px) brightness(0.55)'; } catch { /* trình duyệt không hỗ trợ */ }
+    ctx.drawImage(img, (LW - cw) / 2, (LH - ch) / 2, cw, ch);
+    ctx.filter = 'none';
+    ctx.fillStyle = 'rgba(6,12,14,0.35)';
+    ctx.fillRect(0, 0, LW, LH);
+    const fit = Math.min(w / img.width, h / img.height) * (1 + 0.06 * k);
+    const iw = img.width * fit, ih = img.height * fit;
+    const ix = x + (w - iw) / 2 + dir * 8 * (k - 0.5), iy = y + (h - ih) / 2;
+    ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 6;
+    roundRect(ctx, ix, iy, iw, ih, 14);
+    ctx.save(); ctx.clip(); ctx.shadowColor = 'transparent';
+    ctx.drawImage(img, ix, iy, iw, ih);
+    ctx.restore();
+  } else {
+    const z = cover * (1.04 + 0.1 * k);
+    const iw = img.width * z, ih = img.height * z;
+    const ox = (iw - LW) / 2, oy = (ih - LH) / 2;
+    ctx.drawImage(img, -ox + dir * ox * (k - 0.5), -oy - oy * 0.4 * (k - 0.5), iw, ih);
+  }
+  ctx.restore();
+}
+function drawPhotos(ctx, tl, t, logo) {
+  const ph = tl.photosPh;
+  if (!ph || t < ph.t0 || t >= ph.t1) return 0;
+  const { LW, LH, safe } = tl;
+  const n = tl.photos.length;
+  const D = ph.t1 - ph.t0;
+  const fade = 0.55;
+  const A = Math.min(clamp01((t - ph.t0) / fade), clamp01((ph.t1 - t) / fade));
+  if (A <= 0) return 0;
+  const slot = (D - 0.4) / n;
+  const lt = t - ph.t0;
+  const i = Math.min(n - 1, Math.floor(lt / slot));
+  const x = safe.x, w = LW - safe.x * 2;
+  const y = safe.top + 46, h = LH - safe.top - safe.bottom - 70;
+  ctx.save();
+  ctx.globalAlpha = A;
+  ctx.fillStyle = '#0c1513';
+  ctx.fillRect(0, 0, LW, LH);
+  ctx.restore();
+  const kOf = j => clamp01((lt - j * slot) / (slot + 0.5));
+  photoLayer(ctx, tl, tl.photos[i], x, y, w, h, kOf(i), i % 2 ? -1 : 1, A);
+  // Chuyển sang ảnh sau: mờ dần trong 0,5 giây cuối của ảnh hiện tại
+  const xf = 0.5;
+  const into = lt - (i + 1) * slot + xf;
+  if (i + 1 < n && into > 0) photoLayer(ctx, tl, tl.photos[i + 1], x, y, w, h, kOf(i + 1), (i + 1) % 2 ? -1 : 1, A * smooth(clamp01(into / xf)));
+  // Lớp tối trên/dưới cho chữ dễ đọc
+  ctx.save();
+  ctx.globalAlpha = A;
+  const tg = ctx.createLinearGradient(0, 0, 0, safe.top + 110);
+  tg.addColorStop(0, 'rgba(0,0,0,0.6)'); tg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = tg; ctx.fillRect(0, 0, LW, safe.top + 110);
+  const bg = ctx.createLinearGradient(0, LH - safe.bottom - 120, 0, LH);
+  bg.addColorStop(0, 'rgba(0,0,0,0)'); bg.addColorStop(1, 'rgba(0,0,0,0.6)');
+  ctx.fillStyle = bg; ctx.fillRect(0, LH - safe.bottom - 120, LW, safe.bottom + 120);
+  // Nhãn "Hình ảnh thực tế" + số thứ tự ảnh
+  const top = safe.top + 6;
+  const label = 'HÌNH ẢNH THỰC TẾ';
+  ctx.font = `800 13px ${FONT}`;
+  const lw = spacedWidth(ctx, label, 1.2) + 26;
+  const maxX = logo ? logo.x - 10 : LW - safe.x;
+  const lx = safe.x;
+  roundRect(ctx, lx, top, lw, 30, 15);
+  ctx.fillStyle = GOLD; ctx.fill();
+  ctx.fillStyle = '#10161d'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  fillSpaced(ctx, label, lx + lw / 2, top + 15.5, 1.2);
+  if (n > 1 && lx + lw + 64 < maxX) {
+    const cnt = `${Math.min(n, i + (into > xf / 2 ? 2 : 1))}/${n}`;
+    ctx.font = `700 13px ${FONT}`;
+    const cw = ctx.measureText(cnt).width + 20;
+    roundRect(ctx, lx + lw + 8, top, cw, 30, 15);
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
+    ctx.fillText(cnt, lx + lw + 8 + cw / 2, top + 15.5);
+  }
+  ctx.restore();
+  return A;
+}
+
 function brandTop(tl) {
   const { LH, safe, scene } = tl;
   if (!scene.brand && !scene.phone) return Infinity;
@@ -1674,7 +1768,8 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   const infoTop = infoEndA > 0 ? infoBox(tl, 'top', logo) : null;
 
   // Những thẻ đang chiếm đáy khung -> phụ đề nằm phía trên
-  const sumP = sm ? (t < sm.t0 ? 0 : (t < ou.t0 + 0.4 ? clamp01((t - sm.t0 - 0.3 * (sm.t1 - sm.t0)) / 0.9) : Math.max(0, 1 - (t - ou.t0 - 0.4) / 0.4))) : 0;
+  const sumEnd = tl.photosPh ? tl.photosPh.t0 + 0.6 : ou.t0 + 0.4;
+  const sumP = sm ? (t < sm.t0 ? 0 : (t < sumEnd ? clamp01((t - sm.t0 - 0.3 * (sm.t1 - sm.t0)) / 0.9) : Math.max(0, 1 - (t - sumEnd) / 0.4))) : 0;
   const brandA = fadeWin(t, ou.t0 + 0.8, T + 10, 0.5, 0.4);
   const occ = { top: Infinity, rightPanel: 0 };
   if (tl.fmt === 'h') {
@@ -1707,6 +1802,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   drawBrand(ctx, tl, scene.brand, scene.phone, brandA);
   drawInfo(ctx, infoBottom, infoHouseA);
   drawInfo(ctx, infoTop, infoEndA);
+  drawPhotos(ctx, tl, t, logo);
   drawLogo(ctx, tl, logo);
   drawCaption(ctx, capL, capA);
 

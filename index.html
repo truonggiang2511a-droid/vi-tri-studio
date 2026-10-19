@@ -74,7 +74,7 @@
       <ol class="quick-steps">
         <li data-q="1"><span class="qn">1</span><div><strong>Dán vị trí căn nhà</strong><span>Toạ độ hoặc link chia sẻ từ Google Maps</span></div></li>
         <li data-q="2"><span class="qn">2</span><div><strong>Quét tiện ích</strong><span>App tự chọn trường, chợ, bệnh viện, đường lớn</span></div></li>
-        <li data-q="3"><span class="qn">3</span><div><strong>Tạo giọng đọc, xuất video</strong><span>Thêm số điện thoại, giá ở mục Video nếu muốn</span></div></li>
+        <li data-q="3"><span class="qn">3</span><div><strong>Tạo giọng đọc, xuất video</strong><span>Thêm giá, số điện thoại, ảnh căn nhà ở mục Video nếu muốn</span></div></li>
       </ol>
       <button id="quickGo" class="btn btn-primary btn-block" type="button">Dán vị trí căn nhà</button>
       <p id="quickMsg" class="hint small"><button id="quickDemo" class="link-btn" type="button">Hoặc thử ngay với toạ độ ví dụ</button></p>
@@ -206,6 +206,15 @@
         <option value="Sổ hồng hoàn công"></option><option value="Đang chờ sổ"></option><option value="Hợp đồng mua bán"></option>
       </datalist>
       <p class="hint small">Hiện thành thẻ giá trên video lúc giới thiệu căn nhà và lúc kết, giọng đọc cũng nhắc tới. Ô nào để trống thì không hiện.</p>
+
+      <div class="sub-head">Ảnh thực tế căn nhà</div>
+      <div class="field">
+        <span class="field-label">Thêm 1–6 ảnh <em>(mặt tiền, phòng khách, phòng ngủ…)</em></span>
+        <div class="photo-row" id="photoRow">
+          <label class="photo-add" id="photoAdd"><input autocomplete="off" id="photoFile" type="file" accept="image/*" multiple><span aria-hidden="true">+</span><span>Thêm ảnh</span></label>
+        </div>
+        <span class="hint small" id="photoHint">Ảnh chạy ở cuối video trước phần kết, mỗi ảnh khoảng 2 giây, có hiệu ứng chuyển cảnh. Ảnh lưu trên máy này theo từng căn.</span>
+      </div>
 
       <div class="sub-head">Logo &amp; phụ đề</div>
       <div class="field">

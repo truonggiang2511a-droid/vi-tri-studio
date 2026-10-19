@@ -247,6 +247,7 @@ async function loadSettings() {
     $('cUnl').value = c.unlimited_daily_exports; $('cIp').value = c.signup_per_ip_day;
     $('cGuard').checked = c.trial_guard !== false;
     $('cRef').value = c.ref_bonus ?? 2; $('cRefMax').value = c.ref_max_month ?? 30;
+    $('cPromo').value = c.promo_percent ?? 25; $('cPromoH').value = c.promo_hours ?? 24;
     $('cHook').value = ''; $('cNewKey').value = '';
     $('hookUrl').textContent = location.origin + '/api/sepay';
     $('hookState').textContent = c.webhook_ready ? 'đã đặt khoá, đang tự xác nhận' : 'chưa đặt khoá (đơn phải xác nhận tay)';
@@ -264,6 +265,7 @@ async function saveConfig(e) {
     trial_credits: num('cTrial'), reexport_hours: num('cReexp'), tts_daily_chars: num('cTts'),
     unlimited_daily_exports: num('cUnl'), signup_per_ip_day: num('cIp'),
     ref_bonus: num('cRef'), ref_max_month: num('cRefMax'), trial_guard: $('cGuard').checked,
+    promo_percent: num('cPromo'), promo_hours: num('cPromoH'),
   };
   const warn = [];
   if (p.tts_daily_chars !== null && p.tts_daily_chars < 3000) warn.push('Giới hạn ký tự giọng AI nên từ 3.000 trở lên (1 video cần khoảng 1.000–1.500 ký tự).');

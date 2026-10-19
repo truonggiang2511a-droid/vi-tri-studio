@@ -62,7 +62,7 @@ const state = {
   useBoundary: true,
   scannedAt: null,
 };
-const media = { music: null, voice: null, musicName: '', voiceName: '', mixed: null, mixKey: '', voiceSegs: new Map(), logo: null };
+const media = { music: null, voice: null, musicName: '', voiceName: '', mixed: null, mixKey: '', voiceSegs: new Map(), logo: null, photos: [] };
 const LOGO_STORE = 'vitri.logo.v1';
 const ai = { tts: false, ttsProvider: null, script: false, gated: true, voices: null };
 
@@ -141,6 +141,7 @@ function buildScene() {
     phone: phoneDisplay(state.phone),
     logo: media.logo,
     logoBg: state.logoBg,
+    photos: media.photos.map(p => p.img),
     info: { price: state.price, area: state.area, beds: state.beds, legal: state.legal },
     radiusKm: state.radiusKm,
     speed: state.speed,
@@ -217,6 +218,7 @@ let exporting = false;
 window.__vitri = { get tl() { return tl; }, get t() { return t; }, state, scanArea };
 
 function rebuild() {
+  if (photoKey(state.house) !== photoHouse) restorePhotos();
   if (!state.house) return;
   tl = buildTimeline(buildScene(), state.fmt, timelineOpts());
   if (t > tl.duration) t = 0;
@@ -722,6 +724,7 @@ function scriptSegments() {
     : phone ? `Gọi ngay số ${phone} để đi xem nhà trực tiếp!`
     : brand ? `Liên hệ ${brand} để đi xem nhà ngay hôm nay!`
     : 'Liên hệ ngay để đi xem nhà trực tiếp nhé!';
+  if (media.photos.length) add('photos', 'Ảnh thực tế', pick([`Cùng xem hình ảnh thực tế của ${twl}.`, `Đây là hình ảnh thực tế của ${twl}.`], 5));
   add('outro', 'Kết', `${scarce} ${cta}`);
   return segs;
 }
@@ -1292,6 +1295,108 @@ function showLogo() {
   if (has) $('logoPreview').src = media.logo.src;
 }
 
+// ---------- Ảnh thực tế căn nhà ----------
+// Thu nhỏ còn cạnh dài 1600px (đủ nét cho video 1080p), lưu IndexedDB theo toạ độ căn để mở lại vẫn còn.
+const PHOTO_MAX = 6;
+const photoKey = h => h ? `${h.lat.toFixed(5)},${h.lng.toFixed(5)}` : '';
+function photoDb(mode, key, value) {
+  return new Promise(resolve => {
+    try {
+      const req = indexedDB.open('vitri-photos', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('house');
+      req.onerror = () => resolve(null);
+      req.onsuccess = () => {
+        try {
+          const tx = req.result.transaction('house', mode === 'get' ? 'readonly' : 'readwrite');
+          const st = tx.objectStore('house');
+          const r = mode === 'get' ? st.get(key) : mode === 'del' ? st.delete(key) : st.put(value, key);
+          r.onsuccess = () => resolve(mode === 'get' ? r.result || null : true);
+          r.onerror = () => resolve(null);
+        } catch { resolve(null); }
+      };
+    } catch { resolve(null); }
+  });
+}
+let photoHouse = '';
+function savePhotos() {
+  const k = photoKey(state.house);
+  if (!k) return;
+  if (media.photos.length) photoDb('put', k, media.photos.map(p => p.src));
+  else photoDb('del', k);
+}
+async function restorePhotos() {
+  const k = photoKey(state.house);
+  if (k === photoHouse) return;
+  photoHouse = k;
+  media.photos = [];
+  showPhotos();
+  if (!k) return;
+  const list = await photoDb('get', k);
+  if (!Array.isArray(list) || photoHouse !== k) return;
+  const imgs = (await Promise.all(list.map(loadLogo))).filter(Boolean);
+  if (photoHouse !== k) return;
+  media.photos = imgs.map(img => ({ img, src: img.src }));
+  showPhotos();
+  scheduleRebuild();
+}
+async function shrinkPhoto(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await loadLogo(url);
+    if (!img) return null;
+    const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(img.width * k));
+    c.height = Math.max(1, Math.round(img.height * k));
+    const g = c.getContext('2d');
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(img, 0, 0, c.width, c.height);
+    const src = c.toDataURL('image/jpeg', 0.86);
+    const out = await loadLogo(src);
+    return out ? { img: out, src } : null;
+  } finally { URL.revokeObjectURL(url); }
+}
+async function pickPhotos(files) {
+  const list = Array.from(files || []).filter(f => /^image\//.test(f.type) || /\.(jpe?g|png|webp|heic|heif)$/i.test(f.name));
+  $('photoFile').value = '';
+  if (!list.length) return;
+  if (!state.house) { toast('Dán vị trí căn nhà trước rồi thêm ảnh.', 3000); return; }
+  const room = PHOTO_MAX - media.photos.length;
+  if (room <= 0) { toast(`Tối đa ${PHOTO_MAX} ảnh. Bỏ bớt ảnh cũ để thêm ảnh mới.`, 3000); return; }
+  $('photoAdd').classList.add('busy');
+  let bad = 0;
+  for (const f of list.slice(0, room)) {
+    const p = await shrinkPhoto(f).catch(() => null);
+    if (p) media.photos.push(p); else bad++;
+  }
+  $('photoAdd').classList.remove('busy');
+  if (list.length > room) toast(`Chỉ lấy ${room} ảnh đầu (tối đa ${PHOTO_MAX} ảnh).`, 3000);
+  else if (bad) toast('Có ảnh không đọc được. Dùng ảnh JPG hoặc PNG.', 3500);
+  savePhotos();
+  showPhotos();
+  scheduleRebuild();
+}
+function removePhoto(i) {
+  media.photos.splice(i, 1);
+  savePhotos();
+  showPhotos();
+  scheduleRebuild();
+}
+function showPhotos() {
+  const row = $('photoRow');
+  if (!row) return;
+  for (const el of row.querySelectorAll('.photo-th')) el.remove();
+  const add = $('photoAdd');
+  media.photos.forEach((p, i) => {
+    const d = document.createElement('div');
+    d.className = 'photo-th';
+    d.innerHTML = `<img alt="Ảnh ${i + 1}"><span class="ord">${i + 1}</span><button type="button" aria-label="Bỏ ảnh ${i + 1}" data-rm="${i}">×</button>`;
+    d.querySelector('img').src = p.src;
+    row.insertBefore(d, add);
+  });
+  add.hidden = media.photos.length >= PHOTO_MAX;
+}
+
 // ---------- Âm thanh ----------
 async function pickAudio(kind, file) {
   if (!file) return;
@@ -1488,6 +1593,8 @@ function init() {
   $('logoBg').checked = state.logoBg !== false;
   $('logoBg').addEventListener('change', e => { state.logoBg = e.target.checked; scheduleRebuild(); });
   $('logoFile').addEventListener('change', e => pickLogo(e.target.files[0]));
+  $('photoFile').addEventListener('change', e => pickPhotos(e.target.files));
+  $('photoRow').addEventListener('click', e => { const b = e.target.closest('button[data-rm]'); if (b) removePhoto(Number(b.dataset.rm)); });
   $('logoClear').addEventListener('click', clearLogo);
   $('subsOn').checked = state.subsOn !== false;
   $('subsOn').addEventListener('change', e => { state.subsOn = e.target.checked; scheduleRebuild(); });

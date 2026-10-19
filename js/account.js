@@ -44,6 +44,7 @@ const S = {
   loc: null,
   order: null,         // đơn đang chờ thanh toán
   ref: null,           // mã giới thiệu của mình + số người đã mời
+  promo: null,         // ưu đãi lần mua đầu {percent, until}
 };
 let toast = m => console.log(m);
 const listeners = new Set();
@@ -105,6 +106,7 @@ export async function refreshAccount() {
     S.profile = r.profile;
     S.reexportUntil = r.reexport_until;
     S.ref = r.ref || null;
+    S.promo = r.promo && r.promo.percent > 0 && new Date(r.promo.until) > Date.now() ? r.promo : null;
     if (r.pending) S.order = S.order?.code === r.pending.code ? S.order : { ...r.pending };
   } catch (e) {
     if (e.hint === 'AUTH' || e.hint === 'LOCKED') clearSession();
@@ -140,6 +142,23 @@ async function loadInfo() {
   return S.info;
 }
 
+// ---------- Ưu đãi lần mua đầu (máy chủ quyết định, ở đây chỉ hiển thị) ----------
+function promoOn() { return !!(S.promo && new Date(S.promo.until) > Date.now()); }
+function promoPrice(price) { return Math.max(1000, Math.round(price * (100 - S.promo.percent) / 100 / 1000) * 1000); }
+function leftText(until, withSec = false) {
+  const ms = Math.max(0, new Date(until) - Date.now());
+  const h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60, sec = Math.floor(ms / 1000) % 60;
+  if (withSec) return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  return h >= 1 ? `${h} giờ ${m} phút` : `${m} phút`;
+}
+let promoTimer = null;
+function tickPromo() {
+  const els = document.querySelectorAll('[data-promo-left]');
+  if (!els.length || !promoOn()) { clearInterval(promoTimer); promoTimer = null; if (S.promo && !promoOn()) { S.promo = null; renderBadge(); } return; }
+  for (const el of els) el.textContent = leftText(S.promo.until, el.dataset.promoLeft === 'sec');
+}
+function startPromoTick() { tickPromo(); if (!promoTimer) promoTimer = setInterval(tickPromo, 1000); }
+
 // ---------- Huy hiệu trên thanh trên cùng + ghi chú ở bước xuất ----------
 function creditText(p) {
   if (!p) return '';
@@ -165,7 +184,9 @@ function renderBadge() {
     const soon = p?.unlimited && new Date(p.unlimited_until) - Date.now() < 3 * 86400000;
     const few = p && !p.unlimited && p.credits <= 1;
     low.hidden = !(soon || few);
-    if (soon) low.innerHTML = `Gói không giới hạn hết hạn ${fmtDate(p.unlimited_until, false)}. <button type="button" class="link-btn" data-act="buy">Gia hạn</button>`;
+    low.classList.toggle('promo', !!(few && promoOn()));
+    if (few && promoOn()) low.innerHTML = `${p.credits <= 0 ? 'Anh/chị đã dùng hết lượt dùng thử.' : 'Còn <strong>1 lượt</strong> cuối.'} <strong>Ưu đãi lần mua đầu: giảm ${S.promo.percent}%</strong> mọi gói, còn <span data-promo-left="min">${leftText(S.promo.until)}</span>. <button type="button" class="link-btn" data-act="buy">Mua với giá ưu đãi</button>`;
+    else if (soon) low.innerHTML = `Gói không giới hạn hết hạn ${fmtDate(p.unlimited_until, false)}. <button type="button" class="link-btn" data-act="buy">Gia hạn</button>`;
     else if (few) low.innerHTML = `${p.credits <= 0 ? 'Anh/chị đã hết lượt.' : 'Còn <strong>1 lượt</strong> cuối.'} <button type="button" class="link-btn" data-act="buy">Mua thêm</button> hoặc <button type="button" class="link-btn" data-act="invite">mời bạn bè để được tặng lượt</button>`;
   }
   const note = $('creditNote');
@@ -180,9 +201,12 @@ function renderBadge() {
     } else if (p.credits > 0) {
       note.innerHTML = `Còn <strong>${p.credits} lượt</strong>. Mỗi vị trí trừ 1 lượt, xuất lại trong 24 giờ không trừ thêm.`;
     } else {
-      note.innerHTML = `Đã hết lượt. <button type="button" class="link-btn" data-act="buy">Mua thêm lượt</button>`;
+      note.innerHTML = promoOn()
+        ? `Đã hết lượt. Mua lần đầu được <strong>giảm ${S.promo.percent}%</strong> (còn <span data-promo-left="min">${leftText(S.promo.until)}</span>). <button type="button" class="link-btn" data-act="buy">Xem gói ưu đãi</button>`
+        : `Đã hết lượt. <button type="button" class="link-btn" data-act="buy">Mua thêm lượt</button>`;
     }
   }
+  if (promoOn()) startPromoTick();
 }
 
 // ---------- Đăng nhập / đăng ký ----------
@@ -423,21 +447,25 @@ export async function openPricing(reason = '') {
   const list = $('pkgList');
   list.innerHTML = '<p class="hint">Đang tải bảng giá…</p>';
   S.info = null;
-  const info = await loadInfo();
+  const [info] = await Promise.all([loadInfo(), refreshAccount().catch(() => {})]);
   if (!info) { list.innerHTML = '<p class="hint err">Không tải được bảng giá. Kiểm tra mạng rồi thử lại.</p>'; return; }
-  list.innerHTML = info.packages.map(p => {
-    const per = p.credits ? `${money(p.price / p.credits)}/video` : `${p.days} ngày`;
+  const promo = promoOn();
+  list.innerHTML = (promo && info.packages.length ? `<div class="promo-box"><strong>Ưu đãi lần mua đầu: giảm ${S.promo.percent}% mọi gói</strong><span>Kết thúc sau <b class="mono" data-promo-left="sec">${leftText(S.promo.until, true)}</b></span></div>` : '') + info.packages.map(p => {
+    const price = promo ? promoPrice(p.price) : p.price;
+    const per = p.credits ? `${money(price / p.credits)}/video` : `${p.days} ngày`;
     return `<button type="button" class="pkg${p.highlight ? ' hot' : ''}" data-pkg="${esc(p.id)}">
       ${p.highlight ? '<span class="pkg-tag">Nhiều người chọn</span>' : ''}
       <span class="pkg-name">${esc(p.name)}</span>
-      <span class="pkg-price">${money(p.price)}</span>
+      <span class="pkg-price">${price < p.price ? `<s>${money(p.price)}</s> ` : ''}${money(price)}</span>
       <span class="pkg-per">${esc(per)}</span>
       <span class="pkg-desc">${esc(p.description)}</span>
     </button>`;
   }).join('') || '<p class="hint">Chưa có gói nào đang bán.</p>';
   if (S.order && S.order.status === 'pending') {
-    list.insertAdjacentHTML('afterbegin', `<button type="button" class="pending-order" data-resume="1">Đơn <strong class="mono">${esc(S.order.code)}</strong> đang chờ thanh toán (${money(S.order.amount)}). Mở lại mã QR</button>`);
+    const box = list.querySelector('.promo-box');
+    (box || list).insertAdjacentHTML(box ? 'afterend' : 'afterbegin', `<button type="button" class="pending-order" data-resume="1">Đơn <strong class="mono">${esc(S.order.code)}</strong> đang chờ thanh toán (${money(S.order.amount)}). Mở lại mã QR</button>`);
   }
+  if (promo) startPromoTick();
 }
 
 let pollTimer = null;
