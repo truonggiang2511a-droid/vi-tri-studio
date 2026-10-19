@@ -31,7 +31,6 @@ const zalo = p => 'https://zalo.me/' + String(p || '').replace(/\D/g, '');
 function renderBadge() {
   const b = $('leadsBtn');
   if (!b) return;
-  b.hidden = !account.profile;
   const n = account.leadsNew || 0;
   const badge = b.querySelector('.badge');
   badge.textContent = n > 99 ? '99+' : String(n);

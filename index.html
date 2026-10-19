@@ -30,19 +30,12 @@
 <header class="topbar">
   <div class="brand">
     <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 2C9.4 2 4 7.2 4 13.7 4 22.5 16 30 16 30s12-7.5 12-16.3C28 7.2 22.6 2 16 2z" fill="currentColor"/><path d="M16 7.6 9.2 13.5h2.1V19h3.4v-3.7h2.6V19h3.4v-5.5h2.1z" fill="var(--bg)"/></svg>
-    <div>
-      <div class="brand-name">Vị Trí Studio</div>
-      <div class="brand-sub">Video vị trí &amp; tiện ích từ toạ độ</div>
-    </div>
+    <div class="brand-name">Vị Trí Studio</div>
   </div>
   <div class="top-actions">
     <button id="installBtn" class="btn install-btn" type="button" data-install aria-label="Cài app lên màn hình chính">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0-4-4m4 4 4-4M5 17v3h14v-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span>Cài app</span>
-    </button>
-    <button id="leadsBtn" class="btn btn-ghost leads-btn" type="button" aria-label="Khách quan tâm" hidden>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 19v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1M9.5 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM17 8v6m3-3h-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span class="acct-label">Khách</span><span class="badge" hidden>0</span>
     </button>
     <button id="acctBtn" class="btn btn-ghost acct-btn" type="button">Đăng nhập</button>
   </div>
@@ -50,11 +43,31 @@
 <div id="lowBanner" class="low-banner" role="status" hidden></div>
 
 <main class="layout">
+  <nav class="appnav" aria-label="Điều hướng">
+    <button type="button" class="nav-item on" data-nav="studio" aria-current="page">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="13" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="m16 10 5-3v10l-5-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      <span>Làm video</span>
+    </button>
+    <button type="button" class="nav-item" id="projListBtn">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H10l2 2.5h7.5A1.5 1.5 0 0 1 21 9v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      <span>Căn đã lưu</span>
+    </button>
+    <button type="button" class="nav-item" id="leadsBtn" aria-label="Khách quan tâm">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 19v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1M9.5 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM17 8v6m3-3h-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Khách</span><b class="badge" hidden>0</b>
+    </button>
+    <a id="zaloFab" class="nav-item zalo-link" href="#" target="_blank" rel="noopener" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5c-5 0-9 3.5-9 7.9 0 2.4 1.2 4.5 3.2 6l-.6 3.1 3.5-1.8c.9.3 1.9.4 2.9.4 5 0 9-3.5 9-7.8S17 3.5 12 3.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      <span>Hỗ trợ</span>
+    </a>
+    <div class="nav-foot"><a href="/gioi-thieu">Bảng giá</a><a href="/dieu-khoan">Điều khoản</a><a href="/chinh-sach-bao-mat">Bảo mật</a></div>
+  </nav>
+
   <section class="stage" aria-label="Xem trước video">
     <div class="stage-inner">
       <div id="canvasWrap" class="canvas-wrap" data-fmt="v">
         <canvas id="preview" aria-label="Khung xem trước video vị trí"></canvas>
-        <button id="bigPlay" class="big-play" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>Xem thử video</button>
+        <button id="bigPlay" class="big-play" type="button" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>Xem thử</button>
         <div id="stageStatus" class="stage-status" hidden></div>
       </div>
       <div class="transport">
@@ -69,23 +82,17 @@
     </div>
   </section>
 
-  <section class="panel">
-    <article class="quick" id="quickCard">
-      <div class="quick-head">
-        <h2>Làm video trong 3 bước</h2>
-        <button id="modeBtn" class="link-btn" type="button">Hiện tất cả tuỳ chọn</button>
-      </div>
-      <ol class="quick-steps">
-        <li data-q="1"><span class="qn">1</span><div><strong>Dán vị trí căn nhà</strong><span>Toạ độ hoặc link chia sẻ từ Google Maps</span></div></li>
-        <li data-q="2"><span class="qn">2</span><div><strong>Quét tiện ích</strong><span>App tự chọn trường, chợ, bệnh viện, đường lớn</span></div></li>
-        <li data-q="3"><span class="qn">3</span><div><strong>Tạo giọng đọc, xuất video</strong><span>Thêm giá, số điện thoại, ảnh căn nhà ở mục Video nếu muốn</span></div></li>
-      </ol>
-      <button id="quickGo" class="btn btn-primary btn-block" type="button">Dán vị trí căn nhà</button>
-      <p id="quickMsg" class="hint small"><button id="quickDemo" class="link-btn" type="button">Hoặc thử ngay với toạ độ ví dụ</button></p>
-    </article>
-    <div class="mode-bar" id="modeBar"><button id="modeBtn2" class="link-btn" type="button">Về chế độ 3 bước đơn giản</button></div>
-    <article class="step" id="step1">
-      <header class="step-head"><span class="step-no">1</span><h2>Vị trí căn nhà</h2></header>
+  <section class="panel" id="panel">
+    <ol class="stepper" id="stepper">
+      <li><button type="button" data-go="1"><span class="sn">1</span><span class="sl">Vị trí</span></button></li>
+      <li><button type="button" data-go="2"><span class="sn">2</span><span class="sl">Tiện ích</span></button></li>
+      <li><button type="button" data-go="3"><span class="sn">3</span><span class="sl">Nội dung</span></button></li>
+      <li><button type="button" data-go="4"><span class="sn">4</span><span class="sl">Xuất &amp; chia sẻ</span></button></li>
+    </ol>
+
+    <div class="steps">
+    <article class="step on" id="step1" data-step="1">
+      <header class="step-head"><h2>Căn nhà nằm ở đâu?</h2></header>
       <label class="field">
         <span class="field-label">Toạ độ hoặc link Google Maps</span>
         <div class="input-row">
@@ -94,17 +101,6 @@
         </div>
       </label>
       <p id="coordMsg" class="hint" aria-live="polite"></p>
-      <div class="proj-row">
-        <button id="saveProjBtn" class="btn btn-quiet" type="button">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h11l3 3v15H5zM8 3v6h7V3M8 21v-7h8v7" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
-          Lưu căn này
-        </button>
-        <button id="projListBtn" class="btn btn-quiet" type="button">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 2h9v11H3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
-          Căn đã lưu
-        </button>
-      </div>
-
       <div class="field">
         <span class="field-label">Loại bất động sản</span>
         <div class="seg" id="typeSeg" role="radiogroup" aria-label="Loại bất động sản">
@@ -114,234 +110,211 @@
           <button type="button" role="radio" data-v="VỊ TRÍ DỰ ÁN">Dự án</button>
         </div>
       </div>
-      <div class="grid2 adv">
-        <label class="field">
-          <span class="field-label">Nhãn trên ghim</span>
-          <input autocomplete="off" id="labelInput" class="input" type="text" maxlength="28">
-        </label>
-        <label class="field">
-          <span class="field-label">Dòng phụ <em>(không bắt buộc)</em></span>
-          <input autocomplete="off" id="subInput" class="input" type="text" maxlength="48" placeholder="Xã, huyện…">
-        </label>
-      </div>
-      <label class="field adv">
-        <span class="field-label">Bán kính quét <output id="radiusOut" class="mono">5 km</output></span>
-        <input autocomplete="off" id="radiusInput" type="range" min="1" max="10" step="0.5" value="5">
-      </label>
-      <button id="scanBtn" class="btn btn-primary btn-block" type="button">
+      <details class="more">
+        <summary>Tuỳ chỉnh nâng cao</summary>
+        <div class="more-body">
+          <div class="grid2">
+            <label class="field"><span class="field-label">Nhãn trên ghim</span><input autocomplete="off" id="labelInput" class="input" type="text" maxlength="28"></label>
+            <label class="field"><span class="field-label">Dòng phụ</span><input autocomplete="off" id="subInput" class="input" type="text" maxlength="48" placeholder="Xã, huyện…"></label>
+          </div>
+          <label class="field"><span class="field-label">Bán kính quét <output id="radiusOut" class="mono">5 km</output></span><input autocomplete="off" id="radiusInput" type="range" min="1" max="10" step="0.5" value="5"></label>
+        </div>
+      </details>
+      <button id="scanBtn" class="btn btn-primary btn-block btn-lg" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="m20 20-3.6-3.6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
         <span id="scanLabel">Quét tiện ích trong 5 km</span>
       </button>
+      <p class="hint center"><button id="quickDemo" class="link-btn" type="button">Chưa có toạ độ? Thử với căn ví dụ</button></p>
     </article>
 
-    <article class="step" id="step2">
-      <header class="step-head"><span class="step-no">2</span><h2>Tiện ích &amp; đường lớn</h2><span id="pickCount" class="count"></span></header>
-      <div id="resultsEmpty" class="empty">
-        <p>Bấm <strong>Quét tiện ích</strong> để tìm trường học, bệnh viện, chợ, khu công nghiệp và quốc lộ, cao tốc quanh căn nhà. App chọn sẵn các điểm tiêu biểu, anh/chị bỏ chọn hoặc thêm điểm khác.</p>
+    <article class="step" id="step2" data-step="2">
+      <header class="step-head"><h2>Tiện ích &amp; đường lớn</h2><span id="pickCount" class="count"></span></header>
+      <div id="resultsEmpty" class="empty-state">
+        <p>Chưa quét. Quay lại bước 1 và bấm <strong>Quét tiện ích</strong>.</p>
+        <button type="button" class="btn btn-quiet" data-go="1">← Về bước 1</button>
       </div>
       <div id="results" hidden>
         <div class="sub-head">Địa phận</div>
         <div id="adminBox" class="admin-box"></div>
         <div class="sub-head">Đường lớn</div>
         <div id="roadList" class="road-list"></div>
-        <div class="sub-head">Tiện ích <span class="sub-note">tối đa 10 điểm lên video</span></div>
+        <div class="sub-head">Tiện ích <span class="sub-note">tối đa 10 điểm</span></div>
         <div id="poiList" class="poi-list"></div>
-        <details class="addpoi">
+        <details class="more addpoi">
           <summary>Thêm điểm chưa có trong danh sách</summary>
-          <label class="field"><span class="field-label">Tìm theo tên, hoặc dán link Google Maps của điểm đó</span>
-            <div class="input-row"><input autocomplete="off" id="addSearch" class="input" type="text" placeholder="VD: Khu công nghiệp Lê Minh Xuân" spellcheck="false"><button id="addSearchBtn" class="btn btn-quiet" type="button">Tìm</button></div>
-          </label>
-          <div id="addResults" class="add-results"></div>
-          <div class="grid2">
-            <label class="field"><span class="field-label">Tên</span><input autocomplete="off" id="addName" class="input" type="text" maxlength="60" placeholder="Chợ Bình Chánh"></label>
-            <label class="field"><span class="field-label">Nhóm</span><select id="addCat" class="input" autocomplete="off"></select></label>
+          <div class="more-body">
+            <label class="field"><span class="field-label">Tìm theo tên hoặc dán link Google Maps</span>
+              <div class="input-row"><input autocomplete="off" id="addSearch" class="input" type="text" placeholder="VD: KCN Lê Minh Xuân" spellcheck="false"><button id="addSearchBtn" class="btn btn-quiet" type="button">Tìm</button></div>
+            </label>
+            <div id="addResults" class="add-results"></div>
+            <div class="grid2">
+              <label class="field"><span class="field-label">Tên</span><input autocomplete="off" id="addName" class="input" type="text" maxlength="60" placeholder="Chợ Bình Chánh"></label>
+              <label class="field"><span class="field-label">Nhóm</span><select id="addCat" class="input" autocomplete="off"></select></label>
+            </div>
+            <label class="field"><span class="field-label">Toạ độ điểm</span><input autocomplete="off" id="addCoord" class="input mono" type="text" placeholder="10.6800, 106.5800"></label>
+            <button id="addBtn" class="btn btn-quiet" type="button">Thêm vào video</button>
+            <p id="addMsg" class="hint"></p>
           </div>
-          <label class="field"><span class="field-label">Toạ độ điểm</span><input autocomplete="off" id="addCoord" class="input mono" type="text" placeholder="10.6800, 106.5800 hoặc link Google Maps"></label>
-          <button id="addBtn" class="btn btn-quiet" type="button">Thêm vào video</button>
-          <p id="addMsg" class="hint"></p>
         </details>
-        <p class="hint">Dữ liệu tổng hợp từ OpenStreetMap và Overture Maps, có thể thiếu hoặc cũ. Khoảng cách tính theo đường đi thật; số có dấu <span class="mono">~</span> là đường chim bay. Soát lại trước khi đăng.</p>
+        <p class="hint small">Khoảng cách theo đường đi thật; dấu <span class="mono">~</span> là đường chim bay. Dữ liệu OpenStreetMap, Overture — soát lại trước khi đăng.</p>
       </div>
     </article>
 
-    <article class="step" id="step3">
-      <header class="step-head"><span class="step-no">3</span><h2>Video</h2><span id="durLabel" class="count"></span></header>
-      <div class="field">
-        <span class="field-label">Khung hình</span>
-        <div class="seg" id="fmtSeg" role="radiogroup" aria-label="Khung hình">
-          <button type="button" role="radio" data-v="v">Dọc 9:16</button>
-          <button type="button" role="radio" data-v="h">Ngang 16:9</button>
-          <button type="button" role="radio" data-v="s">Vuông 1:1</button>
+    <article class="step" id="step3" data-step="3">
+      <header class="step-head"><h2>Nội dung video</h2><span id="durLabel" class="count"></span></header>
+      <div class="subtabs" id="subtabs" role="tablist">
+        <button type="button" role="tab" data-sub="info" aria-selected="true">Thông tin căn</button>
+        <button type="button" role="tab" data-sub="look" aria-selected="false">Phong cách</button>
+        <button type="button" role="tab" data-sub="sound" aria-selected="false">Giọng &amp; nhạc</button>
+      </div>
+
+      <div class="subpane" data-pane="info">
+        <div class="grid2">
+          <label class="field"><span class="field-label">Giá bán</span><input autocomplete="off" id="priceInput" class="input" type="text" maxlength="30" placeholder="3,2 tỷ"></label>
+          <label class="field"><span class="field-label">Diện tích</span><input autocomplete="off" id="areaInput" class="input" type="text" maxlength="30" placeholder="5x20m"></label>
+          <label class="field"><span class="field-label">Phòng ngủ</span><input autocomplete="off" id="bedsInput" class="input" type="text" inputmode="numeric" maxlength="20" placeholder="3"></label>
+          <label class="field"><span class="field-label">Pháp lý</span><input autocomplete="off" id="legalInput" class="input" type="text" maxlength="30" placeholder="Sổ hồng riêng" list="legalList"></label>
         </div>
-      </div>
-      <div class="field adv">
-        <span class="field-label">Nhịp máy lia</span>
-        <div class="seg" id="speedSeg" role="radiogroup" aria-label="Nhịp máy lia">
-          <button type="button" role="radio" data-v="cham">Chậm</button>
-          <button type="button" role="radio" data-v="vua">Vừa</button>
-          <button type="button" role="radio" data-v="nhanh">Nhanh</button>
+        <datalist id="legalList">
+          <option value="Sổ hồng riêng"></option><option value="Sổ hồng chung"></option><option value="Sổ đỏ"></option>
+          <option value="Sổ hồng hoàn công"></option><option value="Đang chờ sổ"></option><option value="Hợp đồng mua bán"></option>
+        </datalist>
+        <label class="field"><span class="field-label">Số điện thoại / Zalo xem nhà</span><input autocomplete="off" id="phoneInput" class="input mono" type="tel" inputmode="tel" maxlength="16" placeholder="0912 345 678"></label>
+        <div class="field">
+          <span class="field-label">Ảnh thực tế <em>1–6 ảnh</em></span>
+          <div class="photo-row" id="photoRow">
+            <label class="photo-add" id="photoAdd"><input autocomplete="off" id="photoFile" type="file" accept="image/*" multiple><span aria-hidden="true">+</span><span>Thêm ảnh</span></label>
+          </div>
+          <span class="hint small" id="photoHint">Ảnh đầu tiên làm nền cảnh mở đầu, cả bộ chạy trước cảnh kết.</span>
         </div>
-      </div>
-      <label class="field">
-        <span class="field-label">Tiêu đề mở đầu</span>
-        <input autocomplete="off" id="titleInput" class="input" type="text" maxlength="40">
-      </label>
-      <label class="field">
-        <span class="field-label">Dòng thương hiệu cuối video <em>(không bắt buộc)</em></span>
-        <input autocomplete="off" id="brandInput" class="input" type="text" maxlength="40" placeholder="Tên kênh hoặc tên sàn">
-      </label>
-      <label class="field">
-        <span class="field-label">Số điện thoại / Zalo xem nhà <em>(không bắt buộc)</em></span>
-        <input autocomplete="off" id="phoneInput" class="input mono" type="tel" inputmode="tel" maxlength="16" placeholder="0912 345 678">
-        <span class="hint small">Có số thì cuối video hiện số, giọng đọc mời gọi xem nhà và đọc số.</span>
-      </label>
-
-      <div class="sub-head">Phong cách video</div>
-      <div class="style-grid" id="styleRow" role="radiogroup" aria-label="Phong cách video"></div>
-      <p class="hint small">Đổi màu, kiểu chữ, cảnh mở đầu và cảnh kết. Mỗi môi giới chọn một kiểu riêng để video không giống nhau.</p>
-
-      <div class="sub-head">Thông tin căn nhà</div>
-      <div class="grid2">
-        <label class="field"><span class="field-label">Giá bán</span><input autocomplete="off" id="priceInput" class="input" type="text" maxlength="30" placeholder="3,2 tỷ"></label>
-        <label class="field"><span class="field-label">Diện tích</span><input autocomplete="off" id="areaInput" class="input" type="text" maxlength="30" placeholder="5x20m hoặc 100 m²"></label>
-      </div>
-      <div class="grid2">
-        <label class="field"><span class="field-label">Phòng ngủ</span><input autocomplete="off" id="bedsInput" class="input" type="text" inputmode="numeric" maxlength="20" placeholder="3"></label>
-        <label class="field"><span class="field-label">Pháp lý</span><input autocomplete="off" id="legalInput" class="input" type="text" maxlength="30" placeholder="Sổ hồng riêng" list="legalList"></label>
-      </div>
-      <datalist id="legalList">
-        <option value="Sổ hồng riêng"></option><option value="Sổ hồng chung"></option><option value="Sổ đỏ"></option>
-        <option value="Sổ hồng hoàn công"></option><option value="Đang chờ sổ"></option><option value="Hợp đồng mua bán"></option>
-      </datalist>
-      <p class="hint small">Hiện thành thẻ giá trên video lúc giới thiệu căn nhà và lúc kết, giọng đọc cũng nhắc tới. Ô nào để trống thì không hiện.</p>
-
-      <div class="sub-head">Ảnh thực tế căn nhà</div>
-      <div class="field">
-        <span class="field-label">Thêm 1–6 ảnh <em>(mặt tiền, phòng khách, phòng ngủ…)</em></span>
-        <div class="photo-row" id="photoRow">
-          <label class="photo-add" id="photoAdd"><input autocomplete="off" id="photoFile" type="file" accept="image/*" multiple><span aria-hidden="true">+</span><span>Thêm ảnh</span></label>
-        </div>
-        <span class="hint small" id="photoHint">Ảnh chạy ở cuối video trước phần kết, mỗi ảnh khoảng 2 giây, có hiệu ứng chuyển cảnh. Ảnh lưu trên máy này theo từng căn.</span>
+        <details class="more">
+          <summary>Tiêu đề &amp; thương hiệu</summary>
+          <div class="more-body">
+            <label class="field"><span class="field-label">Tiêu đề mở đầu</span><input autocomplete="off" id="titleInput" class="input" type="text" maxlength="40"></label>
+            <label class="field"><span class="field-label">Tên kênh / sàn cuối video</span><input autocomplete="off" id="brandInput" class="input" type="text" maxlength="40" placeholder="Nhà Đất Bình Chánh"></label>
+          </div>
+        </details>
       </div>
 
-      <div class="sub-head">Trang web căn này</div>
-      <div class="field page-box">
-        <p class="hint small">Trang riêng cho căn: ảnh, giá, video, tiện ích, nút Gọi/Zalo và ô để lại số. Gắn link vào bài đăng Facebook, TikTok, Zalo hoặc in mã QR lên băng rôn. Khách để lại số sẽ báo về app (và Telegram nếu bật).</p>
-        <label class="field"><span class="field-label">Link video đã đăng <em>(TikTok, YouTube, Facebook — không bắt buộc)</em></span><input autocomplete="off" id="pageVideo" class="input" type="url" inputmode="url" maxlength="400" placeholder="https://www.tiktok.com/@ten/video/…"></label>
-        <label class="field"><span class="field-label">Mô tả thêm <em>(không bắt buộc)</em></span><textarea autocomplete="off" id="pageDesc" class="input" rows="3" maxlength="2000" placeholder="Hẻm xe hơi, gần chợ, sổ sẵn công chứng ngay…"></textarea></label>
-        <button id="pagePublish" class="btn btn-primary btn-block" type="button">Tạo trang web cho căn này</button>
-        <div id="pageResult" class="page-result" hidden>
-          <div class="input-row"><input id="pageLink" class="input mono" type="text" readonly aria-label="Link trang căn nhà"><button id="pageCopy" class="btn btn-quiet" type="button">Chép</button></div>
-          <div class="page-acts"><a id="pageOpen" class="btn btn-quiet" target="_blank" rel="noopener">Xem trang</a><button id="pageShare" class="btn btn-quiet" type="button">Chia sẻ</button><button id="pageQrBtn" class="btn btn-quiet" type="button">Tải mã QR</button></div>
-          <p class="hint small">Sửa giá, ảnh, mô tả xong bấm nút trên để cập nhật — link giữ nguyên.</p>
-        </div>
-      </div>
-
-      <div class="sub-head">Logo &amp; phụ đề</div>
-      <div class="field">
-        <span class="field-label">Logo góc video <em>(PNG nền trong suốt là đẹp nhất)</em></span>
-        <div class="file-row">
-          <label class="btn btn-quiet file-btn">Chọn logo<input autocomplete="off" id="logoFile" type="file" accept="image/png,image/jpeg,image/webp"></label>
-          <img id="logoPreview" class="logo-preview" alt="Logo" hidden>
-          <span id="logoName" class="file-name">Chưa có</span>
-          <button id="logoClear" class="link-btn" type="button" hidden>Bỏ</button>
-        </div>
-        <label class="check"><input autocomplete="off" id="logoBg" type="checkbox" checked> Nền trắng sau logo (logo màu tối nên bật)</label>
-        <span class="hint small">Logo lưu trên máy này, lần sau mở app vẫn còn.</span>
-      </div>
-      <label class="check adv"><input autocomplete="off" id="subsOn" type="checkbox" checked> Hiện phụ đề chạy chữ theo giọng đọc AI</label>
-      <p class="hint small adv">Phần lớn người xem Facebook, TikTok để tắt tiếng. Phụ đề hiện sau khi bấm Tạo giọng đọc AI.</p>
-
-      <div class="field adv">
-        <span class="field-label">Màu line trục đường lớn</span>
-        <div class="swatches" id="roadThemeRow" role="radiogroup" aria-label="Màu line trục đường lớn"></div>
-      </div>
-      <div class="field adv">
-        <span class="field-label">Màu line đường tới tiện ích</span>
-        <div class="swatches" id="routeThemeRow" role="radiogroup" aria-label="Màu line đường tới tiện ích"></div>
-      </div>
-
-      <div class="sub-head">Giọng đọc AI</div>
-      <p id="aiStatus" class="hint">Đang kiểm tra giọng đọc AI…</p>
-      <div class="field">
-        <span class="field-label">Giọng</span>
-        <div class="seg" id="voiceSeg" role="radiogroup" aria-label="Giọng đọc">
-          <button type="button" role="radio" data-v="nu-nam">Nữ miền Nam</button>
-          <button type="button" role="radio" data-v="nam-nam">Nam miền Nam</button>
-          <button type="button" role="radio" data-v="nu-bac">Nữ miền Bắc</button>
-          <button type="button" role="radio" data-v="nam-bac">Nam miền Bắc</button>
-        </div>
-      </div>
-      <div class="field adv">
-        <span class="field-label">Tốc độ đọc</span>
-        <div class="seg" id="vspeedSeg" role="radiogroup" aria-label="Tốc độ đọc">
-          <button type="button" role="radio" data-v="-1">Chậm</button>
-          <button type="button" role="radio" data-v="0">Vừa</button>
-          <button type="button" role="radio" data-v="1">Nhanh</button>
-        </div>
-      </div>
-      <div class="field adv">
-        <span class="field-label">Kịch bản lời đọc theo từng cảnh <span class="lbl-acts"><button id="altScriptBtn" class="link-btn" type="button">Đổi cách viết</button><button id="aiScriptBtn" class="link-btn" type="button" hidden>Viết lại bằng AI</button></span></span>
-        <div id="scriptList" class="script-list"></div>
-        <p class="hint small">Số thập phân viết dấu phẩy hay dấu chấm đều được: "1,5 km" hoặc "1.5km" sẽ đọc là "một phẩy năm ki lô mét". Dòng "Máy đọc" dưới mỗi câu cho thấy giọng AI sẽ đọc ra sao.</p>
-      </div>
-      <div class="ai-actions adv">
-        <button id="ttsBtn" class="btn btn-quiet" type="button">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z" fill="currentColor"/></svg>
-          Tạo giọng đọc AI
-        </button>
-        <label class="check"><input autocomplete="off" id="aiVoiceOn" type="checkbox" checked> Dùng giọng AI trong video</label>
-      </div>
-      <p id="ttsMsg" class="hint" aria-live="polite"></p>
-
-      <div class="sub-head">Âm thanh</div>
-      <div class="audio-row">
-        <div class="field adv">
-          <span class="field-label">Hiệu ứng âm thanh (SFX)</span>
-          <label class="check"><input autocomplete="off" id="sfxOn" type="checkbox" checked> Bật whoosh, ding, pop theo hình</label>
-          <label class="vol"><span>Âm lượng</span><input autocomplete="off" id="sfxVol" type="range" min="0" max="1" step="0.05" value="0.7"></label>
+      <div class="subpane" data-pane="look" hidden>
+        <div class="field">
+          <span class="field-label">Khung hình</span>
+          <div class="seg" id="fmtSeg" role="radiogroup" aria-label="Khung hình">
+            <button type="button" role="radio" data-v="v">Dọc 9:16</button>
+            <button type="button" role="radio" data-v="h">Ngang 16:9</button>
+            <button type="button" role="radio" data-v="s">Vuông 1:1</button>
+          </div>
         </div>
         <div class="field">
-          <span class="field-label">Nhạc nền</span>
-          <select id="musicLib" class="input" autocomplete="off" aria-label="Nhạc nền có sẵn"></select>
-          <span class="hint small">Nhạc có sẵn do Vị Trí Studio tự soạn, đăng Facebook, TikTok, YouTube không lo bản quyền.</span>
+          <span class="field-label">Phong cách</span>
+          <div class="style-grid" id="styleRow" role="radiogroup" aria-label="Phong cách video"></div>
+        </div>
+        <div class="field">
+          <span class="field-label">Logo góc video</span>
           <div class="file-row">
-            <label class="btn btn-quiet file-btn">Hoặc tải nhạc<input autocomplete="off" id="musicFile" type="file" accept="audio/*,video/mp4"></label>
-            <span id="musicName" class="file-name">Chưa có</span>
-            <button id="musicClear" class="link-btn" type="button" hidden>Bỏ</button>
+            <label class="btn btn-quiet file-btn">Chọn logo<input autocomplete="off" id="logoFile" type="file" accept="image/png,image/jpeg,image/webp"></label>
+            <img id="logoPreview" class="logo-preview" alt="Logo" hidden>
+            <span id="logoName" class="file-name">Chưa có</span>
+            <button id="logoClear" class="link-btn" type="button" hidden>Bỏ</button>
           </div>
+          <label class="check"><input autocomplete="off" id="logoBg" type="checkbox" checked> Nền trắng sau logo</label>
+        </div>
+        <details class="more">
+          <summary>Tuỳ chỉnh nâng cao</summary>
+          <div class="more-body">
+            <div class="field">
+              <span class="field-label">Nhịp máy lia</span>
+              <div class="seg" id="speedSeg" role="radiogroup" aria-label="Nhịp máy lia">
+                <button type="button" role="radio" data-v="cham">Chậm</button>
+                <button type="button" role="radio" data-v="vua">Vừa</button>
+                <button type="button" role="radio" data-v="nhanh">Nhanh</button>
+              </div>
+            </div>
+            <div class="field"><span class="field-label">Màu line trục đường lớn</span><div class="swatches" id="roadThemeRow" role="radiogroup" aria-label="Màu line trục đường lớn"></div></div>
+            <div class="field"><span class="field-label">Màu line đường tới tiện ích</span><div class="swatches" id="routeThemeRow" role="radiogroup" aria-label="Màu line đường tới tiện ích"></div></div>
+            <label class="check"><input autocomplete="off" id="subsOn" type="checkbox" checked> Phụ đề chạy chữ theo giọng đọc</label>
+          </div>
+        </details>
+      </div>
+
+      <div class="subpane" data-pane="sound" hidden>
+        <p id="aiStatus" class="hint">Đang kiểm tra giọng đọc AI…</p>
+        <div class="field">
+          <span class="field-label">Giọng đọc</span>
+          <div class="seg seg-wrap" id="voiceSeg" role="radiogroup" aria-label="Giọng đọc">
+            <button type="button" role="radio" data-v="nu-nam">Nữ miền Nam</button>
+            <button type="button" role="radio" data-v="nam-nam">Nam miền Nam</button>
+            <button type="button" role="radio" data-v="nu-bac">Nữ miền Bắc</button>
+            <button type="button" role="radio" data-v="nam-bac">Nam miền Bắc</button>
+          </div>
+        </div>
+        <div class="ai-actions">
+          <button id="ttsBtn" class="btn btn-quiet" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z" fill="currentColor"/></svg>
+            Tạo giọng đọc AI
+          </button>
+          <label class="check"><input autocomplete="off" id="aiVoiceOn" type="checkbox" checked> Dùng giọng AI</label>
+        </div>
+        <p id="ttsMsg" class="hint" aria-live="polite"></p>
+        <div class="field">
+          <span class="field-label">Nhạc nền <em>không lo bản quyền</em></span>
+          <select id="musicLib" class="input" autocomplete="off" aria-label="Nhạc nền có sẵn"></select>
           <label class="vol"><span>Âm lượng</span><input autocomplete="off" id="musicVol" type="range" min="0" max="1" step="0.05" value="0.8"></label>
         </div>
+        <details class="more">
+          <summary>Sửa lời đọc, tốc độ, nhạc riêng</summary>
+          <div class="more-body">
+            <div class="field">
+              <span class="field-label">Tốc độ đọc</span>
+              <div class="seg" id="vspeedSeg" role="radiogroup" aria-label="Tốc độ đọc">
+                <button type="button" role="radio" data-v="-1">Chậm</button>
+                <button type="button" role="radio" data-v="0">Vừa</button>
+                <button type="button" role="radio" data-v="1">Nhanh</button>
+              </div>
+            </div>
+            <div class="field">
+              <span class="field-label">Lời đọc từng cảnh <span class="lbl-acts"><button id="altScriptBtn" class="link-btn" type="button">Đổi cách viết</button><button id="aiScriptBtn" class="link-btn" type="button" hidden>Viết lại bằng AI</button></span></span>
+              <div id="scriptList" class="script-list"></div>
+            </div>
+            <div class="field">
+              <span class="field-label">Nhạc của anh/chị</span>
+              <div class="file-row">
+                <label class="btn btn-quiet file-btn">Tải nhạc<input autocomplete="off" id="musicFile" type="file" accept="audio/*,video/mp4"></label>
+                <span id="musicName" class="file-name">Chưa có</span>
+                <button id="musicClear" class="link-btn" type="button" hidden>Bỏ</button>
+              </div>
+            </div>
+            <div class="field">
+              <span class="field-label">Hiệu ứng âm thanh</span>
+              <label class="check"><input autocomplete="off" id="sfxOn" type="checkbox" checked> Whoosh, ding, pop theo hình</label>
+              <label class="vol"><span>Âm lượng</span><input autocomplete="off" id="sfxVol" type="range" min="0" max="1" step="0.05" value="0.7"></label>
+            </div>
+            <div class="field">
+              <span class="field-label">Giọng tự ghi âm</span>
+              <div class="file-row">
+                <label class="btn btn-quiet file-btn">Chọn file<input autocomplete="off" id="voiceFile" type="file" accept="audio/*,video/mp4"></label>
+                <span id="voiceName" class="file-name">Chưa có</span>
+                <button id="voiceClear" class="link-btn" type="button" hidden>Bỏ</button>
+              </div>
+              <label class="check"><input autocomplete="off" id="fitVoice" type="checkbox" checked> Kéo dài video khớp giọng</label>
+              <button id="copyScript" class="btn btn-quiet" type="button">Chép lời đọc để tự ghi âm</button>
+            </div>
+          </div>
+        </details>
       </div>
-      <details class="script adv">
-        <summary>Hoặc dùng file giọng tự ghi âm</summary>
-        <div class="file-row">
-          <label class="btn btn-quiet file-btn">Chọn file<input autocomplete="off" id="voiceFile" type="file" accept="audio/*,video/mp4"></label>
-          <span id="voiceName" class="file-name">Chưa có</span>
-          <button id="voiceClear" class="link-btn" type="button" hidden>Bỏ</button>
-        </div>
-        <label class="check"><input autocomplete="off" id="fitVoice" type="checkbox" checked> Kéo dài video khớp giọng đọc</label>
-        <button id="copyScript" class="btn btn-quiet" type="button">Chép toàn bộ lời đọc để tự ghi âm</button>
-      </details>
     </article>
 
-    <article class="step" id="step4">
-      <header class="step-head"><span class="step-no">4</span><h2>Xuất video</h2></header>
-      <div class="field adv">
-        <span class="field-label">Chất lượng</span>
-        <div class="seg" id="qualSeg" role="radiogroup" aria-label="Chất lượng">
-          <button type="button" role="radio" data-v="1080">1080p</button>
-          <button type="button" role="radio" data-v="720">720p (máy yếu)</button>
-        </div>
-      </div>
+    <article class="step" id="step4" data-step="4">
+      <header class="step-head"><h2>Xuất &amp; chia sẻ</h2></header>
       <p id="creditNote" class="credit-note"></p>
-      <button id="exportBtn" class="btn btn-primary btn-block" type="button">
+      <button id="exportBtn" class="btn btn-primary btn-block btn-lg" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h11v12H4zM15 10l5-3v10l-5-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
         Xuất video MP4
       </button>
       <div id="exportBox" class="export-box" hidden>
         <div class="progress"><div id="progBar" class="progress-bar"></div></div>
         <div class="export-meta"><span id="progText">Đang chuẩn bị…</span><button id="cancelBtn" class="link-btn" type="button">Huỷ</button></div>
+        <p class="hint small">Video dựng ngay trên máy — giữ màn hình mở tới khi xong.</p>
       </div>
       <div id="resultBox" class="result" hidden>
         <video id="resultVideo" controls playsinline></video>
@@ -351,17 +324,52 @@
         </div>
         <p id="resultMeta" class="hint"></p>
         <div id="resultInstall" class="result-install" data-install>
-          <div><strong>Cài app lên màn hình chính</strong><span>Lần sau mở thẳng Vị Trí Studio, không phải tìm lại link.</span></div>
+          <div><strong>Cài app lên màn hình chính</strong><span>Lần sau mở thẳng, không phải tìm link.</span></div>
           <span class="btn btn-quiet">Cài app</span>
         </div>
       </div>
-      <p class="hint">Video dựng ngay trên máy, không tải lên đâu cả. Giữ màn hình mở cho tới khi xong.</p>
-    </article>
+      <details class="more">
+        <summary>Chất lượng &amp; lưu căn</summary>
+        <div class="more-body">
+          <div class="field">
+            <span class="field-label">Chất lượng</span>
+            <div class="seg" id="qualSeg" role="radiogroup" aria-label="Chất lượng">
+              <button type="button" role="radio" data-v="1080">1080p</button>
+              <button type="button" role="radio" data-v="720">720p (máy yếu)</button>
+            </div>
+          </div>
+          <button id="saveProjBtn" class="btn btn-quiet" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h11l3 3v15H5zM8 3v6h7V3M8 21v-7h8v7" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+            Lưu căn này vào tài khoản
+          </button>
+        </div>
+      </details>
 
-    <footer class="foot">
-      <p>Ảnh vệ tinh: Esri, Maxar, Earthstar Geographics. Dữ liệu bản đồ © OpenStreetMap contributors. Địa điểm: Overture Maps Foundation (CDLA-Permissive-2.0). Đường đi: OSRM.</p>
-      <p class="foot-links"><a href="/gioi-thieu">Giới thiệu &amp; bảng giá</a> · <a href="/dieu-khoan">Điều khoản &amp; hoàn tiền</a> · <a href="/chinh-sach-bao-mat">Chính sách bảo mật</a> · <button type="button" class="link-btn" data-act="invite">Mời bạn bè nhận lượt</button></p>
-    </footer>
+      <section class="page-card">
+        <div class="page-card-head">
+          <h3>Trang web cho căn này</h3>
+          <p class="hint small">Ảnh, giá, video, tiện ích, nút Gọi/Zalo và ô để lại số. Khách để lại số sẽ báo về mục Khách.</p>
+        </div>
+        <label class="field"><span class="field-label">Link video đã đăng <em>TikTok, YouTube, Facebook</em></span><input autocomplete="off" id="pageVideo" class="input" type="url" inputmode="url" maxlength="400" placeholder="https://www.tiktok.com/@ten/video/…"></label>
+        <label class="field"><span class="field-label">Mô tả thêm</span><textarea autocomplete="off" id="pageDesc" class="input" rows="2" maxlength="2000" placeholder="Hẻm xe hơi, gần chợ, sổ sẵn công chứng ngay…"></textarea></label>
+        <button id="pagePublish" class="btn btn-dark btn-block" type="button">Tạo trang web cho căn này</button>
+        <div id="pageResult" class="page-result" hidden>
+          <div class="input-row"><input id="pageLink" class="input mono" type="text" readonly aria-label="Link trang căn nhà"><button id="pageCopy" class="btn btn-quiet" type="button">Chép</button></div>
+          <div class="page-acts"><a id="pageOpen" class="btn btn-quiet" target="_blank" rel="noopener">Xem trang</a><button id="pageShare" class="btn btn-quiet" type="button">Chia sẻ</button><button id="pageQrBtn" class="btn btn-quiet" type="button">Mã QR</button></div>
+        </div>
+      </section>
+
+      <footer class="foot">
+        <p>Ảnh vệ tinh: Esri, Maxar, Earthstar Geographics. Bản đồ © OpenStreetMap contributors. Địa điểm: Overture Maps Foundation (CDLA-Permissive-2.0). Đường đi: OSRM.</p>
+        <p class="foot-links"><a href="/gioi-thieu">Giới thiệu &amp; bảng giá</a> · <a href="/dieu-khoan">Điều khoản</a> · <a href="/chinh-sach-bao-mat">Bảo mật</a> · <button type="button" class="link-btn" data-act="invite">Mời bạn bè nhận lượt</button></p>
+      </footer>
+    </article>
+    </div>
+
+    <div class="step-nav" id="stepNav">
+      <button type="button" class="btn btn-quiet" id="stepBack">←</button>
+      <button type="button" class="btn btn-primary" id="stepNext">Tiếp tục →</button>
+    </div>
   </section>
 </main>
 
@@ -481,10 +489,7 @@
     <div id="projList" class="proj-list"></div>
   </div>
 </dialog>
-<a id="zaloFab" class="zalo-fab zalo-link" href="#" target="_blank" rel="noopener" hidden aria-label="Nhắn Zalo hỗ trợ">
-  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3C6.5 3 2 6.9 2 11.6c0 2.6 1.4 5 3.7 6.5L5 21.5l3.9-2c1 .3 2 .4 3.1.4 5.5 0 10-3.9 10-8.6S17.5 3 12 3z" fill="currentColor"/><path d="M7.5 9.5h4l-4 4.5h4M13.2 9.5v4.5M15.5 9.5v4.5h2" fill="none" stroke="#0b6cff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-  <span>Hỗ trợ</span>
-</a>
+
 <div id="toast" class="toast" role="status" hidden></div>
 
 <script type="module" src="js/app.js"></script>

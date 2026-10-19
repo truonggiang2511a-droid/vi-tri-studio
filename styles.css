@@ -403,24 +403,6 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .foot-links a{color:inherit}
 
 /* Chế độ 3 bước cho người mới */
-.quick{background:var(--surface);border:1px solid var(--accent);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px;box-shadow:0 0 0 3px var(--accent-soft)}
-.quick-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
-.quick-head h2{margin:0;font-size:17px}
-.quick-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-.quick-steps li{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:10px;opacity:.6}
-.quick-steps li div{display:flex;flex-direction:column;line-height:1.35}
-.quick-steps li span:not(.qn){font-size:13px;color:var(--muted)}
-.quick-steps .qn{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:13px;background:var(--surface-2);color:var(--ink)}
-.quick-steps li.cur{opacity:1;background:var(--accent-soft)}
-.quick-steps li.cur .qn{background:var(--accent);color:var(--accent-ink)}
-.quick-steps li.done{opacity:1}
-.quick-steps li.done .qn{background:var(--focus);color:#fff;font-size:0}
-.quick-steps li.done .qn::after{content:"✓";font-size:14px}
-#quickMsg{margin:-4px 0 0;text-align:center}
-.mode-bar{display:none;text-align:right;margin:-4px 0 0}
-body:not(.simple) .quick{display:none}
-body:not(.simple) .mode-bar{display:block}
-body.simple .adv{display:none !important}
 
 /* Căn đã lưu */
 .proj-row{display:flex;gap:8px;flex-wrap:wrap;margin:-2px 0 12px}
@@ -539,3 +521,115 @@ body.simple .adv{display:none !important}
 .page-acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .page-acts .btn { flex: 1 1 auto; justify-content: center; }
 .lead-phone a, .page-acts a { text-decoration: none; }
+
+/* =====================================================================
+   Giao diện Studio: điều hướng app + khung xem trước + bảng các bước
+   ===================================================================== */
+:root { --topbar-h: 56px; --nav-h: 62px; --stepnav-h: 64px; }
+.brand-sub { display: none; }
+.step { padding-block: 18px 22px; border-bottom: 0; gap: 16px; }
+.steps > .step:not(.on) { display: none; }
+.step-head h2 { font-size: 19px; }
+.hint.center, .center { text-align: center; }
+.btn-lg { padding-block: 15px; font-size: 16px; border-radius: 12px; }
+.btn-dark { background: var(--ink); color: var(--bg); }
+.btn-dark:hover { filter: brightness(1.15); }
+.btn-dark:disabled { opacity: .55; cursor: progress; }
+.input { border-radius: 10px; }
+.grid2 { gap: 12px 10px; }
+
+/* Thanh bước */
+.stepper { list-style: none; margin: 0; padding: 12px 0 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; counter-reset: s; }
+.stepper button { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 5px; background: none; border: 0; padding: 6px 2px 9px; cursor: pointer; color: var(--muted); position: relative; font: 600 12.5px/1.2 var(--font); }
+.stepper button::after { content: ""; position: absolute; left: 10%; right: 10%; bottom: 0; height: 3px; border-radius: 3px; background: var(--line); }
+.stepper .sn { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font: 700 13px var(--mono); background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); }
+.stepper .sl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.stepper button.cur { color: var(--ink); }
+.stepper button.cur .sn { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.stepper button.cur::after { background: var(--accent); }
+.stepper button.done .sn { background: var(--focus); border-color: var(--focus); color: #fff; font-size: 0; }
+.stepper button.done .sn::before { content: "✓"; font-size: 15px; }
+.stepper button.done::after { background: var(--focus); }
+
+/* Thẻ con ở bước 3 */
+.subtabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; background: var(--surface-2); border-radius: 12px; }
+.subtabs button { border: 0; background: none; padding: 9px 4px; border-radius: 9px; font: 700 13.5px/1.2 var(--font); color: var(--muted); cursor: pointer; }
+.subtabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.subpane { display: flex; flex-direction: column; gap: 16px; }
+.subpane[hidden] { display: none; }
+.seg-wrap button { flex: 1 1 calc(50% - 6px); }
+
+/* Mục gập "Tuỳ chỉnh nâng cao" */
+.more { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.more > summary { list-style: none; cursor: pointer; padding: 12px 14px; font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::after { content: ""; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); margin-top: -4px; transition: transform .15s; }
+.more[open] > summary::after { transform: rotate(-135deg); margin-top: 4px; }
+.more-body { padding: 2px 14px 14px; display: flex; flex-direction: column; gap: 14px; }
+
+.empty-state { text-align: center; padding: 26px 16px; border: 1.5px dashed var(--line); border-radius: 14px; display: grid; gap: 12px; justify-items: center; }
+.empty-state p { margin: 0; color: var(--muted); }
+
+/* Thẻ "Trang web cho căn này" ở bước 4 */
+.page-card { border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: var(--surface); }
+.page-card h3 { margin: 0 0 2px; font-size: 16px; }
+.page-card-head p { margin: 0; }
+
+/* Nút lùi/tiếp */
+.step-nav { display: flex; gap: 8px; padding: 10px 0; }
+.step-nav[hidden] { display: none; }
+.step-nav #stepBack { flex: 0 0 56px; font-size: 18px; }
+.step-nav #stepNext { flex: 1; padding-block: 13px; font-size: 15.5px; }
+
+/* Điều hướng app */
+.appnav { display: flex; }
+.nav-item { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; background: none; color: var(--muted); cursor: pointer; text-decoration: none; font: 600 11.5px/1.2 var(--font); padding: 6px 4px; border-radius: 12px; }
+.nav-item svg { width: 23px; height: 23px; }
+.nav-item.on { color: var(--ink); }
+.nav-item.on svg { color: var(--accent); }
+.nav-item:hover { color: var(--ink); }
+.nav-item .badge { position: absolute; top: 2px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #ef4444; color: #fff; font: 800 11px/18px var(--mono); text-align: center; }
+.nav-item[hidden] { display: none; }
+.nav-foot { display: none; }
+
+/* ---------- Máy tính: 3 cột, vừa một màn hình ---------- */
+@media (min-width: 980px) {
+  body { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+  .topbar { flex: none; }
+  .low-banner { flex: none; }
+  .layout { flex: 1; min-height: 0; grid-template-columns: 84px minmax(0, 1fr) 460px; align-items: stretch; }
+  .appnav { flex-direction: column; gap: 6px; padding: 14px 8px; border-right: 1px solid var(--line); background: var(--surface); }
+  .nav-item { padding: 10px 4px; }
+  .nav-item.on { background: var(--accent-soft); }
+  .nav-foot { display: flex; flex-direction: column; gap: 6px; margin-top: auto; text-align: center; }
+  .nav-foot a { font-size: 11px; color: var(--muted); text-decoration: none; }
+  .nav-foot a:hover { color: var(--ink); }
+  .stage { position: relative; top: auto; height: auto; min-height: 0; padding: 22px 24px 16px; }
+  .panel { display: flex; flex-direction: column; min-height: 0; padding: 0; border-left: 1px solid var(--line); background: var(--bg); }
+  .stepper { padding: 14px 20px 0; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .steps { flex: 1; min-height: 0; overflow-y: auto; padding: 0 20px 20px; scrollbar-gutter: stable; }
+  .step-nav { padding: 12px 20px; border-top: 1px solid var(--line); background: var(--surface); }
+}
+
+/* ---------- Điện thoại & máy tính bảng ---------- */
+@media (max-width: 979px) {
+  :root { --topbar-h: 52px; }
+  .topbar { padding-top: calc(6px + env(safe-area-inset-top, 0px)); padding-bottom: 6px; }
+  .stage { position: sticky; top: calc(var(--topbar-h) + env(safe-area-inset-top, 0px)); z-index: 15; padding-block: 10px 6px; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+  .stage-inner { gap: 6px; }
+  .transport { max-width: 520px; }
+  body.mini-stage .transport { gap: 8px; }
+  body.mini-stage .icon-btn { width: 36px; height: 36px; }
+  body.mini-stage .chip-btn { padding: 5px 10px; font-size: 12px; }
+  .panel { padding-bottom: calc(var(--nav-h) + var(--stepnav-h) + 20px + env(safe-area-inset-bottom, 0px)); }
+  .stepper { padding-top: 14px; }
+  .appnav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; height: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)); padding: 4px 6px env(safe-area-inset-bottom, 0px);
+    display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-top: 1px solid var(--line); }
+  .appnav .nav-item[hidden] { display: none; }
+  .step-nav { position: fixed; left: 0; right: 0; z-index: 25; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)); padding: 10px max(14px, env(safe-area-inset-left, 0px));
+    background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-top: 1px solid var(--line); }
+  .toast { bottom: calc(var(--nav-h) + var(--stepnav-h) + 14px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (min-width: 600px) and (max-width: 979px) {
+  .panel { max-width: 640px; margin-inline: auto; }
+}

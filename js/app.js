@@ -250,7 +250,7 @@ function layoutCanvas() {
   const transportH = 52;
   const availH = desktop
     ? inner.clientHeight - transportH - 10
-    : Math.min(window.innerHeight * (state.fmt === 'v' ? (state.pois.length ? 0.62 : 0.4) : 0.5), 760);
+    : Math.min(window.innerHeight * (document.body.classList.contains('mini-stage') ? 0.19 : state.fmt === 'v' ? 0.31 : 0.27), 520);
   const ratio = F.LW / F.LH;
   let w = Math.min(availW, availH * ratio);
   w = Math.max(160, w);
@@ -474,8 +474,7 @@ async function scan() {
     scheduleRebuild();
     const b = res.admin?.boundary;
     toast(`Tìm thấy ${res.pois.length} tiện ích, ${res.roads.length} tuyến đường lớn` + (b ? `, ranh ${b.short} cách ${formatKm(b.km)}` : '') + `. Đã chọn sẵn ${state.selected.length} điểm.`, 4000);
-    if (state.simple) $('quickCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    else if (window.matchMedia('(max-width: 979px)').matches) $('step2').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    showStep(2);
   } catch (e) {
     if (e.name !== 'AbortError') toast(e.message || 'Không quét được. Kiểm tra mạng rồi thử lại.', 5000);
   } finally {
@@ -1054,6 +1053,7 @@ async function doExport() {
     resultUrl = URL.createObjectURL(blob);
     $('resultVideo').src = resultUrl;
     $('resultBox').hidden = false;
+    exportedOnce = true; updateQuick();
     $('resultMeta').textContent = `${width}×${height} · ${Math.round(xtl.duration)} giây · ${(blob.size / 1048576).toFixed(1)} MB · ${ext.toUpperCase()}`;
     $('shareBtn').hidden = !(navigator.canShare && navigator.canShare({ files: [resultFile] }));
     progress(100, 'Xong');
@@ -1101,63 +1101,76 @@ async function fontsReady() {
   } catch { /* dùng phông dự phòng */ }
 }
 
-// ---------- Chế độ 3 bước cho người mới ----------
-function quickStage() {
-  if (!state.coordSet && !state.scannedAt && !state.pois.length) return 1;
-  if (!state.pois.length) return 2;
-  if (!voiceDurations()) return 3;
-  return 4;
+// ---------- Các bước làm video (1 Vị trí → 2 Tiện ích → 3 Nội dung → 4 Xuất & chia sẻ) ----------
+let step = 1;
+let exportedOnce = false;
+function stepDone(n) {
+  if (n === 1) return !!state.pois.length;
+  if (n === 2) return !!state.pois.length && step > 2;
+  if (n === 3) return !!voiceDurations();
+  return exportedOnce;
+}
+function showStep(n, { scroll = true } = {}) {
+  step = Math.max(1, Math.min(4, n));
+  for (const a of document.querySelectorAll('.steps > .step')) a.classList.toggle('on', +a.dataset.step === step);
+  if (scroll) {
+    const panel = $('panel');
+    if (window.matchMedia('(min-width: 980px)').matches) panel.scrollTo({ top: 0, behavior: 'smooth' });
+    else window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  updateQuick();
+}
+function setSub(name) {
+  for (const b of $('subtabs').querySelectorAll('button')) b.setAttribute('aria-selected', String(b.dataset.sub === name));
+  for (const p of document.querySelectorAll('.subpane')) p.hidden = p.dataset.pane !== name;
 }
 function updateQuick() {
-  const card = $('quickCard');
-  if (!card) return;
-  const st = quickStage();
-  for (const li of card.querySelectorAll('[data-q]')) {
-    const q = +li.dataset.q;
-    li.classList.toggle('done', q < st);
-    li.classList.toggle('cur', q === Math.min(st, 3));
+  // Thanh bước: đánh dấu bước xong, bước hiện tại
+  for (const b of document.querySelectorAll('#stepper button')) {
+    const n = +b.dataset.go;
+    b.classList.toggle('cur', n === step);
+    b.classList.toggle('done', n !== step && stepDone(n));
+    b.setAttribute('aria-current', n === step ? 'step' : 'false');
   }
-  $('quickGo').textContent = st === 1 ? 'Dán vị trí căn nhà' : st === 2 ? 'Quét tiện ích quanh nhà'
-    : st === 3 ? 'Tạo giọng đọc AI' : 'Xuất video MP4';
-  $('quickMsg').hidden = st !== 1;
+  // Nút dưới cùng: việc nên làm tiếp theo của bước này
+  const next = $('stepNext'), back = $('stepBack');
+  if (next) {
+    back.hidden = step === 1;
+    let label = 'Tiếp tục →', hide = false;
+    if (step === 1) { label = state.pois.length ? 'Tiếp tục →' : 'Quét tiện ích'; hide = !state.pois.length; }
+    else if (step === 2) label = state.pois.length ? 'Tiếp tục: Nội dung →' : 'Về bước 1';
+    else if (step === 3) label = voiceDurations() || !state.aiVoiceOn ? 'Tiếp tục: Xuất video →' : 'Tạo giọng đọc AI';
+    else hide = true;
+    next.textContent = label;
+    next.hidden = hide;
+    $('stepNav').hidden = step === 1 && !state.pois.length ? true : (hide && back.hidden);
+  }
   // Khung xem trước đổi cỡ khi vừa quét xong (điện thoại)
   const fresh = !state.pois.length;
   if (fresh !== lastFresh) { lastFresh = fresh; layoutCanvas(); }
   updateBigPlay();
 }
 let lastFresh = null;
-function setSimple(on) {
-  state.simple = !!on;
-  document.body.classList.toggle('simple', state.simple);
-  save();
-}
-async function quickGo() {
-  const st = quickStage();
-  if (st === 1) {
-    try {
-      const txt = (await navigator.clipboard.readText() || '').trim();
-      if (txt && (SHORT_LINK.test(txt) || !parseCoords(txt).error)) { $('coordInput').value = txt; applyCoords(txt); return; }
-    } catch { /* trình duyệt chặn đọc clipboard */ }
-    $('coordInput').focus();
-    $('coordInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
-    toast('Dán toạ độ hoặc link chia sẻ Google Maps của căn nhà vào ô này.', 3500);
-    return;
-  }
-  if (st === 2) { await scan(); return; }
-  if (st === 3) {
-    // Chỉ tạo giọng, không tự phát: khách tự bấm Xem thử để nghe (tránh phát chồng khi video đang giãn theo giọng)
-    pause();
-    await generateVoices();
-    if (voiceDurations()) {
-      rebuild();
-      t = 0;
-      updateTimeUi();
-      if (window.matchMedia('(max-width: 979px)').matches) $('canvasWrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      toast('Đã tạo giọng đọc. Bấm ▶ Xem thử để nghe, ưng rồi bấm Xuất video MP4.', 4500);
+async function stepNext() {
+  if (step === 1) { if (state.pois.length) showStep(2); else await scan(); return; }
+  if (step === 2) { showStep(state.pois.length ? 3 : 1); return; }
+  if (step === 3) {
+    if (!voiceDurations() && state.aiVoiceOn) {
+      // Chỉ tạo giọng, không tự phát: khách tự bấm Xem thử để nghe
+      setSub('sound');
+      pause();
+      await generateVoices();
+      if (voiceDurations()) {
+        rebuild();
+        t = 0;
+        updateTimeUi();
+        toast('Đã tạo giọng đọc. Bấm ▶ Xem thử để nghe, ưng rồi bấm Tiếp tục để xuất video.', 4500);
+      }
+      updateQuick();
+      return;
     }
-    return;
+    showStep(4);
   }
-  doExport();
 }
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
@@ -1572,8 +1585,7 @@ function clearAudio(kind) {
 function init() {
   countVisit('app');
   load();
-  if (state.simple === undefined) state.simple = !state.scannedAt;
-  document.body.classList.toggle('simple', state.simple);
+  state.simple = false;
   const sel = new Set(state.selected);
   state.selected = [...sel];
 
@@ -1816,11 +1828,21 @@ function init() {
   });
 
   $('exportBtn').addEventListener('click', doExport);
-  // Chế độ 3 bước
-  $('quickGo').addEventListener('click', quickGo);
+  // Các bước
   $('quickDemo').addEventListener('click', () => { state.coordSet = true; applyCoords($('coordInput').value || state.coordText); updateQuick(); scan(); });
-  $('modeBtn').addEventListener('click', () => setSimple(false));
-  $('modeBtn2').addEventListener('click', () => { setSimple(true); $('quickCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+  $('stepper').addEventListener('click', e => { const b = e.target.closest('[data-go]'); if (b) showStep(+b.dataset.go); });
+  $('panel').addEventListener('click', e => { const b = e.target.closest('.empty-state [data-go]'); if (b) showStep(+b.dataset.go); });
+  $('stepNext').addEventListener('click', stepNext);
+  $('stepBack').addEventListener('click', () => showStep(step - 1));
+  $('subtabs').addEventListener('click', e => { const b = e.target.closest('[data-sub]'); if (b) setSub(b.dataset.sub); });
+  document.querySelector('[data-nav="studio"]').addEventListener('click', () => showStep(step));
+  // Điện thoại: cuộn xuống thì khung xem trước thu nhỏ để chừa chỗ cho phần chỉnh
+  let miniOn = false;
+  window.addEventListener('scroll', () => {
+    if (window.matchMedia('(min-width: 980px)').matches) return;
+    const m = window.scrollY > 60;
+    if (m !== miniOn) { miniOn = m; document.body.classList.toggle('mini-stage', m); layoutCanvas(); }
+  }, { passive: true });
   // Căn đã lưu
   $('saveProjBtn').addEventListener('click', () => openProjects(true));
   $('projListBtn').addEventListener('click', () => openProjects(false));
@@ -1848,6 +1870,7 @@ function init() {
   window.addEventListener('resize', layoutCanvas);
   document.addEventListener('visibilitychange', () => { if (document.hidden && playing) pause(); });
 
+  showStep(state.pois.length ? 3 : 1, { scroll: false });
   layoutCanvas();
   renderLists();
   if (!state.scannedAt) {
