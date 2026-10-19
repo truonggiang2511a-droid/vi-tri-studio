@@ -3,7 +3,7 @@ import { parseCoords, haversineKm, formatKm } from './geo.js';
 import { CATEGORIES, scanArea, autoPick, routeTo, searchPlaces, guessCategory } from './data.js';
 import { ICON_PATHS } from './icons.js';
 import {
-  FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, CAT_COLORS, FONT, LINE_THEMES,
+  FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, CAT_COLORS, FONT, LINE_THEMES, STYLES,
 } from './render.js';
 import { sfxEvents } from './sfx.js';
 import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4 } from './export.js';
@@ -45,6 +45,7 @@ const state = {
   quality: '1080',
   musicVol: 0.8,
   fitVoice: true,
+  style: 'neon',     // phong cách video
   roadTheme: 'auto',
   routeTheme: 'vang',
   sfxOn: true,
@@ -151,6 +152,7 @@ function buildScene() {
     provinceShort: state.admin?.provinceShort || '',
     commune: state.admin?.commune || '',
     titleSub: state.sub,
+    style: state.style,
     roadTheme: state.roadTheme,
     routeTheme: state.routeTheme,
   };
@@ -639,7 +641,7 @@ const POI_LINES = {
   nganhang: ['{n} chỉ cách {d}, giao dịch thuận tiện.'],
 };
 // Câu thông tin căn nhà: "Diện tích 5x20m, 3 phòng ngủ, sổ hồng riêng, giá chỉ 3,2 tỷ."
-function infoSentence(pick) {
+function infoSentence(pick, skipPrice = false) {
   const c = v => String(v || '').replace(/\s+/g, ' ').trim();
   const beds = c(state.beds);
   const legal = c(state.legal);
@@ -647,7 +649,7 @@ function infoSentence(pick) {
   if (c(state.area)) parts.push('diện tích ' + c(state.area));
   if (beds) parts.push(/^\d+$/.test(beds) ? beds + ' phòng ngủ' : beds);
   if (legal) parts.push(legal.charAt(0).toLowerCase() + legal.slice(1));
-  if (c(state.price)) parts.push(pick(['giá chỉ ', 'giá bán '], 5) + c(state.price));
+  if (c(state.price) && !skipPrice) parts.push(pick(['giá chỉ ', 'giá bán '], 5) + c(state.price));
   if (!parts.length) return '';
   const s = parts.join(', ');
   return s.charAt(0).toUpperCase() + s.slice(1) + '.';
@@ -677,8 +679,18 @@ function scriptSegments() {
     `${tw} này nằm ở đâu, xung quanh có những gì? Cùng xem ngay nhé!`,
     r0 && r0.nearKm < 3 ? `Chỉ ${kmSpeak(r0.nearKm)} là ra ${nameSpeak(r0.label)}, vị trí ${twl} này cực kỳ thuận tiện!` : `Vị trí ${twl} này có gì đặc biệt? Xem ngay nhé!`,
   ];
-  add('intro', 'Mở đầu', generic ? pick(hooks) : `${nameSpeak(title)}. Cùng xem vị trí và tiện ích xung quanh nhé!`);
-  const info = infoSentence(pick);
+  // Có giá: nói giá + điểm mạnh nhất ngay câu đầu (khớp cảnh mở đầu trên video), người xem biết ngay căn này có đáng xem không
+  const price = String(state.price || '').replace(/\s+/g, ' ').trim();
+  const near = r0 && r0.nearKm < 3 ? (r0.nearKm < 0.12 ? `, mặt tiền ${nameSpeak(r0.label)}` : `, cách ${nameSpeak(r0.label)} chỉ ${kmSpeak(r0.nearKm)}`) : '';
+  const priceHooks = [
+    `${tw} giá chỉ ${price}${near}. Xem ngay vị trí này nhé!`,
+    `Chỉ ${price} cho ${twl}${near}! Cùng xem xung quanh có gì nhé!`,
+    `${tw} ${price}${near}, giá này còn rất ít. Xem ngay nhé!`,
+  ];
+  add('intro', 'Mở đầu', price
+    ? (generic ? pick(priceHooks) : `${nameSpeak(title)}, giá chỉ ${price}${near}. Cùng xem vị trí và tiện ích xung quanh nhé!`)
+    : generic ? pick(hooks) : `${nameSpeak(title)}. Cùng xem vị trí và tiện ích xung quanh nhé!`);
+  const info = infoSentence(pick, !!price);
   add('house', 'Căn nhà', (loc ? pick([`${tw} nằm tại ${loc}.`, `Đây là vị trí ${twl}, thuộc ${loc}.`], 1) : `Đây là vị trí ${twl} trên bản đồ.`) + (info ? ' ' + info : ''));
 
   // Kể tối đa 4 nhóm quan trọng nhất cho gọn tai
@@ -927,6 +939,32 @@ async function generateVoices() {
   }
 }
 
+function renderStyles() {
+  const el = $('styleRow');
+  if (!el) return;
+  if (!STYLES[state.style]) state.style = 'neon';
+  const sample = { neon: '3D', sangtrong: 'Aa', tretrung: 'Hi!', toigian: 'Aa' };
+  el.innerHTML = Object.entries(STYLES).map(([k, st]) => {
+    const [bg, a1, a2] = st.swatch;
+    const font = k === 'sangtrong' ? 'font-family:"Playfair Display",serif;' : k === 'tretrung' ? 'font-family:"Baloo 2",sans-serif;' : k === 'toigian' ? 'font-weight:300;' : '';
+    return `<button type="button" role="radio" class="style-card" data-st="${k}" aria-checked="${state.style === k}">
+      <span class="st-sw" style="background:${bg};color:${a1};box-shadow:inset 0 -5px 0 ${a2};${font}">${sample[k]}</span>
+      <strong>${esc(st.label)}</strong><span class="st-d">${esc(st.desc)}</span></button>`;
+  }).join('');
+  el.onclick = e => {
+    const b = e.target.closest('button[data-st]');
+    if (!b || state.style === b.dataset.st) return;
+    state.style = b.dataset.st;
+    // Mỗi kiểu có màu line đi kèm (vẫn đổi được ở mục Màu line)
+    const st = STYLES[state.style];
+    state.roadTheme = st.road; state.routeTheme = st.route;
+    renderSwatches('roadThemeRow', 'roadTheme', true);
+    renderSwatches('routeThemeRow', 'routeTheme', false);
+    for (const x of el.querySelectorAll('button')) x.setAttribute('aria-checked', String(x === b));
+    fontsReady().then(() => { dirty = true; });
+    scheduleRebuild();
+  };
+}
 function renderSwatches(id, key, withAuto) {
   const el = $(id);
   el.innerHTML = Object.entries(LINE_THEMES).filter(([k]) => withAuto || k !== 'auto').map(([k, th]) => {
@@ -1048,7 +1086,12 @@ async function shareResult() {
 async function fontsReady() {
   try {
     await Promise.race([
-      Promise.all(['500', '700', '800'].map(w => document.fonts.load(`${w} 20px ${FONT}`, 'Vị trí ạ'))),
+      Promise.all([
+        ...['300', '500', '600', '700', '800'].map(w => document.fonts.load(`${w} 20px ${FONT}`, 'Vị trí ạ')),
+        ...(STYLES[state.style] && STYLES[state.style].head !== FONT
+          ? ['500', '700', '800', 'italic 500'].map(w => document.fonts.load(`${w} 20px ${STYLES[state.style].head}`, 'Giá chỉ ạ'))
+          : []),
+      ]),
       new Promise(r => setTimeout(r, 4000)),
     ]);
   } catch { /* dùng phông dự phòng */ }
@@ -1115,7 +1158,7 @@ async function quickGo() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'fmt', 'speed', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'fmt', 'speed', 'style', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -1608,6 +1651,7 @@ function init() {
   $('fitVoice').addEventListener('change', e => { state.fitVoice = e.target.checked; scheduleRebuild(); });
   renderSwatches('roadThemeRow', 'roadTheme', true);
   renderSwatches('routeThemeRow', 'routeTheme', false);
+  renderStyles();
   setSeg('voiceSeg', state.voiceId);
   setSeg('vspeedSeg', String(state.voiceSpeed));
   $('sfxOn').checked = state.sfxOn;

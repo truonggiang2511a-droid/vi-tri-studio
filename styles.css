@@ -494,3 +494,11 @@ body.simple .adv{display:none !important}
 .photo-add:hover { border-color: var(--ink); color: var(--ink); }
 .photo-add input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .photo-add.busy { opacity: .6; pointer-events: none; }
+
+/* Phong cách video */
+.style-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.style-card { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; align-items: center; text-align: left; padding: 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+.style-card[aria-checked="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.style-card .st-sw { grid-row: span 2; width: 38px; height: 38px; border-radius: 9px; display: grid; place-items: center; font-weight: 800; font-size: 15px; }
+.style-card strong { font-size: 14px; }
+.style-card span.st-d { font-size: 11.5px; color: var(--muted); line-height: 1.35; }

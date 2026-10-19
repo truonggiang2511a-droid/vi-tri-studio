@@ -5,7 +5,8 @@ import { project, unproject, haversineKm, metersPerPixel, formatKm, fitZoom } fr
 import { drawIcon } from './icons.js';
 import { CATEGORIES } from './data.js';
 
-export const FONT = '"Be Vietnam Pro", "Segoe UI", system-ui, sans-serif';
+export const BASE_FONT = '"Be Vietnam Pro", "Segoe UI", system-ui, sans-serif';
+export let FONT = BASE_FONT;
 export const MAXZ = 17;
 export const FORMATS = {
   v: { LW: 540, LH: 960, label: 'Dọc 9:16', safe: { top: 96, bottom: 176, x: 22 } },
@@ -18,7 +19,48 @@ export const CAT_COLORS = {
   congvien: '#2FBF71', kcn: '#8FA3B8', giaothong: '#1FB8CC', nganhang: '#E9B949',
 };
 const HOUSE = '#FF3B30';
-const GOLD = '#FFD166';
+let GOLD = '#FFD166';
+// ---------- Phong cách video ----------
+// Mỗi kiểu đổi màu nhấn, nền thẻ, font tiêu đề, kiểu chữ tiêu đề, tông bản đồ, cảnh mở đầu và cảnh kết.
+export const STYLES = {
+  neon: {
+    label: 'Neon đêm', desc: 'Chữ 3D, line phát sáng, nổi bật trên TikTok',
+    head: BASE_FONT, headW: 800, acc: '#FFD166', accInk: '#1b1405', acc2: '#5EEAF5',
+    card: 'rgba(12,16,24,0.9)', ink: '#ffffff', soft: 'rgba(255,255,255,0.82)', mute: 'rgba(255,255,255,0.6)',
+    tint: '#9fc4be', dark: 0.12, title: '3d', capBg: 'rgba(0,0,0,0.62)', capInk: '#ffffff',
+    road: 'auto', route: 'vang', swatch: ['#0c1513', '#FFD166', '#5EEAF5'],
+  },
+  sangtrong: {
+    label: 'Sang trọng', desc: 'Vàng đồng, chữ có chân, khung điện ảnh — hợp nhà phố, biệt thự',
+    head: '"Playfair Display", Georgia, "Times New Roman", serif', headW: 700, acc: '#D8B26A', accInk: '#17120a', acc2: '#F1DFB6',
+    card: 'rgba(16,13,10,0.9)', ink: '#F7F1E6', soft: 'rgba(247,241,230,0.8)', mute: 'rgba(247,241,230,0.58)',
+    tint: '#c2b8a4', dark: 0.24, title: 'serif', bars: true, outline: true, capBg: 'rgba(16,13,10,0.7)', capInk: '#F7F1E6',
+    road: 'vang', route: 'trang', swatch: ['#16120d', '#D8B26A', '#F1DFB6'],
+  },
+  tretrung: {
+    label: 'Trẻ trung', desc: 'Màu hồng – xanh tươi, chữ tròn, hiệu ứng nảy — hợp căn hộ, đất nền',
+    head: '"Baloo 2", ' + BASE_FONT, headW: 800, acc: '#FF4FA3', accInk: '#ffffff', acc2: '#FFE14D',
+    card: 'rgba(30,14,52,0.9)', ink: '#ffffff', soft: 'rgba(255,255,255,0.85)', mute: 'rgba(255,255,255,0.62)',
+    tint: '#b4c8f0', dark: 0.06, title: 'sticker', pop: true, capBg: '#FFE14D', capInk: '#1d1030',
+    road: 'xanh', route: 'hong', swatch: ['#1e0e34', '#FF4FA3', '#FFE14D'],
+  },
+  toigian: {
+    label: 'Tối giản', desc: 'Thẻ trắng, chữ mảnh, gọn gàng — hợp khách cao cấp, văn phòng',
+    head: BASE_FONT, headW: 300, acc: '#ffffff', accInk: '#11161b', acc2: '#ffffff', light: true, cardAcc: '#11161b', cardAccInk: '#ffffff',
+    card: 'rgba(255,255,255,0.95)', ink: '#11161b', soft: 'rgba(17,22,27,0.72)', mute: 'rgba(17,22,27,0.5)',
+    tint: '#c4c9c9', dark: 0.2, title: 'thin', capBg: 'rgba(255,255,255,0.92)', capInk: '#11161b',
+    road: 'trang', route: 'trang', swatch: ['#f2f3f3', '#11161b', '#9aa3a8'],
+  },
+};
+let ST = STYLES.neon;
+let HFONT = BASE_FONT;
+const CA = () => ST.cardAcc || GOLD;       // màu nhấn bên trong thẻ
+const CAI = () => ST.cardAccInk || ST.accInk;
+function useStyle(key) {
+  ST = STYLES[key] || STYLES.neon;
+  HFONT = ST.head;
+  GOLD = ST.acc;
+}
 const PINK = '#FF2E7E';
 const CYAN = '#5EEAF5';
 const ROAD = {
@@ -449,8 +491,11 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     : camOverview;
   const camEnd = anchorCam(H.lat, H.lng, 15.6, PITCH.outro, LW, LH, 0.5, fmtKey === 'v' ? 0.56 : 0.58);
 
+  // Cảnh mở đầu "móc" người xem: giá + điểm mạnh nhất của vị trí (ảnh nhà làm nền nếu có), rồi mới bay vào bản đồ
+  const hook = makeHook(scene, roads, pois);
+  const HOLD = hook ? 2.7 : 0;
   const raw = [];
-  raw.push({ type: 'intro', d: 5.0, to: camHouseTop, move: 1, vkey: 'intro' });
+  raw.push({ type: 'intro', d: 5.0 + HOLD, hold: HOLD, to: camHouseTop, move: 1, vkey: 'intro' });
   raw.push({ type: 'house', d: 3.8, to: camHouse, move: 0.95, vkey: 'house' });
   raw.push({ type: 'overview', d: 3.6, to: camOverview, move: 0.8, drift: 0.02, vkey: 'overview' });
   roads.forEach((r, i) => raw.push({ type: 'road', d: 3.1, to: camRoads, move: i === 0 ? 0.6 : 1, drift: i === 0 ? 0 : 0.02, road: i, vkey: 'road:' + r.id }));
@@ -490,7 +535,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   let t = 0;
   let prev = camRegion;
   const phases = raw.map(p => {
-    const ph = { ...p, t0: t, t1: t + p.d * k, from: prev };
+    const ph = { ...p, t0: t, t1: t + p.d * k, from: prev, hold: (p.hold || 0) * k };
     t = ph.t1;
     prev = camAtPhase(ph, ph.t1);
     return ph;
@@ -503,11 +548,31 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     intro: first('intro'), house: first('house'), overview: first('overview'), boundaryPh: first('boundary'),
     summary: first('summary'), outro: first('outro'), photosPh: first('photos'), photos,
     roadPhases: phases.filter(p => p.type === 'road'), poiPhases: phases.filter(p => p.type === 'poi'),
-    pois, roads, boundary, captions,
+    pois, roads, boundary, captions, hook,
   };
+  tl.hookEnd = hook ? tl.intro.t0 + tl.intro.hold : 0;
   tl.roadsEnd = tl.roadPhases.length ? tl.roadPhases[tl.roadPhases.length - 1].t1 : tl.overview.t1;
   tl.roadLabels = camRoads ? placeRoadLabels(tl, camRoads) : [];
   return tl;
+}
+
+function makeHook(scene, roads, pois) {
+  const info = infoData(scene);
+  const byNear = roads.slice().sort((a, b) => a.nearKm - b.nearKm);
+  const major = byNear.find(r => r.level >= 2 && r.nearKm <= 3) || byNear[0];
+  let fact = '';
+  if (major && major.nearKm <= 5) fact = major.nearKm < 0.12 ? `Mặt tiền ${major.label}` : `Cách ${major.label} ${formatKm(major.nearKm)}`;
+  else if (pois.length) {
+    const p = pois.slice().sort((a, b) => a.distKm - b.distKm)[0];
+    fact = `Gần ${p.name} · ${formatKm(p.distKm, p.approx, '≈ ')}`;
+  }
+  const big = info?.price || '';
+  if (!big && !fact) return null;
+  return {
+    kicker: [scene.label, scene.commune || scene.provinceShort].filter(Boolean).join(' · '),
+    big: big || scene.label || 'VỊ TRÍ ĐẸP', isPrice: !!big,
+    fact, det: info ? info.det.slice(0, 2).join('  ·  ') : '',
+  };
 }
 
 // ---------- Phụ đề ----------
@@ -561,7 +626,8 @@ export function buildCaptions(phases, texts, voice, fmtKey) {
 
 function camAtPhase(ph, t) {
   const d = ph.t1 - ph.t0;
-  const e = smooth(clamp01((t - ph.t0) / (d * (ph.move || 1))));
+  const hold = ph.hold || 0;
+  const e = smooth(clamp01((t - ph.t0 - hold) / ((d - hold) * (ph.move || 1))));
   const cam = lerpCam(ph.from, ph.to, e);
   if (ph.drift) cam.zoom += ph.drift * Math.max(0, t - ph.t0);
   return cam;
@@ -936,19 +1002,19 @@ function labelCard(ctx, cx, bottomY, title, sub, alpha, LW, safe) {
   ctx.globalAlpha = alpha;
   ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 3;
   roundRect(ctx, x, y, w, h, 11);
-  ctx.fillStyle = 'rgba(12,16,24,0.9)'; ctx.fill();
+  ctx.fillStyle = ST.card; ctx.fill();
   ctx.shadowColor = 'transparent';
   ctx.beginPath();
   const px = Math.max(x + 14, Math.min(x + w - 14, cx));
   ctx.moveTo(px - 7, y + h); ctx.lineTo(px, y + h + 8); ctx.lineTo(px + 7, y + h); ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = ST.ink;
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.font = `800 18px ${FONT}`;
   ctx.fillText(title, x + w / 2, y + 27);
   if (sub) {
     ctx.font = `500 12.5px ${FONT}`;
-    ctx.fillStyle = 'rgba(255,255,255,0.82)';
+    ctx.fillStyle = ST.soft;
     ctx.fillText(fitOneLine(ctx, sub, 300), x + w / 2, y + 46);
   }
   ctx.restore();
@@ -988,19 +1054,19 @@ function poiCard(ctx, poi, px, py, alpha, tl, avoid) {
   ctx.globalAlpha = alpha;
   ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 3;
   roundRect(ctx, best.x, y, w, h, 11);
-  ctx.fillStyle = 'rgba(12,16,24,0.9)'; ctx.fill();
+  ctx.fillStyle = ST.card; ctx.fill();
   ctx.shadowColor = 'transparent';
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   ctx.font = `700 10.5px ${FONT}`;
   ctx.fillStyle = CAT_COLORS[poi.cat];
   spacedCaps(ctx, catText, best.x + 13, y + 22, 1.2);
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = ST.ink;
   ctx.font = `800 15.5px ${FONT}`;
   lines.forEach((l, i) => ctx.fillText(l, best.x + 13, y + 42 + i * 19));
   const cy = y + 42 + (lines.length - 1) * 19 + 12;
   roundRect(ctx, best.x + 13, cy, chipW, 22, 6);
-  ctx.fillStyle = GOLD; ctx.fill();
-  ctx.fillStyle = '#1b1405';
+  ctx.fillStyle = CA(); ctx.fill();
+  ctx.fillStyle = CAI();
   ctx.font = `800 13px ${FONT}`;
   ctx.fillText(dist, best.x + 22, cy + 15.5);
   ctx.restore();
@@ -1013,9 +1079,9 @@ function chip(ctx, x, y, text, alpha, color = GOLD) {
   ctx.font = `800 13px ${FONT}`;
   const w = ctx.measureText(text).width + 20, h = 24;
   roundRect(ctx, x - w / 2, y - h / 2, w, h, 12);
-  ctx.fillStyle = 'rgba(12,16,24,0.9)'; ctx.fill();
+  ctx.fillStyle = ST.card; ctx.fill();
   ctx.lineWidth = 1.2; ctx.strokeStyle = color; ctx.stroke();
-  ctx.fillStyle = color;
+  ctx.fillStyle = ST.light ? ST.ink : color;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText(text, x, y + 0.5);
   ctx.restore();
@@ -1034,9 +1100,9 @@ function crossingChip(ctx, x, y, short, dist, alpha, tl) {
   let bx = Math.max(tl.safe.x, Math.min(tl.LW - tl.safe.x - w, x - w / 2));
   const by = y - h - 8 + (1 - easeOut(alpha)) * 8;
   roundRect(ctx, bx, by, w, h, 9);
-  ctx.fillStyle = 'rgba(14,10,22,0.92)'; ctx.fill();
+  ctx.fillStyle = ST.card; ctx.fill();
   ctx.lineWidth = 1.5; ctx.strokeStyle = PINK; ctx.stroke();
-  ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = ST.ink; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.font = `800 13.5px ${FONT}`;
   ctx.fillText(t1, bx + w / 2, by + 19);
   ctx.fillStyle = '#FFB3D0';
@@ -1058,7 +1124,7 @@ function boundaryCard(ctx, tl, b, alpha) {
   ctx.globalAlpha = alpha;
   ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 4;
   roundRect(ctx, x, y, w, h, 14);
-  ctx.fillStyle = 'rgba(10,12,22,0.93)'; ctx.fill();
+  ctx.fillStyle = ST.card; ctx.fill();
   ctx.shadowColor = 'transparent';
   ctx.lineWidth = 1.6; ctx.strokeStyle = PINK; ctx.stroke();
   roundRect(ctx, x + 14, y + 26, 46, 46, 10);
@@ -1069,22 +1135,22 @@ function boundaryCard(ctx, tl, b, alpha) {
   const tx = x + 74;
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   ctx.font = `700 10.5px ${FONT}`;
-  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.fillStyle = ST.mute;
   spacedCaps(ctx, 'TỪ CĂN NHÀ ĐẾN', tx, y + 22, 1.4);
   ctx.font = `800 18px ${FONT}`;
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = ST.ink;
   ctx.fillText('RANH GIỚI ', tx, y + 44);
   const rw = ctx.measureText('RANH GIỚI ').width;
-  ctx.fillStyle = CYAN;
+  ctx.fillStyle = ST.light ? '#0E7C88' : CYAN;
   ctx.fillText(fitOneLine(ctx, b.short.toUpperCase(), w - (tx - x) - rw - 14), tx + rw, y + 44);
   ctx.font = `800 25px ${FONT}`;
-  ctx.fillStyle = GOLD;
+  ctx.fillStyle = CA();
   ctx.fillText(road, tx, y + 74);
   const dw = ctx.measureText(road).width;
   ctx.font = `600 12.5px ${FONT}`;
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = ST.ink;
   ctx.fillText(mins, tx + dw + 10, y + 72);
-  ctx.fillStyle = 'rgba(255,255,255,0.62)';
+  ctx.fillStyle = ST.mute;
   ctx.font = `500 12px ${FONT}`;
   ctx.fillText(`Chim bay khoảng ${formatKm(b.km)}`, tx, y + 93);
   ctx.restore();
@@ -1112,11 +1178,11 @@ function drawSummary(ctx, tl, p) {
   ctx.translate(0, (1 - easeOut(clamp01(p * 1.6))) * 16);
   ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 4;
   roundRect(ctx, x, y, w, h, 14);
-  ctx.fillStyle = 'rgba(10,12,22,0.92)'; ctx.fill();
+  ctx.fillStyle = ST.card; ctx.fill();
   ctx.shadowColor = 'transparent';
-  ctx.lineWidth = 1.4; ctx.strokeStyle = 'rgba(255,209,102,0.7)'; ctx.stroke();
+  ctx.lineWidth = 1.4; ctx.strokeStyle = ST.light ? 'rgba(17,22,27,0.18)' : GOLD; ctx.stroke();
   ctx.textBaseline = 'alphabetic';
-  ctx.fillStyle = GOLD;
+  ctx.fillStyle = CA();
   ctx.font = `700 11px ${FONT}`;
   spacedCaps(ctx, `TỪ CĂN NHÀ · BÁN KÍNH ${String(tl.scene.radiusKm).replace('.', ',')} KM`, x + 16, y + 27, 1.1);
   rows.forEach((r, i) => {
@@ -1133,42 +1199,114 @@ function drawSummary(ctx, tl, p) {
     } else drawIcon(ctx, CATEGORIES[r.cat].icon, x + 28, ry + 12, 13, '#fff');
     ctx.font = `800 14px ${FONT}`;
     const dw = ctx.measureText(r.dist).width;
-    ctx.fillStyle = GOLD;
+    ctx.fillStyle = CA();
     ctx.textAlign = 'right';
     ctx.fillText(r.dist, x + w - 16, ry + 17);
     ctx.textAlign = 'left';
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = ST.ink;
     ctx.font = `700 14px ${FONT}`;
     ctx.fillText(fitOneLine(ctx, r.name, w - 64 - dw - 26), x + 50, ry + 17);
   });
   ctx.restore();
 }
 
+// Chữ phẳng theo phong cách (không đùn 3D): sang trọng = có chân, nhũ vàng; tối giản = mảnh, giãn chữ
+function styledLine(ctx, text, size, color, kind) {
+  ctx.save();
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  if (kind === 'serif') {
+    ctx.font = `${ST.headW} ${size}px ${HFONT}`;
+    const sp = size * 0.06;
+    const w = spacedWidth(ctx, text, sp);
+    ctx.shadowColor = 'rgba(0,0,0,0.75)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 2;
+    const gr = ctx.createLinearGradient(0, -size * 0.55, 0, size * 0.55);
+    gr.addColorStop(0, '#FFF6DE'); gr.addColorStop(0.55, color); gr.addColorStop(1, '#A9813E');
+    ctx.fillStyle = gr;
+    fillSpaced(ctx, text, 0, 0, sp);
+    ctx.restore();
+    return w;
+  }
+  if (kind === 'sticker') {
+    ctx.font = `${ST.headW} ${size}px ${HFONT}`;
+    const w = ctx.measureText(text).width;
+    ctx.rotate(-0.035);
+    roundRect(ctx, -w / 2 - 14, -size * 0.62, w + 28, size * 1.2, 10);
+    ctx.fillStyle = color; ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 3; ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.fillStyle = color === ST.acc2 ? '#1d1030' : '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.fillText(text, 0, size * 0.06);
+    ctx.restore();
+    return w + 28;
+  }
+  // thin
+  ctx.font = `${ST.headW} ${size}px ${HFONT}`;
+  const sp = size * 0.16;
+  const w = spacedWidth(ctx, text, sp);
+  ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 10;
+  ctx.fillStyle = color;
+  fillSpaced(ctx, text, 0, 0, sp);
+  ctx.restore();
+  return w;
+}
 function drawTitle(ctx, tl, text, sub, alpha, topY = 0) {
   if (alpha <= 0.01 || !text) return;
   const { LW, safe } = tl;
+  const kind = ST.title;
   ctx.save();
   ctx.globalAlpha = alpha;
-  const size = tl.fmt === 'h' ? 30 : 34;
-  ctx.font = `800 ${size}px ${FONT}`;
-  const lines = wrapText(ctx, text.toUpperCase(), LW - safe.x * 2 - 20, 2);
+  const size = (tl.fmt === 'h' ? 30 : 34) * (kind === 'thin' ? 0.9 : kind === 'serif' ? 1.02 : 1);
+  ctx.font = kind === '3d' ? `800 ${size}px ${FONT}` : `${ST.headW} ${size}px ${HFONT}`;
+  const extra = kind === 'thin' ? size * 0.16 * 14 : kind === 'serif' ? size * 0.06 * 14 : kind === 'sticker' ? 40 : 20;
+  const lines = wrapText(ctx, text.toUpperCase(), LW - safe.x * 2 - extra, 2);
   // Có logo góc trên thì tiêu đề xuống dưới logo
+  const pop = ST.pop ? easeOutBack(clamp01(alpha)) : 1;
   let y = Math.max(tl.fmt === 'v' ? safe.top + 8 : safe.top - 6, topY ? topY + size * 0.55 : 0) + (1 - easeOut(alpha)) * -10;
   ctx.translate(LW / 2, 0);
+  let maxW = 0;
   lines.forEach((l, i) => {
     ctx.save();
-    ctx.translate(0, y + i * (size + 8));
-    ctx.translate(-0, 0);
-    text3DCentered(ctx, l, size, i === lines.length - 1 && lines.length > 1 ? CYAN : '#FFFFFF');
+    ctx.translate(0, y + i * (size + (kind === 'sticker' ? 14 : 8)));
+    if (pop !== 1) ctx.scale(pop, pop);
+    const last = i === lines.length - 1 && lines.length > 1;
+    if (kind === '3d') text3DCentered(ctx, l, size, last ? CYAN : '#FFFFFF');
+    else {
+      ctx.font = `${ST.headW} ${size}px ${HFONT}`;
+      const sp = kind === 'thin' ? size * 0.16 : kind === 'serif' ? size * 0.06 : 0;
+      const w = kind === 'sticker' ? ctx.measureText(l).width : spacedWidth(ctx, l, sp);
+      maxW = Math.max(maxW, w);
+      if (kind === 'sticker') styledLine(ctx, l, size, last ? ST.acc2 : ST.acc, kind);
+      else styledLine(ctx, l, size, kind === 'serif' ? ST.acc : '#ffffff', kind);
+    }
     ctx.restore();
   });
+  const lastY = y + (lines.length - 1) * (size + (kind === 'sticker' ? 14 : 8));
+  // Đường kẻ trang trí: sang trọng = 2 vạch vàng + hình thoi, tối giản = 1 vạch mảnh
+  if (kind === 'serif' || kind === 'thin') {
+    const ry = lastY + size * 0.72;
+    const half = Math.min(LW / 2 - safe.x, Math.max(60, maxW / 2) * (kind === 'thin' ? 0.35 : 0.8)) * easeOut(clamp01(alpha));
+    ctx.save();
+    ctx.strokeStyle = kind === 'serif' ? ST.acc : 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = kind === 'serif' ? 1.4 : 1;
+    ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 4;
+    if (kind === 'serif') {
+      ctx.beginPath(); ctx.moveTo(-half, ry); ctx.lineTo(-9, ry); ctx.moveTo(9, ry); ctx.lineTo(half, ry); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, ry - 5); ctx.lineTo(5, ry); ctx.lineTo(0, ry + 5); ctx.lineTo(-5, ry); ctx.closePath();
+      ctx.fillStyle = ST.acc; ctx.fill();
+    } else { ctx.beginPath(); ctx.moveTo(-half, ry); ctx.lineTo(half, ry); ctx.stroke(); }
+    ctx.restore();
+  }
   if (sub) {
-    const sy = y + (lines.length - 1) * (size + 8) + size * 0.95;
-    ctx.font = `600 13px ${FONT}`;
+    const sy = lastY + size * (kind === 'serif' || kind === 'thin' ? 1.35 : 0.95) + (kind === 'sticker' ? 8 : 0);
+    ctx.font = kind === 'serif' ? `italic 500 14px ${HFONT}` : `600 13px ${FONT}`;
     const w = ctx.measureText(sub).width + 22;
-    roundRect(ctx, -w / 2, sy - 12, w, 24, 6);
-    ctx.fillStyle = 'rgba(10,12,22,0.85)'; ctx.fill();
-    ctx.fillStyle = '#fff';
+    if (kind === 'serif') {
+      ctx.fillStyle = ST.ink; ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 6;
+    } else {
+      roundRect(ctx, -w / 2, sy - 12, w, 24, kind === 'sticker' ? 12 : 6);
+      ctx.fillStyle = ST.card; ctx.fill();
+      ctx.fillStyle = ST.ink;
+    }
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(sub, 0, sy + 0.5);
   }
@@ -1203,23 +1341,27 @@ function drawBrand(ctx, tl, text, phone, alpha) {
       const t = fitOneLine(ctx, text, LW - safe.x * 2 - 40);
       const tw = ctx.measureText(t).width + 26;
       roundRect(ctx, (LW - tw) / 2, y - 34, tw, 26, 13);
-      ctx.fillStyle = 'rgba(8,16,14,0.78)'; ctx.fill();
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = ST.card; ctx.fill();
+      ctx.fillStyle = ST.ink;
       ctx.fillText(t, LW / 2, y - 21);
     }
-    roundRect(ctx, (LW - pw) / 2, y, pw, h, 23);
-    ctx.fillStyle = GOLD; ctx.fill();
-    ctx.fillStyle = '#1b1405';
-    ctx.font = `800 22px ${FONT}`;
+    const pop = ST.pop ? easeOutBack(clamp01(alpha)) : 1;
+    ctx.save();
+    ctx.translate(LW / 2, y + h / 2); ctx.scale(pop, pop); ctx.translate(-LW / 2, -(y + h / 2));
+    roundRect(ctx, (LW - pw) / 2, y, pw, h, ST.outline ? 4 : 23);
+    if (ST.outline) { ctx.fillStyle = ST.card; ctx.fill(); ctx.lineWidth = 1.6; ctx.strokeStyle = GOLD; ctx.stroke(); ctx.fillStyle = GOLD; }
+    else { ctx.fillStyle = GOLD; ctx.fill(); ctx.fillStyle = ST.accInk; }
+    ctx.font = ST.outline ? `700 21px ${HFONT}` : `800 22px ${FONT}`;
     ctx.fillText(fitOneLine(ctx, ph, pw - 24), LW / 2, y + h / 2 + 1);
+    ctx.restore();
   } else {
     ctx.font = `800 16px ${FONT}`;
     const t = fitOneLine(ctx, text, LW - safe.x * 2 - 40);
     const w = ctx.measureText(t).width + 34, h = 38;
     const y = bottom - h;
-    roundRect(ctx, (LW - w) / 2, y, w, h, 19);
-    ctx.fillStyle = GOLD; ctx.fill();
-    ctx.fillStyle = '#1b1405';
+    roundRect(ctx, (LW - w) / 2, y, w, h, ST.outline ? 4 : 19);
+    if (ST.outline) { ctx.fillStyle = ST.card; ctx.fill(); ctx.lineWidth = 1.6; ctx.strokeStyle = GOLD; ctx.stroke(); ctx.fillStyle = GOLD; }
+    else { ctx.fillStyle = GOLD; ctx.fill(); ctx.fillStyle = ST.accInk; }
     ctx.fillText(t, LW / 2, y + h / 2 + 1);
   }
   ctx.restore();
@@ -1283,24 +1425,24 @@ function drawInfo(ctx, box, alpha) {
   ctx.globalAlpha = clamp01(alpha * 1.6);
   ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 4;
   roundRect(ctx, x, y, w, h, 14);
-  ctx.fillStyle = 'rgba(10,12,22,0.92)'; ctx.fill();
+  ctx.fillStyle = ST.card; ctx.fill();
   ctx.shadowColor = 'transparent';
-  ctx.lineWidth = 1.4; ctx.strokeStyle = 'rgba(255,209,102,0.75)'; ctx.stroke();
+  ctx.lineWidth = 1.4; ctx.strokeStyle = ST.light ? 'rgba(17,22,27,0.18)' : GOLD; ctx.stroke();
   ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
   const detText = d.det.join('  ·  ');
   if (d.price) {
-    ctx.fillStyle = GOLD;
+    ctx.fillStyle = CA();
     ctx.font = `700 11px ${FONT}`;
     const lx = spacedCaps(ctx, 'GIÁ BÁN', x + 16, y + 24, 1.2);
-    ctx.font = `800 29px ${FONT}`;
+    ctx.font = `${ST.headW >= 700 ? ST.headW : 600} 30px ${HFONT}`;
     ctx.fillText(fitOneLine(ctx, d.price, w - (lx - x) - 24), x + 16, y + 56);
     if (detText) {
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = ST.ink;
       ctx.font = `700 14.5px ${FONT}`;
       ctx.fillText(fitOneLine(ctx, detText, w - 32), x + 16, y + 80);
     }
   } else {
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = ST.ink;
     ctx.font = `800 16px ${FONT}`;
     ctx.fillText(fitOneLine(ctx, detText, w - 32), x + 16, y + 29);
   }
@@ -1338,15 +1480,14 @@ function drawCaption(ctx, L, alpha) {
   ctx.save();
   ctx.globalAlpha = alpha;
   roundRect(ctx, L.x, L.y, L.w, L.h, 10);
-  ctx.fillStyle = 'rgba(0,0,0,0.62)'; ctx.fill();
-  ctx.font = `800 ${L.size}px ${FONT}`;
+  ctx.fillStyle = ST.capBg; ctx.fill();
+  ctx.font = `800 ${L.size}px ${ST.pop ? HFONT : FONT}`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
   L.lines.forEach((ln, i) => {
     const y = L.y + 7 + L.lh * (i + 0.5) + 1;
-    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.65)';
-    ctx.strokeText(ln, L.x + L.w / 2, y);
-    ctx.fillStyle = '#ffffff';
+    if (ST.capInk === '#ffffff' || ST.capInk === '#F7F1E6') { ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.strokeText(ln, L.x + L.w / 2, y); }
+    ctx.fillStyle = ST.capInk;
     ctx.fillText(ln, L.x + L.w / 2, y);
   });
   ctx.restore();
@@ -1442,6 +1583,118 @@ function drawPhotos(ctx, tl, t, logo) {
   return A;
 }
 
+function drawHook(ctx, tl, t) {
+  const H = tl.hook;
+  if (!H || t >= tl.hookEnd + 0.4) return;
+  const { LW, LH, safe } = tl;
+  const t0 = tl.intro.t0;
+  const lt = t - t0;
+  const A = t < tl.hookEnd - 0.45 ? clamp01(lt / 0.25 + 0.6) : clamp01((tl.hookEnd + 0.4 - t) / 0.85);
+  if (A <= 0) return;
+  // Nền: ảnh đẹp nhất của căn (ảnh đầu tiên), không có ảnh thì làm tối bản đồ
+  if (tl.photos && tl.photos.length) {
+    photoLayer(ctx, tl, tl.photos[0], 0, 0, LW, LH, clamp01(lt / (tl.hookEnd - t0 + 0.4)), 1, A);
+    ctx.save(); ctx.globalAlpha = A * 0.42; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, LW, LH); ctx.restore();
+  } else {
+    ctx.save(); ctx.globalAlpha = A * 0.5; ctx.fillStyle = '#05090a'; ctx.fillRect(0, 0, LW, LH); ctx.restore();
+  }
+  const step = (d0, dur = 0.45) => clamp01((lt - d0) / dur);
+  const cy = tl.fmt === 'h' ? LH * 0.45 : LH * 0.43;
+  const big = H.isPrice ? H.big.toUpperCase() : H.big.toUpperCase();
+  let size = tl.fmt === 'h' ? 58 : 62;
+  ctx.save();
+  ctx.font = `${ST.title === '3d' ? 800 : ST.headW} ${size}px ${ST.title === '3d' ? FONT : HFONT}`;
+  const room = LW - safe.x * 2 - 30;
+  const w0 = ctx.measureText(big).width * (ST.title === 'thin' ? 1.4 : 1.12);
+  if (w0 > room) size = Math.max(30, size * room / w0);
+  ctx.restore();
+  ctx.save();
+  ctx.globalAlpha = A;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  // Dòng nhỏ phía trên: loại nhà · xã/phường
+  const a1 = step(0.1);
+  if (H.kicker && a1 > 0) {
+    ctx.save();
+    ctx.globalAlpha = A * a1;
+    ctx.font = `700 13.5px ${FONT}`;
+    ctx.fillStyle = ST.light ? '#ffffff' : ST.acc2;
+    ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 6;
+    fillSpaced(ctx, fitOneLine(ctx, H.kicker.toUpperCase(), LW - safe.x * 2 - 40), LW / 2, cy - size * 0.95 - (H.isPrice ? 26 : 0) + (1 - a1) * 8, 1.6);
+    if (H.isPrice) {
+      ctx.font = `600 13px ${FONT}`;
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      fillSpaced(ctx, 'GIÁ CHỈ', LW / 2, cy - size * 0.95 + (1 - a1) * 8, 3);
+    }
+    ctx.restore();
+  }
+  // Giá (hoặc loại nhà) cỡ lớn
+  const a2 = step(0.28, ST.pop ? 0.55 : 0.5);
+  if (a2 > 0) {
+    ctx.save();
+    ctx.globalAlpha = A * clamp01(a2 * 1.6);
+    ctx.translate(LW / 2, cy + (ST.pop ? 0 : (1 - easeOut(a2)) * 14));
+    const sc = ST.pop ? easeOutBack(a2) : 0.92 + 0.08 * easeOut(a2);
+    ctx.scale(sc, sc);
+    if (ST.title === '3d') text3DCentered(ctx, big, size, GOLD, 1, 'rgba(255,209,102,0.45)');
+    else if (ST.title === 'sticker') styledLine(ctx, big, size, ST.acc, 'sticker');
+    else {
+      ctx.font = `${ST.headW} ${size}px ${HFONT}`;
+      const sp = ST.title === 'thin' ? size * 0.12 : size * 0.04;
+      if (ST.title === 'thin') { ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 12; ctx.textAlign = 'left'; fillSpaced(ctx, big, 0, 0, sp); }
+      else styledLine(ctx, big, size, ST.acc, 'serif');
+    }
+    ctx.restore();
+  }
+  // Điểm mạnh vị trí: thẻ nổi bật
+  const a3 = step(0.75);
+  let below = cy + size * 0.85;
+  if (H.fact && a3 > 0) {
+    ctx.save();
+    ctx.globalAlpha = A * a3;
+    ctx.font = `800 17px ${FONT}`;
+    const txt = fitOneLine(ctx, H.fact, LW - safe.x * 2 - 50);
+    const w = ctx.measureText(txt).width + 34, h = 40;
+    const y = below + (1 - easeOut(a3)) * 10;
+    ctx.translate(LW / 2, y + h / 2);
+    if (ST.pop) { const k = easeOutBack(a3); ctx.scale(k, k); ctx.rotate(0.02); }
+    roundRect(ctx, -w / 2, -h / 2, w, h, ST.outline ? 4 : ST.light ? 6 : 20);
+    if (ST.outline) { ctx.fillStyle = 'rgba(16,13,10,0.75)'; ctx.fill(); ctx.lineWidth = 1.4; ctx.strokeStyle = GOLD; ctx.stroke(); ctx.fillStyle = ST.acc2; }
+    else if (ST.light) { ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.fill(); ctx.fillStyle = ST.ink; }
+    else { ctx.fillStyle = ST.pop ? ST.acc2 : GOLD; ctx.fill(); ctx.fillStyle = ST.pop ? '#1d1030' : ST.accInk; }
+    ctx.fillText(txt, 0, 1);
+    ctx.restore();
+    below += h + 14;
+  }
+  const a4 = step(1.0);
+  if (H.det && a4 > 0) {
+    ctx.save();
+    ctx.globalAlpha = A * a4;
+    ctx.font = `700 15px ${FONT}`;
+    ctx.fillStyle = '#fff';
+    ctx.shadowColor = 'rgba(0,0,0,0.85)'; ctx.shadowBlur = 6;
+    ctx.fillText(fitOneLine(ctx, H.det, LW - safe.x * 2 - 30), LW / 2, below + 12);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+// Khung điện ảnh (phong cách sang trọng): 2 dải đen trên/dưới lúc mở đầu và lúc kết
+function drawBars(ctx, tl, t) {
+  if (!ST.bars) return;
+  const { LW, LH } = tl;
+  const T = tl.duration;
+  const endA = tl.hookEnd || tl.intro.t0 + 1.2;
+  const a = Math.max(t < endA ? 1 : clamp01(1 - (t - endA) / 0.8), clamp01((t - tl.outro.t0 - 0.2) / 0.8) * (t < T ? 1 : 0));
+  if (a <= 0) return;
+  const h = Math.round(LH * (tl.fmt === 'h' ? 0.085 : 0.06) * easeOut(a));
+  ctx.save();
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, LW, h);
+  ctx.fillRect(0, LH - h, LW, h);
+  ctx.fillStyle = GOLD; ctx.globalAlpha = 0.65 * a;
+  ctx.fillRect(0, h - 1, LW, 1); ctx.fillRect(0, LH - h, LW, 1);
+  ctx.restore();
+}
+
 function brandTop(tl) {
   const { LH, safe, scene } = tl;
   if (!scene.brand && !scene.phone) return Infinity;
@@ -1451,6 +1704,7 @@ function brandTop(tl) {
 
 // ---------- Khung hình ----------
 export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
+  useStyle(tl.scene.style);
   const { LW, LH, safe, scene } = tl;
   const T = tl.duration;
   const cam = camAt(tl, t);
@@ -1464,10 +1718,10 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
 
   // Tông màu như video mẫu: xanh lục tối, giảm chói
   g.globalCompositeOperation = 'multiply';
-  g.fillStyle = '#9fc4be';
+  g.fillStyle = ST.tint;
   g.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
   g.globalCompositeOperation = 'source-over';
-  g.fillStyle = 'rgba(6,14,18,0.12)';
+  g.fillStyle = `rgba(6,14,18,${ST.dark})`;
   g.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
 
   const v = viewOf(cam);
@@ -1753,11 +2007,11 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
 
   // Ghim căn nhà
   const dropT = t >= ho.t0 ? (t - ho.t0) / 0.75 : 0;
-  if (t > tl.intro.t0 + (tl.intro.t1 - tl.intro.t0) * 0.6 || dropT > 0) drawHousePin(ctx, hs.x, hs.y, dropT, t, depthScale(hs.w));
+  if (t > tl.intro.t0 + tl.intro.hold + (tl.intro.t1 - tl.intro.t0 - tl.intro.hold) * 0.6 || dropT > 0) drawHousePin(ctx, hs.x, hs.y, dropT, t, depthScale(hs.w));
 
   // Tiêu đề + thẻ căn nhà
   const logo = logoBox(tl);
-  drawTitle(ctx, tl, scene.title, scene.titleSub, fadeWin(t, 0.3, ov.t0 + 0.5, 0.6, 0.6), logo && tl.fmt !== 'h' ? logo.y + logo.h + 8 : 0);
+  drawTitle(ctx, tl, scene.title, scene.titleSub, fadeWin(t, tl.hookEnd ? tl.hookEnd - 0.2 : 0.3, ov.t0 + 0.5, 0.6, 0.6), logo && tl.fmt !== 'h' ? logo.y + logo.h + 8 : 0);
   const houseCardA = Math.max(fadeWin(t, ho.t0 + 0.5, ov.t0 + 0.4, 0.45, 0.4), fadeWin(t, ou.t0 + 0.5, T + 10, 0.45, 0.4));
   labelCard(ctx, hs.x, hs.y - 60 * depthScale(hs.w), scene.label, scene.sub, houseCardA, LW, safe);
 
@@ -1803,6 +2057,8 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   drawInfo(ctx, infoBottom, infoHouseA);
   drawInfo(ctx, infoTop, infoEndA);
   drawPhotos(ctx, tl, t, logo);
+  drawHook(ctx, tl, t);
+  drawBars(ctx, tl, t);
   drawLogo(ctx, tl, logo);
   drawCaption(ctx, capL, capA);
 
