@@ -332,8 +332,10 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .qr-wrap canvas { width: min(250px, 70vw); height: auto; aspect-ratio: 1; border-radius: 12px; background: #fff; border: 1px solid var(--line); image-rendering: pixelated; }
 .qr-cap { font-size: 12.5px; color: var(--muted); text-align: center; }
-.qr-img { width: min(270px, 74vw); height: auto; border-radius: 12px; background: #fff; border: 1px solid var(--line); }
-.qr-dl { font-size: 13px; text-align: center; }
+.qr-img { width: min(300px, 78vw); height: auto; border-radius: 16px; background: #fff; box-shadow: 0 6px 24px rgba(0,0,0,.18); -webkit-touch-callout: default; }
+.qr-save { width: min(300px, 78vw); margin-top: 6px; }
+.pkg.loading { opacity: .7; pointer-events: none; }
+.pkg.loading::after { content: 'Đang tạo mã QR…'; display: block; font-size: 12.5px; font-weight: 700; margin-top: 4px; }
 .pay-info { margin: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; }
 .pay-info > div { display: grid; grid-template-columns: 104px minmax(0, 1fr); gap: 10px; align-items: center; padding: 8px 12px; border-top: 1px solid var(--line); }
 .pay-info > div:first-child { border-top: 0; }

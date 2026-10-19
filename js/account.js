@@ -323,19 +323,84 @@ export function vietqrPayload({ bin, account, amount, info }) {
     + (info ? tlv('62', tlv('08', info)) : '') + '6304';
   return s + crc16(s);
 }
-function drawQr(canvas, text) {
-  const qr = qrcode(0, 'M');
-  qr.addData(text);
+// Thẻ QR thanh toán vẽ ngay trên máy (nét ở mọi màn hình, không chờ tải ảnh ngoài):
+// mã VietQR có sẵn số tiền + nội dung là mã đơn, bên dưới ghi rõ số tiền, nội dung, ngân hàng, chủ tài khoản.
+function rr(c, x, y, w, h, r) {
+  c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+}
+function fitText(c, text, maxW) {
+  let t = String(text || '');
+  while (t.length > 1 && c.measureText(t).width > maxW) t = t.slice(0, -1);
+  return t === String(text || '') ? t : t.trimEnd() + '…';
+}
+export function drawQrCard(order, bank) {
+  const S3 = 3; // vẽ gấp 3 để ảnh lưu về và màn hình nét căng
+  const W = 340, H = 470;
+  const cv = document.createElement('canvas');
+  cv.width = W * S3; cv.height = H * S3;
+  const c = cv.getContext('2d');
+  c.scale(S3, S3);
+  const F = '"Be Vietnam Pro", "Segoe UI", system-ui, sans-serif';
+  c.fillStyle = '#ffffff'; rr(c, 0, 0, W, H, 18); c.fill();
+  // Tiêu đề
+  c.textAlign = 'center'; c.textBaseline = 'alphabetic';
+  c.fillStyle = '#0b1210'; c.font = `800 15px ${F}`;
+  c.fillText('QUÉT MÃ ĐỂ CHUYỂN KHOẢN', W / 2, 30);
+  c.fillStyle = '#6b7a74'; c.font = `600 11.5px ${F}`;
+  c.fillText('Mọi app ngân hàng · VietQR · Napas 247', W / 2, 47);
+  // Mã QR (ô vuông nguyên điểm ảnh, không nhoè)
+  const qr = qrcode(0, 'Q');
+  qr.addData(vietqrPayload({ bin: bank.bin, account: bank.account, amount: order.amount, info: order.code }));
   qr.make();
   const n = qr.getModuleCount();
-  const quiet = 3;
-  const cell = Math.max(3, Math.floor(260 / (n + quiet * 2)));
-  const size = cell * (n + quiet * 2);
-  canvas.width = size; canvas.height = size;
-  const c = canvas.getContext('2d');
-  c.fillStyle = '#fff'; c.fillRect(0, 0, size, size);
+  const box = 228, cell = box / n, x0 = (W - box) / 2, y0 = 62;
   c.fillStyle = '#0b1210';
-  for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (qr.isDark(r, k)) c.fillRect((k + quiet) * cell, (r + quiet) * cell, cell, cell);
+  for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) {
+    if (qr.isDark(r, k)) c.fillRect(x0 + k * cell, y0 + r * cell, cell + 0.35, cell + 0.35);
+  }
+  // Biểu tượng giữa mã
+  const cx = W / 2, cy = y0 + box / 2;
+  c.fillStyle = '#ffffff'; rr(c, cx - 21, cy - 21, 42, 42, 10); c.fill();
+  c.fillStyle = '#e2372d';
+  c.beginPath(); c.arc(cx, cy - 3, 12, Math.PI, 0); c.lineTo(cx, cy + 15); c.closePath(); c.fill();
+  c.fillStyle = '#ffffff';
+  c.beginPath(); c.moveTo(cx, cy - 10); c.lineTo(cx - 7, cy - 3); c.lineTo(cx - 5, cy - 3); c.lineTo(cx - 5, cy + 3); c.lineTo(cx + 5, cy + 3); c.lineTo(cx + 5, cy - 3); c.lineTo(cx + 7, cy - 3); c.closePath(); c.fill();
+  // Thông tin
+  let y = y0 + box + 34;
+  c.fillStyle = '#0b1210'; c.font = `800 26px ${F}`;
+  c.fillText(money(order.amount), W / 2, y);
+  y += 26;
+  c.font = `600 13px ${F}`; c.fillStyle = '#6b7a74';
+  c.fillText('Nội dung chuyển khoản', W / 2, y);
+  y += 22;
+  c.fillStyle = '#c47d00'; c.font = `800 19px ${F}`;
+  c.fillText(order.code, W / 2, y);
+  y += 16;
+  c.strokeStyle = '#e3e9e6'; c.lineWidth = 1; c.beginPath(); c.moveTo(24, y); c.lineTo(W - 24, y); c.stroke();
+  y += 24;
+  c.fillStyle = '#0b1210'; c.font = `800 14.5px ${F}`;
+  c.fillText(fitText(c, bank.holder || '', W - 40), W / 2, y);
+  y += 21;
+  c.font = `700 13.5px ${F}`; c.fillStyle = '#33423c';
+  c.fillText(fitText(c, `${bank.name || ''} · ${bank.account}`, W - 40), W / 2, y);
+  return cv;
+}
+let qrBlob = null, qrName = '';
+async function saveQr() {
+  if (!qrBlob) return;
+  const file = new File([qrBlob], qrName, { type: 'image/png' });
+  // Điện thoại: mở bảng chia sẻ để chọn "Lưu hình ảnh" (iPhone) hoặc "Lưu vào thư viện/Ảnh" (Android)
+  if (navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: 'Mã QR thanh toán' }); return; }
+    catch (e) { if (e.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(qrBlob);
+  a.download = qrName;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast('Đã tải ảnh mã QR. Mở app ngân hàng, chọn Quét QR → chọn ảnh từ thư viện.', 4500);
 }
 
 function payView(v) {
@@ -389,21 +454,12 @@ function showOrder(order, bank) {
   $('pAmount').dataset.raw = String(order.amount);
   $('pCode').textContent = order.code;
   $('payHelpZalo').hidden = !bank.zalo;
-  // Ảnh QR của SePay (vietqr.app) có sẵn số tiền + nội dung là mã đơn để tự cộng lượt.
-  // Ảnh không tải được thì vẽ mã VietQR ngay trên máy (cùng tài khoản, cùng số tiền, cùng nội dung).
-  const qs = new URLSearchParams({ acc: bank.account, bank: bank.bin, amount: String(order.amount), des: order.code, template: '', showinfo: 'true' });
-  if (bank.holder) qs.set('holder', bank.holder);
-  const qrUrl = 'https://vietqr.app/img?' + qs.toString();
-  const img = $('qrImg'), cv = $('qrCanvas');
-  const fallback = () => {
-    img.hidden = true; cv.hidden = false;
-    drawQr(cv, vietqrPayload({ bin: bank.bin, account: bank.account, amount: order.amount, info: order.code }));
-  };
-  img.onerror = fallback;
-  img.onload = () => { img.hidden = false; cv.hidden = true; };
-  img.src = qrUrl;
-  $('qrDownload').href = qrUrl + '&download=true';
-  setTimeout(() => { if (!img.complete || !img.naturalWidth) fallback(); }, 6000);
+  const card = drawQrCard(order, bank);
+  const img = $('qrImg');
+  img.src = card.toDataURL('image/png');
+  img.hidden = false;
+  qrBlob = null; qrName = `QR-thanh-toan-${order.code}.png`;
+  card.toBlob(b => { qrBlob = b; }, 'image/png');
   $('payStatus').className = 'pay-status';
   $('payStatus').innerHTML = '<span class="spinner" aria-hidden="true"></span> Đang chờ ngân hàng báo về…';
   payView('qr');
@@ -434,6 +490,8 @@ function showOrder(order, bank) {
 async function pickPackage(id) {
   const list = $('pkgList');
   list.classList.add('busy');
+  const btn = list.querySelector(`[data-pkg="${CSS.escape(id)}"]`);
+  btn?.classList.add('loading');
   try {
     const r = await rpc('vt_create_order', { p_token: S.token, p_package: id });
     showOrder(r.order, r.bank);
@@ -443,6 +501,7 @@ async function pickPackage(id) {
     toast(e.message, 5000);
   } finally {
     list.classList.remove('busy');
+    btn?.classList.remove('loading');
   }
 }
 
@@ -525,6 +584,7 @@ export async function initAccount(opts = {}) {
     if (b) pickPackage(b.dataset.pkg);
   });
   $('payBack').addEventListener('click', () => { stopPoll(); openPricing(); });
+  $('qrSave').addEventListener('click', saveQr);
   $('payQr').addEventListener('click', e => {
     const b = e.target.closest('button[data-copy]');
     if (!b) return;

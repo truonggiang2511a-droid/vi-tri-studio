@@ -369,9 +369,11 @@
       <h3 id="payTitle"></h3>
       <div class="qr-wrap">
         <img id="qrImg" class="qr-img" alt="Mã VietQR chuyển khoản" hidden>
-        <canvas id="qrCanvas" aria-label="Mã VietQR chuyển khoản" hidden></canvas>
-        <span class="qr-cap">Mở app ngân hàng → Quét mã. Số tiền và nội dung đã điền sẵn.</span>
-        <a id="qrDownload" class="link-btn qr-dl" target="_blank" rel="noopener">Đang dùng điện thoại? Tải ảnh QR rồi mở app ngân hàng chọn "Quét từ ảnh"</a>
+        <button id="qrSave" class="btn btn-primary qr-save" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0-4-4m4 4 4-4M5 17v3h14v-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Lưu mã QR vào thư viện ảnh
+        </button>
+        <span class="qr-cap">Đang dùng điện thoại: lưu ảnh rồi mở app ngân hàng → Quét QR → chọn ảnh vừa lưu. Số tiền và nội dung đã điền sẵn.</span>
       </div>
       <dl class="pay-info">
         <div><dt>Ngân hàng</dt><dd id="pBank"></dd></div>
