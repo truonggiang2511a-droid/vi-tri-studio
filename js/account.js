@@ -106,6 +106,8 @@ export async function refreshAccount() {
     S.profile = r.profile;
     S.reexportUntil = r.reexport_until;
     S.ref = r.ref || null;
+    S.leadsNew = r.leads_new || 0;
+    S.tgLinked = !!r.tg_linked;
     S.promo = r.promo && r.promo.percent > 0 && new Date(r.promo.until) > Date.now() ? r.promo : null;
     if (r.pending) S.order = S.order?.code === r.pending.code ? S.order : { ...r.pending };
   } catch (e) {

@@ -1,6 +1,6 @@
 // Service worker: giữ khung app để mở được nhanh và cài lên màn hình chính.
 // Ảnh vệ tinh, dữ liệu tiện ích và đường đi luôn lấy mới từ mạng.
-const VERSION = 'vitri-v20';
+const VERSION = 'vitri-v21';
 const SHELL = [
   './',
   'index.html',
@@ -46,6 +46,8 @@ self.addEventListener('fetch', e => {
     return;
   }
   if (url.origin !== self.location.origin) return;
+  // Trang web căn nhà, ảnh căn nhà, API: luôn lấy từ mạng
+  if (/^\/(can|m|goi|api)\//.test(url.pathname)) return;
   // Video phát theo từng đoạn (Range): để trình duyệt tự tải, không lưu vào bộ nhớ đệm
   if (req.headers.has('range') || /\.(mp4|webm|m4a)$/.test(url.pathname)) return;
 

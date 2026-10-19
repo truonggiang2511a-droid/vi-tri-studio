@@ -8,6 +8,7 @@ import { handleResolve } from './lib/resolve.js';
 import { handleConfig } from './lib/config.js';
 import { MEDIA_SIZES } from './lib/media-sizes.js';
 import { handleMap } from './lib/map.js';
+import { handleMedia, handleLead, handleTelegram, handleCan, handlePageEvent, handleCallLink } from './lib/pages.js';
 
 const ROUTES = { '/api/tts': handleTts, '/api/script': handleScript, '/api/sepay': handleSepay, '/api/resolve': handleResolve, '/api/config': handleConfig };
 
@@ -62,6 +63,12 @@ export default {
   async fetch(request, env, ctx) {
     const path = new URL(request.url).pathname.replace(/\/+$/, '');
     if (path.startsWith('/api/map/')) { setEnv(env); return handleMap(request, ctx); }
+    if (path.startsWith('/can/')) { setEnv(env); return handleCan(request); }
+    if (path.startsWith('/m/')) { setEnv(env); return handleMedia(request, ctx); }
+    if (path.startsWith('/goi/')) return handleCallLink(request);
+    if (path === '/api/lead') { setEnv(env); return handleLead(request, ctx); }
+    if (path === '/api/page-event') { setEnv(env); return handlePageEvent(request); }
+    if (path === '/api/telegram' || path === '/api/telegram/setup') { setEnv(env); return handleTelegram(request); }
     const handler = ROUTES[path];
     if (handler) { setEnv(env); return handler(request); }
     if (/\.mp4$/.test(path) && (request.method === 'GET' || request.method === 'HEAD')) return serveMedia(request, env);

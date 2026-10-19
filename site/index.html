@@ -40,6 +40,10 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0-4-4m4 4 4-4M5 17v3h14v-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span>Cài app</span>
     </button>
+    <button id="leadsBtn" class="btn btn-ghost leads-btn" type="button" aria-label="Khách quan tâm" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 19v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1M9.5 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM17 8v6m3-3h-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="acct-label">Khách</span><span class="badge" hidden>0</span>
+    </button>
     <button id="acctBtn" class="btn btn-ghost acct-btn" type="button">Đăng nhập</button>
   </div>
 </header>
@@ -218,6 +222,19 @@
           <label class="photo-add" id="photoAdd"><input autocomplete="off" id="photoFile" type="file" accept="image/*" multiple><span aria-hidden="true">+</span><span>Thêm ảnh</span></label>
         </div>
         <span class="hint small" id="photoHint">Ảnh chạy ở cuối video trước phần kết, mỗi ảnh khoảng 2 giây, có hiệu ứng chuyển cảnh. Ảnh lưu trên máy này theo từng căn.</span>
+      </div>
+
+      <div class="sub-head">Trang web căn này</div>
+      <div class="field page-box">
+        <p class="hint small">Trang riêng cho căn: ảnh, giá, video, tiện ích, nút Gọi/Zalo và ô để lại số. Gắn link vào bài đăng Facebook, TikTok, Zalo hoặc in mã QR lên băng rôn. Khách để lại số sẽ báo về app (và Telegram nếu bật).</p>
+        <label class="field"><span class="field-label">Link video đã đăng <em>(TikTok, YouTube, Facebook — không bắt buộc)</em></span><input autocomplete="off" id="pageVideo" class="input" type="url" inputmode="url" maxlength="400" placeholder="https://www.tiktok.com/@ten/video/…"></label>
+        <label class="field"><span class="field-label">Mô tả thêm <em>(không bắt buộc)</em></span><textarea autocomplete="off" id="pageDesc" class="input" rows="3" maxlength="2000" placeholder="Hẻm xe hơi, gần chợ, sổ sẵn công chứng ngay…"></textarea></label>
+        <button id="pagePublish" class="btn btn-primary btn-block" type="button">Tạo trang web cho căn này</button>
+        <div id="pageResult" class="page-result" hidden>
+          <div class="input-row"><input id="pageLink" class="input mono" type="text" readonly aria-label="Link trang căn nhà"><button id="pageCopy" class="btn btn-quiet" type="button">Chép</button></div>
+          <div class="page-acts"><a id="pageOpen" class="btn btn-quiet" target="_blank" rel="noopener">Xem trang</a><button id="pageShare" class="btn btn-quiet" type="button">Chia sẻ</button><button id="pageQrBtn" class="btn btn-quiet" type="button">Tải mã QR</button></div>
+          <p class="hint small">Sửa giá, ảnh, mô tả xong bấm nút trên để cập nhật — link giữ nguyên.</p>
+        </div>
       </div>
 
       <div class="sub-head">Logo &amp; phụ đề</div>
@@ -430,6 +447,26 @@
       <p id="pwMsg" class="hint"></p>
     </details>
     <button id="acLogout" class="btn btn-quiet btn-block" type="button">Đăng xuất</button>
+  </div>
+</dialog>
+<dialog id="leadsDlg" class="dlg dlg-wide" aria-labelledby="leadsTitle">
+  <div class="dlg-card">
+    <button class="dlg-x" type="button" data-close aria-label="Đóng">×</button>
+    <h3 id="leadsTitle">Khách quan tâm</h3>
+    <div class="tabs" id="leadsTabs" role="tablist">
+      <button type="button" role="tab" data-lt="leads">Khách</button>
+      <button type="button" role="tab" data-lt="pages">Trang web</button>
+      <button type="button" role="tab" data-lt="notify">Thông báo</button>
+    </div>
+    <section id="lt-leads">
+      <div class="lead-filter" id="leadFilter"></div>
+      <div id="leadList" class="lead-list"></div>
+    </section>
+    <section id="lt-pages" hidden><div id="pageList" class="page-list"></div></section>
+    <section id="lt-notify" hidden>
+      <h4>Báo khách mới qua Telegram</h4>
+      <div id="tgBox"></div>
+    </section>
   </div>
 </dialog>
 <dialog id="projDlg" class="dlg" aria-labelledby="projTitle">

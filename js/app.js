@@ -11,6 +11,8 @@ import { initAccount, setAccountLocation, beginExport, requireLogin, authHeaders
 import { splitVoice, joinForTts } from './voicesplit.js';
 import { loadConfig, initTracking, countVisit } from './track.js';
 import { initInstall } from './install.js';
+import { initLeads, downloadPageQr, pageUrl } from './leads.js';
+import { SB_URL, SB_KEY } from './sb.js';
 import { speakNumbers, speakPhones } from './vinum.js';
 
 const $ = id => document.getElementById(id);
@@ -46,6 +48,8 @@ const state = {
   musicVol: 0.8,
   fitVoice: true,
   style: 'neon',     // phong cách video
+  pageVideo: '',     // link video đã đăng (gắn vào trang web căn nhà)
+  pageDesc: '',
   roadTheme: 'auto',
   routeTheme: 'vang',
   sfxOn: true,
@@ -220,7 +224,7 @@ let exporting = false;
 window.__vitri = { get tl() { return tl; }, get t() { return t; }, state, scanArea };
 
 function rebuild() {
-  if (photoKey(state.house) !== photoHouse) restorePhotos();
+  if (photoKey(state.house) !== photoHouse) { restorePhotos(); showPageResult(); }
   if (!state.house) return;
   tl = buildTimeline(buildScene(), state.fmt, timelineOpts());
   if (t > tl.duration) t = 0;
@@ -1158,7 +1162,7 @@ async function quickGo() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'fmt', 'speed', 'style', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'fmt', 'speed', 'style', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -1440,6 +1444,103 @@ function showPhotos() {
   add.hidden = media.photos.length >= PHOTO_MAX;
 }
 
+// ---------- Trang web căn nhà ----------
+// Mỗi toạ độ căn nhớ trang đã tạo (id, mã link, ảnh đã tải lên) để bấm lại là cập nhật, link giữ nguyên.
+const PAGE_STORE = 'vitri.pages.v1';
+const readPages = () => { try { return JSON.parse(localStorage.getItem(PAGE_STORE) || '{}'); } catch { return {}; } };
+const writePages = m => { try { localStorage.setItem(PAGE_STORE, JSON.stringify(m)); } catch { /* bỏ qua */ } };
+const pageRec = () => readPages()[photoKey(state.house)] || null;
+function showPageResult() {
+  const rec = pageRec();
+  $('pageResult').hidden = !rec;
+  $('pagePublish').textContent = rec ? 'Cập nhật trang web' : 'Tạo trang web cho căn này';
+  if (!rec) return;
+  const url = pageUrl(rec.slug);
+  $('pageLink').value = url;
+  $('pageOpen').href = url + '?xem=1';
+}
+async function photoBlob(src) {
+  const img = await loadLogo(src);
+  const k = Math.min(1, 1280 / Math.max(img.width, img.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return new Promise(r => c.toBlob(r, 'image/jpeg', 0.82));
+}
+async function uploadPhotos() {
+  if (!media.photos.length) return [];
+  const paths = await rpc('vt_page_upload', { p_token: account.token, p_count: media.photos.length });
+  const out = [];
+  for (let i = 0; i < media.photos.length; i++) {
+    const blob = await photoBlob(media.photos[i].src);
+    const res = await fetch(`${SB_URL}/storage/v1/object/vt-pages/${paths[i]}`, {
+      method: 'POST', headers: { apikey: SB_KEY, 'content-type': 'image/jpeg' }, body: blob,
+    });
+    if (!res.ok) throw new Error('Tải ảnh lên chưa được, kiểm tra mạng rồi thử lại.');
+    out.push(paths[i]);
+  }
+  return out;
+}
+let publishing = false;
+async function publishPage() {
+  if (publishing) return;
+  if (!state.house) { toast('Dán vị trí căn nhà trước.'); return; }
+  if (!account.profile) { const ok = await requireLogin('Đăng nhập để tạo trang web cho căn nhà.'); if (!ok) return; }
+  publishing = true;
+  const btn = $('pagePublish');
+  btn.disabled = true;
+  try {
+    const key = photoKey(state.house);
+    const map = readPages();
+    const rec = map[key] || {};
+    const sig = media.photos.map(p => p.src.length + ':' + p.src.slice(-32)).join('|');
+    let photos = rec.photos || [];
+    if (sig !== rec.sig) {
+      btn.textContent = media.photos.length ? 'Đang tải ảnh lên…' : 'Đang lưu…';
+      photos = await uploadPhotos();
+    }
+    btn.textContent = 'Đang lưu trang…';
+    const title = (state.title || '').trim();
+    const generic = !title || /^vị trí\s*(&|và)\s*tiện ích$/i.test(title);
+    const address = state.sub || [state.admin?.commune, state.admin?.province].filter(Boolean).join(', ');
+    const p = await rpc('vt_page_save', {
+      p_token: account.token,
+      p: {
+        id: rec.id || null,
+        title: generic ? [TYPE_WORD[state.typeLabel] || 'Căn nhà', address].filter(Boolean).join(' · ') : title,
+        price: state.price, area: state.area, beds: state.beds, legal: state.legal, address,
+        lat: state.house.lat, lng: state.house.lng, phone: state.phone, brand: state.brand, style: state.style,
+        video_url: (state.pageVideo || '').trim(), description: state.pageDesc || '', photos,
+        pois: selectedPois().slice(0, 10).map(x => ({ name: x.name, cat: x.cat, catName: CATEGORIES[x.cat]?.label || '', km: Math.round((x.route ? x.route.km : x.km) * 100) / 100 })),
+        roads: selectedRoads().map(r => ({ label: r.label, km: Math.round(r.nearKm * 100) / 100 })),
+      },
+    }).catch(async e => {
+      // Trang đã bị xoá ở máy khác: tạo trang mới
+      if (rec.id && /Không tìm thấy/.test(e.message)) { delete map[key]; writePages(map); throw new Error('Trang cũ đã bị xoá. Bấm lại để tạo trang mới.'); }
+      throw e;
+    });
+    map[key] = { id: p.id, slug: p.slug, photos, sig };
+    writePages(map);
+    showPageResult();
+    if (state.pageVideo && !p.video_url) toast('Link video chưa đúng (chỉ nhận TikTok, YouTube, Facebook). Trang vẫn đã lưu.', 4500);
+    else toast(rec.id ? 'Đã cập nhật trang web, link giữ nguyên.' : 'Đã tạo trang web cho căn này. Chép link gắn vào bài đăng nhé!', 4000);
+  } catch (e) {
+    toast(e.message || 'Chưa lưu được trang, thử lại giúp em.', 4000);
+  } finally {
+    publishing = false;
+    btn.disabled = false;
+    showPageResult();
+  }
+}
+async function sharePage() {
+  const rec = pageRec();
+  if (!rec) return;
+  const url = pageUrl(rec.slug);
+  const text = [state.price, state.title].filter(Boolean).join(' · ');
+  if (navigator.share) { try { await navigator.share({ title: text || 'Căn nhà', text, url }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+  try { await navigator.clipboard.writeText(url); toast('Đã chép link trang.'); } catch { prompt('Chép link này:', url); }
+}
+
 // ---------- Âm thanh ----------
 async function pickAudio(kind, file) {
   if (!file) return;
@@ -1637,6 +1738,14 @@ function init() {
   $('logoBg').addEventListener('change', e => { state.logoBg = e.target.checked; scheduleRebuild(); });
   $('logoFile').addEventListener('change', e => pickLogo(e.target.files[0]));
   $('photoFile').addEventListener('change', e => pickPhotos(e.target.files));
+  $('pageVideo').value = state.pageVideo || '';
+  $('pageDesc').value = state.pageDesc || '';
+  $('pageVideo').addEventListener('input', e => { state.pageVideo = e.target.value; save(); });
+  $('pageDesc').addEventListener('input', e => { state.pageDesc = e.target.value; save(); });
+  $('pagePublish').addEventListener('click', publishPage);
+  $('pageCopy').addEventListener('click', async () => { try { await navigator.clipboard.writeText($('pageLink').value); toast('Đã chép link trang.'); } catch { $('pageLink').select(); } });
+  $('pageShare').addEventListener('click', sharePage);
+  $('pageQrBtn').addEventListener('click', () => { const r = pageRec(); if (r) downloadPageQr({ slug: r.slug, price: state.price, title: state.title }); });
   $('photoRow').addEventListener('click', e => { const b = e.target.closest('button[data-rm]'); if (b) removePhoto(Number(b.dataset.rm)); });
   $('logoClear').addEventListener('click', clearLogo);
   $('subsOn').checked = state.subsOn !== false;
@@ -1726,6 +1835,7 @@ function init() {
 
   initInstall({ toast, onChange: () => {} });
   setAccountLocation(state.house);
+  initLeads({ toast });
   initAccount({ toast }).then(() => {
     // Link từ trang giới thiệu: /#dangky mở đăng ký, /#mua mở bảng giá
     const h = location.hash;
