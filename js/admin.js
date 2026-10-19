@@ -333,6 +333,17 @@ async function loadFunnel() {
     $('funDaily').innerHTML = f.daily.map(d => `<tr><td class="num">${String(d.day).split('-').reverse().join('/')}</td><td class="num">${d.visits}<span class="mini-bar" style="width:${Math.round(80 * d.visits / maxV)}px"></span></td><td class="num">${d.installs ?? 0}</td><td class="num">${d.signups}</td><td class="num">${d.exports}</td><td class="num">${d.paid}</td></tr>`).join('');
   } catch (e) { steps.innerHTML = `<p class="hint err">${esc(e.message)}</p>`; }
   loadFollowups();
+  loadMapUsage();
+}
+const MAP_NAME = { 'vietmap-route': 'Vietmap · đường đi (tính phí)', 'vietmap-reverse': 'Vietmap · tên xã/tỉnh (tính phí)', 'vietmap-loi': 'Vietmap lỗi / hết lượt (đã chuyển dự phòng)',
+  cache: 'Bộ nhớ đệm (miễn phí)', osrm: 'OSRM · đường đi (miễn phí)', nominatim: 'OpenStreetMap · địa chỉ, ranh KCN (miễn phí)', photon: 'Photon · tìm địa điểm (miễn phí)' };
+async function loadMapUsage() {
+  const tb = $('mapRows');
+  try {
+    const rows = await call('vt_admin_map_usage');
+    tb.innerHTML = rows.map(r => `<tr><td>${esc(MAP_NAME[r.source] || r.source)}</td><td class="num">${Number(r.today).toLocaleString('vi-VN')}</td><td class="num">${Number(r.month).toLocaleString('vi-VN')}</td></tr>`).join('')
+      || '<tr><td colspan="3" class="muted">Chưa có lượt gọi nào trong tháng.</td></tr>';
+  } catch (e) { tb.innerHTML = `<tr><td colspan="3" class="hint err">${esc(e.message)}</td></tr>`; }
 }
 async function loadFollowups() {
   const tb = $('funFollow');

@@ -7,6 +7,7 @@ import { handleSepay } from './lib/sepay.js';
 import { handleResolve } from './lib/resolve.js';
 import { handleConfig } from './lib/config.js';
 import { MEDIA_SIZES } from './lib/media-sizes.js';
+import { handleMap } from './lib/map.js';
 
 const ROUTES = { '/api/tts': handleTts, '/api/script': handleScript, '/api/sepay': handleSepay, '/api/resolve': handleResolve, '/api/config': handleConfig };
 
@@ -58,8 +59,9 @@ async function serveMedia(request, env) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const path = new URL(request.url).pathname.replace(/\/+$/, '');
+    if (path.startsWith('/api/map/')) { setEnv(env); return handleMap(request, ctx); }
     const handler = ROUTES[path];
     if (handler) { setEnv(env); return handler(request); }
     if (/\.mp4$/.test(path) && (request.method === 'GET' || request.method === 'HEAD')) return serveMedia(request, env);

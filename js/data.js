@@ -1,17 +1,15 @@
 // Dữ liệu bản đồ cho video vị trí.
 // Tiện ích, trục đường lớn, ranh tỉnh/thành: vector tiles OpenFreeMap (dữ liệu OpenStreetMap,
 // miễn phí, không cần key, phục vụ qua CDN nên nhanh và ổn định).
-// Tên xã/phường, tỉnh/thành: Nominatim. Đường đi thật: OSRM.
+// Tên xã/phường, tỉnh/thành và đường đi thật: Vietmap qua /api/map (dự phòng Nominatim, OSRM).
 import { VectorTile } from '@mapbox/vector-tile';
 import Pbf from 'pbf';
 import { haversineKm, project, unproject } from './geo.js';
 
 const TILEJSON = 'https://tiles.openfreemap.org/planet';
 const FALLBACK_TILES = 'https://tiles.openfreemap.org/planet/20261011_080001_pt/{z}/{x}/{y}.pbf';
-const NOMINATIM = 'https://nominatim.openstreetmap.org/reverse';
-const NOMINATIM_LOOKUP = 'https://nominatim.openstreetmap.org/lookup';
-const PHOTON = 'https://photon.komoot.io/api';
-const OSRM = ['https://router.project-osrm.org/route/v1/driving/', 'https://routing.openstreetmap.de/routed-car/route/v1/driving/'];
+// Tìm địa điểm, ranh KCN, tên xã/tỉnh, đường đi: đi qua máy chủ của app (/api/map) để nhớ đệm và có nguồn dự phòng
+const PHOTON = '/api/map/search';
 
 export const CATEGORIES = {
   truong:    { label: 'Trường học',        short: 'TRƯỜNG HỌC', icon: 'school', order: 1 },
@@ -534,47 +532,24 @@ function buildRoads(raw, center, radiusKm) {
 }
 
 // ---------- Địa phận ----------
-// Nominatim cho phép tối đa 1 yêu cầu mỗi giây: xếp hàng mọi lời gọi
-let nomiChain = Promise.resolve();
-let nomiLast = 0;
-function nominatim(url, signal) {
-  const run = nomiChain.then(async () => {
-    const wait = nomiLast + 1100 - Date.now();
-    if (wait > 0) await new Promise(r => setTimeout(r, wait));
-    nomiLast = Date.now();
-    if (signal?.aborted) throw new DOMException('Đã huỷ', 'AbortError');
-    const T = withTimeout(10000, signal);
-    try { return await fetch(url, { signal: T.signal }); } finally { T.done(); }
-  });
-  nomiChain = run.catch(() => {});
-  return run;
-}
+// Trả về { province, commune } theo đơn vị hành chính mới (Vietmap), dự phòng OpenStreetMap
 async function reverseGeocode(p, zoom, signal) {
+  const T = withTimeout(15000, signal);
   try {
-    const url = `${NOMINATIM}?format=jsonv2&lat=${p.lat.toFixed(6)}&lon=${p.lng.toFixed(6)}&zoom=${zoom}&addressdetails=1&accept-language=vi`;
-    const res = await nominatim(url, signal);
+    const res = await fetch(`/api/map/reverse?lat=${p.lat.toFixed(5)}&lng=${p.lng.toFixed(5)}&zoom=${zoom}`, { signal: T.signal });
     if (!res.ok) return null;
-    return await res.json();
+    return (await res.json()).place || null;
   } catch (e) {
     if (signal?.aborted) throw e;
     return null;
-  }
+  } finally { T.done(); }
 }
-function provinceOf(a) {
-  if (!a) return '';
-  return a.state || a.province || (/thành phố|tp\./i.test(a.city || '') ? a.city : '') || a.city || '';
-}
-function communeOf(a) {
-  if (!a) return '';
-  const cands = [a.suburb, a.quarter, a.town, a.village, a.city_district, a.municipality, a.hamlet].filter(Boolean);
-  return cands.find(c => /^(xã|phường|thị trấn|đặc khu)\s/i.test(c)) || '';
-}
-
+const sameProvince = (a, b) => fold(shortProvince(a)) === fold(shortProvince(b));
 async function buildAdmin(rawBounds, center, radiusKm, signal) {
   const F = localFrame(center);
   const here = await reverseGeocode(center, 14, signal);
-  const province = provinceOf(here?.address);
-  const commune = communeOf(here?.address);
+  const province = here?.province || '';
+  const commune = here?.commune || '';
   let boundary = null;
   if (rawBounds.length) {
     const chains = chainPieces(rawBounds, F, 0.02).map(c => ({ ...c, near: chainNear(c, F) })).sort((a, b) => a.near - b.near);
@@ -586,8 +561,8 @@ async function buildAdmin(rawBounds, center, radiusKm, signal) {
       const off = 0.45;
       const [alat, alng] = F.ll(px + px / len * off, py + py / len * off);
       const there = await reverseGeocode({ lat: alat, lng: alng }, 8, signal);
-      const other = provinceOf(there?.address);
-      if (!other || other !== province) {
+      const other = there?.province || '';
+      if (!other || !sameProvince(other, province)) {
         const ways = [];
         for (const c of chains) {
           if (c.near > radiusKm * 1.5) continue;
@@ -655,7 +630,7 @@ async function findIndustrial(center, radiusKm, signal) {
   await Promise.all(['khu công nghiệp', 'cụm công nghiệp', 'khu chế xuất'].map(async q => {
     const T = withTimeout(9000, signal);
     try {
-      const url = `${PHOTON}?q=${encodeURIComponent(q)}&lat=${center.lat}&lon=${center.lng}&limit=40&bbox=${bbox}`;
+      const url = `${PHOTON}?q=${encodeURIComponent(q)}&lat=${center.lat.toFixed(3)}&lon=${center.lng.toFixed(3)}&limit=40&bbox=${bbox}`;
       const j = await (await fetch(url, { signal: T.signal })).json();
       for (const f of j.features || []) {
         const p = f.properties || {};
@@ -677,8 +652,11 @@ async function findIndustrial(center, radiusKm, signal) {
   const ids = list.filter(z => z.type === 'W' || z.type === 'R').map(z => z.type + z.osmId);
   if (ids.length) {
     try {
-      const res = await nominatim(`${NOMINATIM_LOOKUP}?osm_ids=${ids.join(',')}&format=jsonv2&polygon_geojson=1&polygon_threshold=0.0003`, signal);
-      if (res.ok) for (const r of await res.json()) geos.set(r.osm_type.charAt(0).toUpperCase() + r.osm_id, r.geojson);
+      const T = withTimeout(15000, signal);
+      try {
+        const res = await fetch(`/api/map/lookup?osm_ids=${ids.join(',')}`, { signal: T.signal });
+        if (res.ok) for (const r of await res.json()) geos.set(r.osm_type.charAt(0).toUpperCase() + r.osm_id, r.geojson);
+      } finally { T.done(); }
     } catch (e) { if (signal?.aborted) throw e; }
   }
   const out = [];
@@ -788,34 +766,19 @@ export function autoPick(pois, max = 6) {
   return picked;
 }
 
-// Đường đi thật bằng ô tô theo dữ liệu OSM. Không có đường thì trả null.
-let osrmIdx = 0; // máy chủ chỉ đường đang dùng; lỗi thì chuyển sang máy dự phòng
-async function osrmFetch(path, signal) {
-  for (let k = 0; k < OSRM.length; k++) {
-    const i = (osrmIdx + k) % OSRM.length;
-    const T = withTimeout(9000, signal);
-    try {
-      const res = await fetch(OSRM[i] + path, { signal: T.signal });
-      if (res.ok) { osrmIdx = i; return await res.json(); }
-      if (res.status === 400) return null;
-    } catch (e) {
-      if (signal?.aborted) throw e;
-    } finally { T.done(); }
-  }
-  return null;
-}
+// Đường đi thật bằng ô tô (Vietmap, dự phòng OSRM) qua máy chủ của app. Không có đường thì trả null.
 export async function routeTo(from, to, signal) {
+  const T = withTimeout(20000, signal);
   try {
-    const j = await osrmFetch(`${from.lng},${from.lat};${to.lng},${to.lat}?overview=full&geometries=geojson`, signal);
-    if (!j) return null;
-    const r = j.routes?.[0];
-    if (!r || j.code !== 'Ok') return null;
-    const coords = r.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+    const q = `flat=${from.lat.toFixed(6)}&flng=${from.lng.toFixed(6)}&tlat=${to.lat.toFixed(6)}&tlng=${to.lng.toFixed(6)}`;
+    const res = await fetch('/api/map/route?' + q, { signal: T.signal });
+    if (!res.ok) return null;
+    const r = (await res.json()).route;
+    if (!r || !r.coords?.length) return null;
     const straight = haversineKm(from, to);
-    const km = r.distance / 1000;
-    if (km > Math.max(2.4 * straight, straight + 0.9) && km - straight > 0.6) return null;
-    return { km: r.distance / 1000, min: r.duration / 60, coords: [[from.lat, from.lng], ...coords, [to.lat, to.lng]] };
+    if (r.km > Math.max(2.4 * straight, straight + 0.9) && r.km - straight > 0.6) return null;
+    return { km: r.km, min: r.min, coords: [[from.lat, from.lng], ...r.coords, [to.lat, to.lng]] };
   } catch {
     return null;
-  }
+  } finally { T.done(); }
 }
