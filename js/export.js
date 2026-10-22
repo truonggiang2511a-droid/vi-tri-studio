@@ -78,20 +78,31 @@ async function pickVideoCodec(w, h, fps) {
   return null;
 }
 
+// Chỉ dùng AAC cho file MP4. Opus đóng trong MP4 phát được trên Chrome nhưng iPhone (Ảnh), Zalo, Facebook,
+// CapCut… thường phát MẤT TIẾNG — đây là lỗi khách gặp: xem trước có nhạc/giọng, file xuất ra không có.
+// Máy không mã hoá được AAC thì báo NO_AUDIO_ENCODER để chuyển sang quay thời gian thực (giữ được tiếng).
 async function pickAudioCodec() {
-  const tries = [
-    { codec: 'mp4a.40.2', mux: 'aac' },
-    { codec: 'opus', mux: 'opus' },
-  ];
-  for (const t of tries) {
-    const cfg = { codec: t.codec, sampleRate: SR, numberOfChannels: 2, bitrate: 160000 };
-    try {
-      if (typeof AudioEncoder === 'undefined') return null;
-      const s = await AudioEncoder.isConfigSupported(cfg);
-      if (s.supported) return { cfg, mux: t.mux };
-    } catch { /* thử mã khác */ }
-  }
+  if (typeof AudioEncoder === 'undefined' || typeof AudioData === 'undefined') return null;
+  const cfg = { codec: 'mp4a.40.2', sampleRate: SR, numberOfChannels: 2, bitrate: 160000 };
+  try {
+    const s = await AudioEncoder.isConfigSupported(cfg);
+    if (s.supported) return { cfg, mux: 'aac' };
+  } catch { /* không hỗ trợ */ }
   return null;
+}
+
+// AudioContext phải được tạo/mở khoá ngay trong cú bấm của khách (iPhone chặn âm thanh nếu tạo sau đó).
+// Gọi hàm này đồng bộ ở đầu nút Xuất video, truyền kết quả vào exportRealtime.
+export function unlockAudioContext() {
+  try {
+    const ctx = new AudioContext({ sampleRate: SR });
+    ctx.resume().catch(() => {});
+    // Phát một mẫu im lặng để iOS chắc chắn mở khoá
+    const b = ctx.createBuffer(1, 1, SR);
+    const s = ctx.createBufferSource();
+    s.buffer = b; s.connect(ctx.destination); s.start(0);
+    return ctx;
+  } catch { return null; }
 }
 
 export function canEncodeMp4() {
@@ -153,8 +164,9 @@ export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffe
   if (acodec && audioBuffer) {
     onProgress?.('audio', 0, 1);
     let aErr = null;
+    let aChunks = 0;
     const aenc = new AudioEncoder({
-      output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+      output: (chunk, meta) => { aChunks++; muxer.addAudioChunk(chunk, meta); },
       error: e => { aErr = e; },
     });
     aenc.configure(acodec.cfg);
@@ -174,6 +186,8 @@ export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffe
     await aenc.flush();
     aenc.close();
     if (aErr) throw aErr;
+    // Bộ mã hoá báo hỗ trợ nhưng không ra dữ liệu (gặp trên vài máy Android): không trả file câm, chuyển sang quay thời gian thực
+    if (!aChunks) throw Object.assign(new Error('Không ghép được âm thanh'), { code: 'NO_AUDIO_ENCODER' });
   }
 
   muxer.finalize();
@@ -182,7 +196,7 @@ export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffe
 }
 
 // Dự phòng: phát thời gian thực và ghi lại canvas
-export async function exportRealtime({ tl, width, height, fps = 30, cache, audioBuffer, onProgress, signal }) {
+export async function exportRealtime({ tl, width, height, fps = 30, cache, audioBuffer, audioCtx = null, onProgress, signal }) {
   const scale = width / tl.LW;
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -190,37 +204,48 @@ export async function exportRealtime({ tl, width, height, fps = 30, cache, audio
   const ctx = canvas.getContext('2d', { alpha: false });
   render(ctx, tl, 0, { cache, scale });
   const stream = canvas.captureStream(fps);
-  let actx = null;
+  let actx = null, src = null, ownCtx = false;
   if (audioBuffer) {
-    actx = new AudioContext({ sampleRate: SR });
+    actx = audioCtx && audioCtx.state !== 'closed' ? audioCtx : (ownCtx = true, new AudioContext({ sampleRate: SR }));
+    try { await actx.resume(); } catch { /* xử lý bên dưới */ }
+    if (actx.state !== 'running') {
+      throw Object.assign(new Error('Trình duyệt đang chặn âm thanh. Bấm Xuất video lại một lần nữa (không bị trừ thêm lượt).'), { code: 'AUDIO_BLOCKED' });
+    }
     const dest = actx.createMediaStreamDestination();
-    const src = actx.createBufferSource();
+    src = actx.createBufferSource();
     src.buffer = audioBuffer;
     src.connect(dest);
     dest.stream.getAudioTracks().forEach(tr => stream.addTrack(tr));
-    src.start();
   }
-  const types = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'];
+  // Ưu tiên MP4 có AAC (phát được trên iPhone, Zalo, Facebook); WebM chỉ là đường cuối
+  const types = ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4',
+    'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
   const mimeType = types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
-  const rec = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000 });
+  const rec = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000, audioBitsPerSecond: 160_000 });
   const chunks = [];
   rec.ondataavailable = e => e.data.size && chunks.push(e.data);
   const stopped = new Promise(r => (rec.onstop = r));
   rec.start(500);
+  // Hình và tiếng bắt đầu cùng lúc với lúc ghi
+  src?.start();
   const t0 = performance.now();
-  await new Promise((resolve, reject) => {
-    const tick = () => {
-      if (signal?.aborted) { rec.stop(); reject(new DOMException('Đã huỷ', 'AbortError')); return; }
-      const t = (performance.now() - t0) / 1000;
-      render(ctx, tl, Math.min(t, tl.duration), { cache, scale });
-      onProgress?.('frames', Math.min(t, tl.duration), tl.duration);
-      if (t >= tl.duration) resolve(); else requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  });
-  rec.stop();
+  try {
+    await new Promise((resolve, reject) => {
+      const tick = () => {
+        if (signal?.aborted) { reject(new DOMException('Đã huỷ', 'AbortError')); return; }
+        const t = (performance.now() - t0) / 1000;
+        render(ctx, tl, Math.min(t, tl.duration), { cache, scale });
+        onProgress?.('frames', Math.min(t, tl.duration), tl.duration);
+        if (t >= tl.duration) resolve(); else requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+  } finally {
+    if (rec.state !== 'inactive') rec.stop();
+    try { src?.stop(); } catch { /* đã dừng */ }
+  }
   await stopped;
-  actx?.close();
-  const type = (mimeType || 'video/webm').split(';')[0];
+  if (ownCtx) actx?.close();
+  const type = (rec.mimeType || mimeType || 'video/webm').split(';')[0];
   return new Blob(chunks, { type });
 }

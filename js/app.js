@@ -6,7 +6,7 @@ import {
   FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, CAT_COLORS, FONT, LINE_THEMES, STYLES,
 } from './render.js';
 import { sfxEvents } from './sfx.js';
-import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4 } from './export.js';
+import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4, unlockAudioContext } from './export.js';
 import { initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount } from './account.js';
 import { splitVoice, joinForTts } from './voicesplit.js';
 import { loadConfig, initTracking, countVisit } from './track.js';
@@ -992,9 +992,13 @@ function progress(pct, text) {
   $('progText').textContent = text;
 }
 let gating = false;
+let exportAudioCtx = null;
 async function doExport() {
   if (!state.house) { toast('Nhập toạ độ căn nhà trước.'); return; }
   if (exporting || gating) return;
+  // Mở khoá âm thanh ngay trong cú bấm (iPhone), dùng khi phải quay thời gian thực
+  exportAudioCtx?.close?.().catch?.(() => {});
+  exportAudioCtx = unlockAudioContext();
   gating = true;
   $('exportBtn').disabled = true;
   let gate = null;
@@ -1039,14 +1043,15 @@ async function doExport() {
         blob = await exportMp4({ tl: xtl, width, height, fps: 30, cache, audioBuffer: audio, onProgress, signal });
       } catch (e) {
         if (e.code !== 'NO_AUDIO_ENCODER') throw e;
-        progress(30, 'Đang quay theo thời gian thực để giữ âm thanh…');
-        blob = await exportRealtime({ tl: xtl, width, height, fps: 30, cache, audioBuffer: audio, onProgress, signal });
+        progress(30, 'Đang quay theo thời gian thực để giữ nhạc và giọng đọc — giữ màn hình mở, đừng chuyển app…');
+        blob = await exportRealtime({ tl: xtl, width, height, fps: 30, cache, audioBuffer: audio, audioCtx: exportAudioCtx, onProgress, signal });
       }
     } else {
-      progress(30, 'Máy này không hỗ trợ dựng nhanh, đang quay theo thời gian thực…');
-      blob = await exportRealtime({ tl: xtl, width, height, fps: 30, cache, audioBuffer: audio, onProgress, signal });
+      progress(30, 'Máy này không hỗ trợ dựng nhanh, đang quay theo thời gian thực — giữ màn hình mở, đừng chuyển app…');
+      blob = await exportRealtime({ tl: xtl, width, height, fps: 30, cache, audioBuffer: audio, audioCtx: exportAudioCtx, onProgress, signal });
     }
     const ext = blob.type.includes('webm') ? 'webm' : 'mp4';
+    if (ext === 'webm') toast('Trình duyệt này chỉ xuất được WebM (iPhone có thể không phát được). Nên xuất bằng Chrome trên Android/máy tính hoặc Safari trên iPhone.', 7000);
     const name = `video-vi-tri-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}.${ext}`;
     resultFile = new File([blob], name, { type: blob.type });
     if (resultUrl) URL.revokeObjectURL(resultUrl);
