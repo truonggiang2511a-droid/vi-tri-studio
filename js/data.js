@@ -235,6 +235,20 @@ async function loadArea(center, radiusKm, signal, onProgress) {
 // Dựng sẵn bằng tools/build_poi_tiles.py, mỗi ô 0,1 độ là một file poi/<x>_<y>.json
 const OVT_CAT = { t: 'truong', y: 'yte', c: 'cho', h: 'hanhchinh', p: 'congvien', k: 'kcn', g: 'giaothong', n: 'nganhang' };
 const OVT_KIND = { h: 'hospital', c: 'clinic', m: 'marketplace', s: 'supermarket', l: 'mall' };
+// Tiện ích từ Vietmap (máy chủ /api/map/nearby, có nhớ đệm): bù những điểm OSM/Overture còn thiếu, nhất là gần nhà
+async function loadVietmap(center, radiusKm, signal) {
+  const T = withTimeout(25000, signal);
+  try {
+    const res = await fetch(`/api/map/nearby?lat=${center.lat.toFixed(5)}&lng=${center.lng.toFixed(5)}&r=${radiusKm}`, { signal: T.signal });
+    if (!res.ok) return [];
+    const j = await res.json();
+    return (j.items || []).filter(x => x.cat && Number.isFinite(x.lat) && Number.isFinite(x.lng))
+      .map(x => ({ name: tidy(x.name), cat: x.cat, kind: x.cat, lat: x.lat, lng: x.lng, src: 'vm', address: x.address || '' }));
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    return [];
+  } finally { T.done(); }
+}
 async function loadOverture(center, radiusKm, signal) {
   const dLat = radiusKm * 1.05 / 110.57, dLng = radiusKm * 1.05 / (111.32 * Math.cos(center.lat * Math.PI / 180));
   const x0 = Math.floor((center.lng - dLng) * 10), x1 = Math.floor((center.lng + dLng) * 10);
@@ -298,7 +312,7 @@ function buildPois(raw, center, radiusKm, extra = []) {
   for (const p of extra) {
     const km = haversineKm(center, p);
     if (km > radiusKm * 1.02) continue;
-    out.push({ id: 'o' + Math.round(p.lat * 1e5) + '_' + Math.round(p.lng * 1e5), name: p.name, cat: p.cat, kind: p.kind, lat: p.lat, lng: p.lng, km, src: 'ovt' });
+    out.push({ id: (p.src === 'vm' ? 'v' : 'o') + Math.round(p.lat * 1e5) + '_' + Math.round(p.lng * 1e5), name: p.name, cat: p.cat, kind: p.kind, lat: p.lat, lng: p.lng, km, src: p.src || 'ovt' });
   }
   for (const p of raw) {
     const cat = classifyPoi(p);
@@ -580,11 +594,14 @@ async function buildAdmin(rawBounds, center, radiusKm, signal) {
 export async function scanArea(center, radiusKm, signal, onProgress) {
   const kcnJob = findIndustrial(center, radiusKm, signal).catch(e => { if (signal?.aborted) throw e; return []; });
   const ovtJob = loadOverture(center, radiusKm, signal).catch(e => { if (signal?.aborted) throw e; return []; });
+  const vmJob = loadVietmap(center, radiusKm, signal).catch(e => { if (signal?.aborted) throw e; return []; });
   const raw = await loadArea(center, radiusKm, signal, (d, n) => onProgress?.(`Đang tải dữ liệu bản đồ ${d}/${n}`));
   lastRaw = raw.pois.filter(p => p.name);
   onProgress?.('Đang tìm địa phận và khu công nghiệp…');
   const admin = await buildAdmin(raw.bounds, center, radiusKm, signal);
-  const pois = buildPois(raw.pois, center, radiusKm, await ovtJob);
+  const extra = [...await ovtJob, ...await vmJob];
+  lastExtra = extra;
+  const pois = buildPois(raw.pois, center, radiusKm, extra);
   const kcn = await kcnJob;
   for (const z of kcn) {
     // bỏ điểm KCN trùng tên lấy từ ô bản đồ, giữ bản có ranh giới (đo tới mép khu)
@@ -702,17 +719,28 @@ async function findIndustrial(center, radiusKm, signal) {
 
 // ---------- Tìm một địa điểm theo tên (thêm điểm thủ công) ----------
 let lastRaw = [];
+let lastExtra = [];
 const fold = s => tidy(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
 export async function searchPlaces(q, center, signal) {
   const words = fold(q).split(' ').filter(w => w.length > 1);
   const local = [];
-  for (const p of lastRaw) {
+  // Tìm trong cả dữ liệu đã quét (OSM + Overture + Vietmap)
+  for (const p of [...lastRaw, ...lastExtra.map(x => ({ ...x, cls: null, sub: x.kind }))]) {
     const f = fold(p.name);
     if (!words.every(w => f.includes(w))) continue;
     if (local.some(o => fold(o.name) === f && haversineKm(o, p) < 0.3)) continue;
     local.push({ name: p.name, lat: p.lat, lng: p.lng, km: haversineKm(center, p), where: 'gần căn nhà', key: p.cls, value: p.sub });
   }
   local.sort((a, b) => a.km - b.km);
+  // Vietmap (dữ liệu địa điểm Việt Nam đầy đủ) chạy song song với Photon (OSM)
+  const vmJob = (async () => {
+    const T2 = withTimeout(12000, signal);
+    try {
+      const r = await fetch(`/api/map/vsearch?q=${encodeURIComponent(q)}&lat=${center.lat.toFixed(5)}&lng=${center.lng.toFixed(5)}`, { signal: T2.signal });
+      const j = r.ok ? await r.json() : {};
+      return (j.items || []).map(x => ({ name: tidy(x.name), lat: x.lat, lng: x.lng, km: haversineKm(center, x), where: x.address || '', key: null, value: null }));
+    } catch { return []; } finally { T2.done(); }
+  })();
   const T = withTimeout(9000, signal);
   let remote = [];
   try {
@@ -726,10 +754,11 @@ export async function searchPlaces(q, center, signal) {
     }).filter(x => x.name && !(x.key === 'highway' && /bus_stop|platform|street|residential|service/.test(x.value || '')));
   } catch (e) {
     if (signal?.aborted) throw e;
-    if (!local.length) throw e;
+    if (!local.length && !(await vmJob).length) throw e;
   } finally { T.done(); }
+  const vm = await vmJob;
   const out = local.slice(0, 5);
-  for (const r of remote) if (!out.some(o => fold(o.name) === fold(r.name) && haversineKm(o, r) < 0.25)) out.push(r);
+  for (const r of [...vm, ...remote]) if (!out.some(o => fold(o.name) === fold(r.name) && haversineKm(o, r) < 0.25)) out.push(r);
   return out;
 }
 

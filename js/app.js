@@ -3,7 +3,7 @@ import { parseCoords, haversineKm, formatKm } from './geo.js';
 import { CATEGORIES, scanArea, autoPick, routeTo, searchPlaces, guessCategory } from './data.js';
 import { ICON_PATHS } from './icons.js';
 import {
-  FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, CAT_COLORS, FONT, LINE_THEMES, STYLES,
+  FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, CAT_COLORS, FONT, LINE_THEMES, STYLES, BASES,
 } from './render.js';
 import { sfxEvents } from './sfx.js';
 import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4, unlockAudioContext } from './export.js';
@@ -48,6 +48,7 @@ const state = {
   musicVol: 0.8,
   fitVoice: true,
   style: 'neon',     // phong cách video
+  base: 'vetinh',    // nền bản đồ
   pageVideo: '',     // link video đã đăng (gắn vào trang web căn nhà)
   pageDesc: '',
   roadTheme: 'auto',
@@ -157,6 +158,7 @@ function buildScene() {
     commune: state.admin?.commune || '',
     titleSub: state.sub,
     style: state.style,
+    base: state.base,
     roadTheme: state.roadTheme,
     routeTheme: state.routeTheme,
   };
@@ -968,6 +970,25 @@ function renderStyles() {
     scheduleRebuild();
   };
 }
+function renderBases() {
+  const el = $('baseRow');
+  if (!el) return;
+  if (!BASES[state.base]) state.base = 'vetinh';
+  const sw = { vetinh: 'linear-gradient(135deg,#4f7d45,#8fb36a 45%,#c9b98f 70%,#5b8fa8)', phim: 'linear-gradient(135deg,#1f3530,#4d6f66 55%,#9fc4be)',
+    duongpho: 'linear-gradient(135deg,#f3eee4 0 40%,#ffd27a 40% 46%,#f3eee4 46% 70%,#9cc3e6 70%)', toi: 'linear-gradient(135deg,#17191c 0 45%,#3a3d42 45% 50%,#17191c 50%)',
+    sang: 'linear-gradient(135deg,#ececea 0 45%,#c9c9c6 45% 50%,#ececea 50%)' };
+  el.innerHTML = Object.entries(BASES).map(([k, b]) => `<button type="button" role="radio" class="style-card" data-base="${k}" aria-checked="${state.base === k}">
+      <span class="st-sw" style="background:${sw[k] || '#333'}"></span>
+      <strong>${esc(b.label)}</strong><span class="st-d">${esc(b.desc)}</span></button>`).join('');
+  el.onclick = e => {
+    const b = e.target.closest('button[data-base]');
+    if (!b || state.base === b.dataset.base) return;
+    state.base = b.dataset.base;
+    for (const x of el.querySelectorAll('button')) x.setAttribute('aria-checked', String(x === b));
+    dirty = true;
+    scheduleRebuild();
+  };
+}
 function renderSwatches(id, key, withAuto) {
   const el = $(id);
   el.innerHTML = Object.entries(LINE_THEMES).filter(([k]) => withAuto || k !== 'auto').map(([k, th]) => {
@@ -1180,7 +1201,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'fmt', 'speed', 'style', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'fmt', 'speed', 'style', 'base', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -1778,6 +1799,7 @@ function init() {
   renderSwatches('roadThemeRow', 'roadTheme', true);
   renderSwatches('routeThemeRow', 'routeTheme', false);
   renderStyles();
+  renderBases();
   setSeg('voiceSeg', state.voiceId);
   setSeg('vspeedSeg', String(state.voiceSpeed));
   $('sfxOn').checked = state.sfxOn;

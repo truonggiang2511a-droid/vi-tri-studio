@@ -7,7 +7,7 @@ import { CATEGORIES } from './data.js';
 
 export const BASE_FONT = '"Be Vietnam Pro", "Segoe UI", system-ui, sans-serif';
 export let FONT = BASE_FONT;
-export const MAXZ = 17;
+export const MAXZ = 18;
 export const FORMATS = {
   v: { LW: 540, LH: 960, label: 'Dọc 9:16', safe: { top: 96, bottom: 176, x: 22 } },
   h: { LW: 960, LH: 540, label: 'Ngang 16:9', safe: { top: 54, bottom: 58, x: 40 } },
@@ -96,7 +96,7 @@ function routeStyle(scene) {
   const core = th.core || GOLD;
   return { core, glow: th.glow || '#FFB800', done: mixHex(core, '#FFFFFF', 0.45) };
 }
-export const ATTRIBUTION = 'Ảnh vệ tinh: Esri, Maxar · Dữ liệu: © OpenStreetMap, Overture Maps';
+export const ATTRIBUTION = 'Bản đồ: Esri, Maxar, HERE, Garmin · Dữ liệu: © OpenStreetMap, Overture Maps';
 const NOTE = 'Ranh giới hành chính và đường đi theo OpenStreetMap (tham khảo) · thời gian ô tô ước tính';
 const PMAX = 40;
 const PITCH = { region: 0, houseTop: 0, house: 30, overview: 40, roads: 40, boundary: 38, poi: 34, summary: 28, outro: 32 };
@@ -113,6 +113,29 @@ let keyedOk = 0, keyedFail = 0;
 export function setImageryToken(t) { IMG_TOKEN = String(t || '').trim(); keyedOk = keyedFail = 0; }
 const PUBLIC_TILE = (z, x, y) =>
   `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+const ESRI = svc => (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/${svc}/MapServer/tile/${z}/${y}/${x}`;
+
+// ---------- Nền bản đồ ----------
+// src: nguồn ô ảnh; maxz: mức phóng to cao nhất nguồn có; tint/tintA/dark: phủ màu; fx: lọc màu cho rõ nét
+export const BASES = {
+  vetinh: { label: 'Vệ tinh rõ nét', desc: 'Ảnh thật, màu tươi, sắc nét — mặc định', src: 'img', maxz: 18,
+    tint: '#ffffff', tintA: 0, dark: 0, fx: 'saturate(1.28) contrast(1.12) brightness(1.04)', bg: '#3c5a3a' },
+  phim: { label: 'Vệ tinh tông phim', desc: 'Tông xanh trầm điện ảnh, chữ và line nổi bật', src: 'img', maxz: 18,
+    tint: null, tintA: 0.75, dark: null, fx: 'saturate(1.1) contrast(1.1)', bg: '#22332e' },
+  duongpho: { label: 'Bản đồ đường phố', desc: 'Có tên đường, dễ nhìn hướng đi', src: 'street', maxz: 18,
+    tint: '#ffffff', tintA: 0, dark: 0, fx: 'saturate(1.1) contrast(1.05)', bg: '#efe9df' },
+  toi: { label: 'Bản đồ tối', desc: 'Nền đen sang trọng, line phát sáng rõ nhất', src: 'dark', maxz: 16,
+    tint: '#ffffff', tintA: 0, dark: 0, fx: 'none', bg: '#1d1f22' },
+  sang: { label: 'Bản đồ sáng', desc: 'Nền xám nhạt tối giản', src: 'light', maxz: 16,
+    tint: '#ffffff', tintA: 0, dark: 0, fx: 'none', bg: '#e8e8e6' },
+};
+const SRC_URL = {
+  street: ESRI('World_Street_Map'),
+  dark: ESRI('Canvas/World_Dark_Gray_Base'),
+  light: ESRI('Canvas/World_Light_Gray_Base'),
+};
+let BASE = BASES.vetinh;
+export function useBase(key) { BASE = BASES[key] || BASES.vetinh; }
 const KEYED_TILE = (z, x, y) =>
   `https://ibasemaps-api.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}?token=${encodeURIComponent(IMG_TOKEN)}`;
 
@@ -124,7 +147,7 @@ export class TileCache {
     this.max = 12;
     this.onLoad = onLoad;
   }
-  key(z, x, y) { return z + '/' + x + '/' + y; }
+  key(z, x, y) { return BASE.src + '/' + z + '/' + x + '/' + y; }
   ready(z, x, y) {
     const e = this.map.get(this.key(z, x, y));
     return e && e.ok ? e.img : null;
@@ -136,7 +159,7 @@ export class TileCache {
     e = { ok: false, failed: false, tries: 0 };
     e.promise = new Promise(res => (e.resolve = res));
     this.map.set(k, e);
-    const job = { z, x, y, e };
+    const job = { z, x, y, e, src: BASE.src };
     if (urgent) this.queue.push(job); else this.queue.unshift(job);
     this.pump();
     return e.promise;
@@ -149,12 +172,12 @@ export class TileCache {
     }
   }
   load(job) {
-    const { z, x, y, e } = job;
+    const { z, x, y, e, src } = job;
     return new Promise(done => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.decoding = 'async';
-      const keyed = !!IMG_TOKEN && !e.publicOnly;
+      const keyed = src === 'img' && !!IMG_TOKEN && !e.publicOnly;
       img.onload = () => { if (keyed) keyedOk++; e.img = img; e.ok = true; e.resolve(true); this.onLoad?.(); done(); };
       img.onerror = () => {
         if (keyed) {
@@ -166,7 +189,7 @@ export class TileCache {
         else { e.failed = true; e.resolve(false); }
         done();
       };
-      img.src = keyed ? KEYED_TILE(z, x, y) : PUBLIC_TILE(z, x, y);
+      img.src = src !== 'img' ? SRC_URL[src](z, x, y) : keyed ? KEYED_TILE(z, x, y) : PUBLIC_TILE(z, x, y);
     });
   }
 }
@@ -222,7 +245,7 @@ function groundCanvas(tl, gs) {
 
 // ---------- Ô ảnh ----------
 function tileZoomFor(zoom, gs) {
-  return Math.max(1, Math.min(MAXZ, Math.round(zoom + Math.log2(gs) - 0.35)));
+  return Math.max(1, Math.min(BASE.maxz || MAXZ, Math.round(zoom + Math.log2(gs) + 0.1)));
 }
 function tileSpan(cam, rect, gs) {
   const tz = tileZoomFor(cam.zoom, gs);
@@ -236,9 +259,12 @@ function tileSpan(cam, rect, gs) {
   };
 }
 function drawTiles(g, cache, cam, rect, gs, request) {
-  g.fillStyle = '#17221e';
+  g.fillStyle = BASE.bg || '#17221e';
   g.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
   const T = tileSpan(cam, rect, gs);
+  // Lọc màu cho ảnh tươi, rõ (trình duyệt không hỗ trợ thì bỏ qua)
+  const fx = BASE.fx && BASE.fx !== 'none' ? BASE.fx : '';
+  if (fx) try { g.filter = fx; } catch { /* bỏ qua */ }
   const ds = 256 * T.kt;
   for (let ty = T.y0; ty <= T.y1; ty++) {
     for (let tx = T.x0; tx <= T.x1; tx++) {
@@ -260,7 +286,9 @@ function drawTiles(g, cache, cam, rect, gs, request) {
       }
     }
   }
+  if (fx) try { g.filter = 'none'; } catch { /* bỏ qua */ }
 }
+
 function groundRect(P) {
   return { x0: -P.LW * P.wTop / 2 - 6, x1: P.LW * P.wTop / 2 + 6, y0: -P.Ytop - 6, y1: -P.Ybot + 6 };
 }
@@ -716,6 +744,7 @@ function placeRoadLabels(tl, cam) {
 
 // Danh sách ô ảnh cần cho cả video (tải trước khi xuất)
 export function collectTiles(tl, scale, step = 1 / 10) {
+  useBase(tl.scene.base);
   const gs = scale;
   const set = new Map();
   for (let t = 0; t <= tl.duration + 1e-6; t += step) {
@@ -1705,6 +1734,7 @@ function brandTop(tl) {
 // ---------- Khung hình ----------
 export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   useStyle(tl.scene.style);
+  useBase(tl.scene.base);
   const { LW, LH, safe, scene } = tl;
   const T = tl.duration;
   const cam = camAt(tl, t);
@@ -1717,12 +1747,21 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   drawTiles(g, cache, cam, rect, gs, request);
 
   // Tông màu như video mẫu: xanh lục tối, giảm chói
-  g.globalCompositeOperation = 'multiply';
-  g.fillStyle = ST.tint;
-  g.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
-  g.globalCompositeOperation = 'source-over';
-  g.fillStyle = `rgba(6,14,18,${ST.dark})`;
-  g.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
+  // Phủ màu theo nền bản đồ: "Vệ tinh rõ nét" giữ màu thật; "tông phim" dùng màu của phong cách
+  const tintA = BASE.tintA ?? 0;
+  if (tintA > 0) {
+    g.globalCompositeOperation = 'multiply';
+    g.globalAlpha = tintA;
+    g.fillStyle = BASE.tint || ST.tint;
+    g.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
+  }
+  const dark = BASE.dark ?? ST.dark;
+  if (dark > 0) {
+    g.fillStyle = `rgba(6,14,18,${dark})`;
+    g.fillRect(rect.x0, rect.y0, rect.x1 - rect.x0, rect.y1 - rect.y0);
+  }
 
   const v = viewOf(cam);
   const H = scene.house;
