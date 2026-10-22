@@ -167,6 +167,7 @@ function buildScene() {
     flow: state.flow,
     lot: state.lot && state.lot.length >= 3 ? state.lot : null,
     lotLabel: { text: state.lotText, area: state.lotArea },
+    streets: state.streets || null,
     roadTheme: state.roadTheme,
     routeTheme: state.routeTheme,
   };
@@ -460,7 +461,7 @@ function setHouse(h) {
   if (moved > 0.3 && state.lot?.length) state.lot = [];
   if (moved > 0.5) {
     if (state.pois.length) toast('Đã đổi vị trí. Bấm Quét tiện ích để tìm lại quanh căn nhà mới.');
-    state.pois = []; state.roads = []; state.selected = []; state.selectedRoads = []; state.routes = {}; state.admin = null;
+    state.pois = []; state.roads = []; state.streets = null; state.selected = []; state.selectedRoads = []; state.routes = {}; state.admin = null;
     state.cloudId = null; state.projName = '';
     renderLists();
   } else if (moved > 0.001) {
@@ -487,6 +488,7 @@ async function scan() {
     const manual = state.pois.filter(p => p.manual);
     state.pois = [...res.pois, ...manual];
     state.roads = res.roads;
+    state.streets = res.streets || null;
     state.selected = [...autoPick(res.pois), ...manual.map(p => p.id)].slice(0, MAX_POIS);
     state.selectedRoads = state.roads.slice(0, 3).map(x => x.id);
     state.routes = {};

@@ -680,8 +680,70 @@ async function buildAdmin(rawBounds, center, radiusKm, signal) {
   return { province, provinceShort: shortProvince(province), commune, boundary };
 }
 
+// ---------- Đường quanh nhà (hẻm, đường nội bộ, đường nhỏ) ----------
+// Lấy từ ô bản đồ chứa căn nhà, chỉ giữ đoạn trong ~350 m để vẽ kiểu đường nhựa ở cảnh giới thiệu căn nhà.
+const STREET_W = { motorway: 22, trunk: 18, primary: 14, secondary: 11, tertiary: 9, minor: 6.5, service: 4.5, track: 3.5 };
+export async function loadStreets(center, signal, maxKm = 0.35) {
+  const tpl = await tileTemplate(signal);
+  const z = 14;
+  const F = localFrame(center);
+  const dLat = maxKm / 111.32, dLng = maxKm / (111.32 * Math.cos(center.lat * Math.PI / 180));
+  const a = project(center.lat + dLat, center.lng - dLng, z), b = project(center.lat - dLat, center.lng + dLng, z);
+  const jobs = [];
+  for (let x = Math.floor(a.x / 256); x <= Math.floor(b.x / 256); x++) for (let y = Math.floor(a.y / 256); y <= Math.floor(b.y / 256); y++) jobs.push([x, y]);
+  const out = [];
+  await Promise.all(jobs.map(async ([x, y]) => {
+    const buf = await fetchTile(tpl, z, x, y, signal).catch(() => null);
+    if (!buf) return;
+    const t = new VectorTile(new Pbf(buf));
+    const conv = (pt, ext) => { const ll = unproject((x + pt.x / ext) * 256, (y + pt.y / ext) * 256, z); return [ll.lat, ll.lng]; };
+    for (const [layer, named] of [['transportation', false], ['transportation_name', true]]) {
+      const L = t.layers[layer];
+      if (!L) continue;
+      for (let i = 0; i < L.length; i++) {
+        const f = L.feature(i);
+        if (f.type !== 2) continue;
+        const pr = f.properties;
+        const w = STREET_W[pr.class];
+        if (!w || pr.brunnel === 'tunnel') continue;
+        if (named && !pr.name) continue;
+        for (const line of f.loadGeometry()) {
+          for (const piece of clipLine(line, 0, L.extent)) {
+            const pts = piece.map(q => conv(q, L.extent));
+            let cur = [];
+            const flush = () => { if (cur.length > 1) out.push({ cls: pr.class, w, name: named ? tidy(pr['name:vi'] || pr.name) : '', pts: cur }); cur = []; };
+            for (const p of pts) {
+              const q = F.xy(p);
+              if (Math.hypot(q[0], q[1]) <= maxKm) cur.push(p); else flush();
+            }
+            flush();
+          }
+        }
+      }
+    }
+  }));
+  const lines = out.filter(r => !r.name).map(r => ({ cls: r.cls, w: r.w, pts: r.pts.map(p => [Math.round(p[0] * 1e6) / 1e6, Math.round(p[1] * 1e6) / 1e6]) }));
+  const named = out.filter(r => r.name);
+  // Đường có tên gần nhà nhất = đường trước nhà
+  let front = null;
+  for (const r of named) {
+    for (let i = 0; i < r.pts.length - 1; i++) {
+      const A = F.xy(r.pts[i]), B = F.xy(r.pts[i + 1]);
+      const dx = B[0] - A[0], dy = B[1] - A[1], L2 = dx * dx + dy * dy || 1e-12;
+      const k = Math.max(0, Math.min(1, -(A[0] * dx + A[1] * dy) / L2));
+      const px = A[0] + dx * k, py = A[1] + dy * k, d = Math.hypot(px, py);
+      if (!front || d < front.km) {
+        const ll = F.ll(px, py);
+        front = { name: r.name, km: d, at: { lat: ll[0], lng: ll[1] }, a: r.pts[i], b: r.pts[i + 1], cls: r.cls };
+      }
+    }
+  }
+  return { lines: lines.slice(0, 400), front: front && front.km < 0.12 ? front : null };
+}
+
 // ---------- Quét toàn bộ ----------
 export async function scanArea(center, radiusKm, signal, onProgress) {
+  const streetJob = loadStreets(center, signal).catch(e => { if (signal?.aborted) throw e; return null; });
   const kcnJob = findIndustrial(center, radiusKm, signal).catch(e => { if (signal?.aborted) throw e; return []; });
   const ovtJob = loadOverture(center, radiusKm, signal).catch(e => { if (signal?.aborted) throw e; return []; });
   const vmJob = loadVietmap(center, radiusKm, signal).catch(e => { if (signal?.aborted) throw e; return []; });
@@ -701,7 +763,7 @@ export async function scanArea(center, radiusKm, signal, onProgress) {
     pois.push(z);
   }
   pois.sort((a, b) => a.km - b.km);
-  return { pois, roads: buildRoads(raw.roads, center, radiusKm), admin };
+  return { pois, roads: buildRoads(raw.roads, center, radiusKm), admin, streets: await streetJob };
 }
 
 // ---------- Khu công nghiệp ----------
