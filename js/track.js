@@ -51,6 +51,7 @@ export function countVisit(page) {
 }
 let cfgPromise = null;
 let loaded = false;
+let loaded_pixel = '';
 const queue = [];
 
 export function loadConfig() {
@@ -99,7 +100,7 @@ function loadTikTok(id) {
 function startPixels(c) {
   if (loaded) return;
   loaded = true;
-  if (c.meta_pixel) loadMeta(c.meta_pixel);
+  if (c.meta_pixel) { loaded_pixel = c.meta_pixel; loadMeta(c.meta_pixel); }
   if (c.tiktok_pixel) loadTikTok(c.tiktok_pixel);
   for (const [n, p] of queue.splice(0)) track(n, p);
 }
@@ -132,17 +133,50 @@ export async function initTracking() {
   else if (v !== 'no') consentBar(c);
 }
 
+// ---------- Gửi kèm về máy chủ (Conversions API) ----------
+function cookie(n) { try { return (document.cookie.match('(?:^|; )' + n + '=([^;]*)') || [])[1] || ''; } catch { return ''; } }
+function fbcValue() {
+  const c = cookie('_fbc');
+  if (c) return c;
+  try { const id = new URL(location.href).searchParams.get('fbclid'); if (id) return 'fb.1.' + Date.now() + '.' + id; } catch { /* bỏ qua */ }
+  return '';
+}
+function capi(event, eventId, p) {
+  if (getConsent() === 'no') return;
+  const body = JSON.stringify({ event, event_id: eventId, value: p.value || 0, id: p.id || '', login: p.login || '',
+    fbp: cookie('_fbp'), fbc: fbcValue(), url: location.href });
+  try {
+    if (!navigator.sendBeacon?.('/api/capi', new Blob([body], { type: 'application/json' }))) {
+      fetch('/api/capi', { method: 'POST', headers: { 'content-type': 'application/json' }, body, keepalive: true }).catch(() => {});
+    }
+  } catch { /* bỏ qua */ }
+}
+const newId = n => n + '.' + Date.now().toString(36) + '.' + Math.random().toString(36).slice(2, 8);
+// Tên sự kiện Meta tương ứng; sự kiện quan trọng gửi cả Pixel lẫn CAPI với cùng event_id để Meta gộp
+const META = { register: 'CompleteRegistration', checkout: 'InitiateCheckout', purchase: 'Purchase', trial_click: 'Lead', view: 'ViewContent' };
+const SERVER = new Set(['register', 'checkout', 'purchase']);
+
 // Sự kiện: register | checkout | purchase | export | trial_click | view
+// p: { value, id, login } — login (email/SĐT) chỉ được mã hoá phía máy chủ trước khi gửi Meta
 export function track(name, p = {}) {
-  if (!loaded) { if (queue.length < 20) queue.push([name, p]); return; }
+  const eid = p.event_id || newId(name);
+  // Sự kiện chuyển đổi gửi máy chủ ngay, kể cả khi Pixel bị chặn (trình chặn quảng cáo, iOS)
+  if (SERVER.has(name) && !p._queued) capi(META[name], eid, p);
+  if (!loaded) { if (queue.length < 20) queue.push([name, { ...p, event_id: eid, _queued: true }]); return; }
   const fbq = window.fbq, ttq = window.ttq;
   const money = p.value ? { value: p.value, currency: 'VND' } : {};
+  const opt = { eventID: eid };
   try {
-    if (name === 'register') { fbq?.('track', 'CompleteRegistration'); ttq?.track('CompleteRegistration'); }
-    else if (name === 'checkout') { fbq?.('track', 'InitiateCheckout', money); ttq?.track('InitiateCheckout', { ...money, content_id: p.id || '' }); }
-    else if (name === 'purchase') { fbq?.('track', 'Purchase', money); ttq?.track('CompletePayment', { ...money, content_id: p.id || '' }); }
+    if (p.login && fbq && !p._am) {
+      const l = String(p.login).trim().toLowerCase();
+      const am = l.includes('@') ? { em: l } : { ph: l.replace(/\D/g, '').replace(/^0/, '84') };
+      fbq('init', loaded_pixel, am);
+    }
+    if (name === 'register') { fbq?.('track', 'CompleteRegistration', {}, opt); ttq?.track('CompleteRegistration'); }
+    else if (name === 'checkout') { fbq?.('track', 'InitiateCheckout', { ...money, content_ids: [p.id || ''] }, opt); ttq?.track('InitiateCheckout', { ...money, content_id: p.id || '' }); }
+    else if (name === 'purchase') { fbq?.('track', 'Purchase', { ...money, content_ids: [p.id || ''] }, opt); ttq?.track('CompletePayment', { ...money, content_id: p.id || '' }); }
     else if (name === 'export') { fbq?.('trackCustom', 'XuatVideo'); ttq?.track('SubmitForm'); }
-    else if (name === 'trial_click') { fbq?.('track', 'Lead'); ttq?.track('ClickButton'); }
-    else if (name === 'view') { fbq?.('track', 'ViewContent'); ttq?.track('ViewContent'); }
+    else if (name === 'trial_click') { fbq?.('track', 'Lead', {}, opt); ttq?.track('ClickButton'); }
+    else if (name === 'view') { fbq?.('track', 'ViewContent', {}, opt); ttq?.track('ViewContent'); }
   } catch { /* đo lường không được làm hỏng app */ }
 }

@@ -259,7 +259,7 @@ async function submitAuth(e) {
     if (authTab === 'register') {
       const [dev, fp] = await Promise.all([deviceId().catch(() => null), fingerprint().catch(() => null)]);
       r = await rpc('vt_signup2', { p_login: login, p_password: pass, p_name: $('authName').value.trim(), p_ref: getRef(), p_device: dev, p_fp: fp });
-      track('register');
+      track('register', { login });
       rpc('vt_set_source', { p_token: r.token, p_source: firstSource() || (getRef() ? 'gioi-thieu-ban' : 'truc-tiep') }).catch(() => {});
       try { localStorage.removeItem(REF_KEY); } catch { /* bỏ qua */ }
     } else {
@@ -511,7 +511,7 @@ function showOrder(order, bank) {
           : `Đã nhận ${money(order.amount)}. Tài khoản hiện có ${p.credits} lượt.`;
         payView('done');
         toast('Thanh toán thành công, đã cộng lượt.', 4000);
-        track('purchase', { value: order.amount, id: order.package_id });
+        track('purchase', { value: order.amount, id: order.package_id, login: S.profile?.login });
       }
     } catch { /* thử lại ở vòng sau */ }
   }, 4000);
@@ -525,7 +525,7 @@ async function pickPackage(id) {
   try {
     const r = await rpc('vt_create_order', { p_token: S.token, p_package: id });
     showOrder(r.order, r.bank);
-    track('checkout', { value: r.order.amount, id });
+    track('checkout', { value: r.order.amount, id, login: S.profile?.login });
   } catch (e) {
     if (e.hint === 'AUTH') { clearSession(); $('payDlg').close(); requireLogin('Phiên đăng nhập đã hết hạn.', 'login'); return; }
     toast(e.message, 5000);
