@@ -4,6 +4,8 @@
   "type": "module",
   "dependencies": {
     "@mapbox/vector-tile": "2.0.3",
+    "@mediabunny/aac-encoder": "1.62.1",
+    "mediabunny": "1.62.1",
     "pbf": "4.0.1",
     "qrcode-generator": "^1.4.4"
   }

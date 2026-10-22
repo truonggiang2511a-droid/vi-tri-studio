@@ -102,12 +102,13 @@
       <li><button type="button" data-go="1"><span class="sn">1</span><span class="sl">Vị trí</span></button></li>
       <li><button type="button" data-go="2"><span class="sn">2</span><span class="sl">Tiện ích</span></button></li>
       <li><button type="button" data-go="3"><span class="sn">3</span><span class="sl">Nội dung</span></button></li>
-      <li><button type="button" data-go="4"><span class="sn">4</span><span class="sl">Xuất &amp; chia sẻ</span></button></li>
+      <li><button type="button" data-go="4"><span class="sn">4</span><span class="sl">Xuất video</span></button></li>
     </ol>
 
     <div class="steps">
     <article class="step on" id="step1" data-step="1">
       <header class="step-head"><h2>Căn nhà nằm ở đâu?</h2></header>
+      <p class="step-guide">Dán link Google Maps hoặc toạ độ căn nhà, rồi bấm <strong>Quét tiện ích</strong>.</p>
       <label class="field">
         <span class="field-label">Toạ độ hoặc link Google Maps</span>
         <div class="input-row">
@@ -144,6 +145,7 @@
 
     <article class="step" id="step2" data-step="2">
       <header class="step-head"><h2>Tiện ích &amp; đường lớn</h2><span id="pickCount" class="count"></span></header>
+      <p class="step-guide">Tick chọn tiện ích muốn có trong video. Bấm <strong>★</strong> để khoanh vùng nổi bật điểm quan trọng.</p>
       <div id="resultsEmpty" class="empty-state">
         <p>Chưa quét. Quay lại bước 1 và bấm <strong>Quét tiện ích</strong>.</p>
         <button type="button" class="btn btn-quiet" data-go="1">← Về bước 1</button>
@@ -177,6 +179,7 @@
 
     <article class="step" id="step3" data-step="3">
       <header class="step-head"><h2>Nội dung video</h2><span id="durLabel" class="count"></span></header>
+      <p class="step-guide">Nhập giá, diện tích → chọn phong cách → tạo giọng đọc. Bấm <strong>▶ Xem</strong> ở dưới để xem thử bất cứ lúc nào.</p>
       <div class="subtabs" id="subtabs" role="tablist">
         <button type="button" role="tab" data-sub="info" aria-selected="true">Thông tin căn</button>
         <button type="button" role="tab" data-sub="look" aria-selected="false">Phong cách</button>
@@ -209,6 +212,7 @@
             <label class="field"><span class="field-label">Tỉnh / thành phố</span><input autocomplete="off" id="areaProvInput" class="input" type="text" maxlength="32" placeholder="Tự lấy theo vị trí"></label>
             <label class="field"><span class="field-label">Bề rộng đường trước nhà</span><input autocomplete="off" id="roadWidthInput" class="input" type="text" maxlength="12" placeholder="VD: 8m"></label>
           </div>
+          <label class="check"><input autocomplete="off" id="showStreets" type="checkbox" checked> Vẽ đường quanh nhà (kiểu đường nhựa)</label>
           <span class="hint small">Vị trí và hướng đường lấy từ bản đồ thật; bề rộng chỉ hiện khi anh/chị nhập (app không tự đoán số mét).</span>
         </div>
         <details class="more">
@@ -351,7 +355,8 @@
     </article>
 
     <article class="step" id="step4" data-step="4">
-      <header class="step-head"><h2>Xuất &amp; chia sẻ</h2></header>
+      <header class="step-head"><h2>Xuất video</h2></header>
+      <p class="step-guide">Bấm <strong>Xuất video MP4</strong>, giữ màn hình mở tới khi xong, rồi bấm Lưu hoặc Chia sẻ.</p>
       <p id="creditNote" class="credit-note"></p>
       <button id="exportBtn" class="btn btn-primary btn-block btn-lg" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h11v12H4zM15 10l5-3v10l-5-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
@@ -413,7 +418,8 @@
     </div>
 
     <div class="step-nav" id="stepNav">
-      <button type="button" class="btn btn-quiet" id="stepBack">←</button>
+      <button type="button" class="btn btn-quiet" id="stepBack" aria-label="Quay lại bước trước">←</button>
+      <button type="button" class="btn btn-quiet nav-play" id="navPlay" aria-label="Xem thử video">▶ Xem</button>
       <button type="button" class="btn btn-primary" id="stepNext">Tiếp tục →</button>
     </div>
   </section>

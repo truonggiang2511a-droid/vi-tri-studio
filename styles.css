@@ -659,3 +659,15 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .lot-zoom .chip-btn { min-width: 38px; font-size: 18px; font-weight: 800; }
 .lot-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
 .lot-fields .field { margin: 0; }
+
+/* Hướng dẫn ngắn đầu mỗi bước */
+.step-guide { margin: 4px 0 14px; font-size: 14px; line-height: 1.45; color: var(--ink-2, var(--muted, #5b6b66)); }
+.nav-play { white-space: nowrap; font-weight: 800; }
+.poi-more { width: 100%; margin: 4px 0 6px; font-weight: 700; }
+@media (max-width: 979px) {
+  /* Khung xem trước cuộn theo trang (không dính trên đầu chiếm nửa màn hình); xem thử bằng nút ▶ Xem ở thanh dưới */
+  .stage { position: relative; top: auto; }
+  .step-nav { display: flex; gap: 8px; }
+  .step-nav #stepNext { flex: 1; }
+}
+@media (min-width: 980px) { .nav-play { display: none; } }

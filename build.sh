@@ -6,6 +6,7 @@ ESBUILD="${ESBUILD:-npx esbuild}"
 rm -rf site && mkdir -p site/icons
 $ESBUILD js/app.js --bundle --format=esm --minify --target=es2020 --charset=utf8 --line-limit=400 --outfile=site/app.js --log-level=warning
 $ESBUILD js/admin.js --bundle --format=esm --minify --target=es2020 --charset=utf8 --line-limit=400 --outfile=site/admin.js --log-level=warning
+$ESBUILD js/xuat-entry.js --bundle --format=esm --minify --target=es2020 --charset=utf8 --outfile=site/xuat.js --log-level=warning
 $ESBUILD js/landing.js --bundle --format=esm --minify --target=es2020 --charset=utf8 --line-limit=400 --outfile=site/landing.js --log-level=warning
 $ESBUILD styles.css --minify --outfile=site/styles.css --log-level=warning
 $ESBUILD landing.css --minify --outfile=site/landing.css --log-level=warning

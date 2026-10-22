@@ -1,6 +1,16 @@
 // Xuất MP4 ngay trên máy: dựng từng khung bằng canvas, mã hoá H.264 (WebCodecs), ghép tiếng AAC.
 // Trình duyệt không có WebCodecs thì quay thời gian thực bằng MediaRecorder.
-const MUXER_URL = 'https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.mjs';
+// Gói xuất (site/xuat.js, dựng từ js/xuat-entry.js): Mediabunny + bộ mã hoá AAC WebAssembly, chỉ tải khi xuất
+const XUAT_URL = new URL('xuat.js', document.baseURI).href;
+let xuatMod = null;
+async function loadXuat() {
+  if (!xuatMod) {
+    xuatMod = await import(/* @vite-ignore */ XUAT_URL);
+    // Luôn dùng AAC WebAssembly: giống nhau trên mọi máy, không phụ thuộc trình duyệt điện thoại
+    xuatMod.registerAacEncoder();
+  }
+  return xuatMod;
+}
 import { render, collectTiles } from './render.js';
 import { scheduleSfx } from './sfx.js';
 
@@ -67,27 +77,16 @@ export async function preloadTiles(tl, scale, cache, onProgress, signal) {
 
 async function pickVideoCodec(w, h, fps) {
   const bitrate = Math.round(w * h * fps * 0.1);
-  const tries = ['avc1.640028', 'avc1.4d0028', 'avc1.42e028', 'avc1.640032', 'avc1.42e032'];
-  for (const codec of tries) {
-    const cfg = { codec, width: w, height: h, bitrate, framerate: fps, avc: { format: 'avc' } };
+  const tries = [['avc', 'avc1.640028'], ['avc', 'avc1.4d0028'], ['avc', 'avc1.42e028'], ['avc', 'avc1.640032'], ['avc', 'avc1.42e032'],
+    // Máy tính không có H.264 (Linux): dùng VP9 trong MP4 (điện thoại luôn có H.264)
+    ['vp9', 'vp09.00.40.08']];
+  for (const [kind, codec] of tries) {
+    const cfg = { codec, width: w, height: h, bitrate, framerate: fps, ...(kind === 'avc' ? { avc: { format: 'avc' } } : {}) };
     try {
       const s = await VideoEncoder.isConfigSupported(cfg);
-      if (s.supported) return cfg;
+      if (s.supported) return { cfg, kind };
     } catch { /* thử mã khác */ }
   }
-  return null;
-}
-
-// Chỉ dùng AAC cho file MP4. Opus đóng trong MP4 phát được trên Chrome nhưng iPhone (Ảnh), Zalo, Facebook,
-// CapCut… thường phát MẤT TIẾNG — đây là lỗi khách gặp: xem trước có nhạc/giọng, file xuất ra không có.
-// Máy không mã hoá được AAC thì báo NO_AUDIO_ENCODER để chuyển sang quay thời gian thực (giữ được tiếng).
-async function pickAudioCodec() {
-  if (typeof AudioEncoder === 'undefined' || typeof AudioData === 'undefined') return null;
-  const cfg = { codec: 'mp4a.40.2', sampleRate: SR, numberOfChannels: 2, bitrate: 160000 };
-  try {
-    const s = await AudioEncoder.isConfigSupported(cfg);
-    if (s.supported) return { cfg, mux: 'aac' };
-  } catch { /* không hỗ trợ */ }
   return null;
 }
 
@@ -111,27 +110,32 @@ export function canEncodeMp4() {
 
 export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffer, onProgress, signal }) {
   const scale = width / tl.LW;
-  const vcfg = await pickVideoCodec(width, height, fps);
-  if (!vcfg) throw new Error('Máy này không mã hoá được H.264 ở độ phân giải ' + width + 'x' + height + '. Thử chất lượng 720p.');
-  const acodec = audioBuffer ? await pickAudioCodec() : null;
-  if (audioBuffer && !acodec) throw Object.assign(new Error('Máy không mã hoá được âm thanh'), { code: 'NO_AUDIO_ENCODER' });
+  const pv = await pickVideoCodec(width, height, fps);
+  if (!pv) throw new Error('Máy này không mã hoá được video ở độ phân giải ' + width + 'x' + height + '. Thử chất lượng 720p.');
+  let MB;
+  try { MB = await loadXuat(); }
+  catch { throw Object.assign(new Error('Không tải được bộ xuất video, kiểm tra mạng rồi thử lại.'), { code: 'NO_MUXER' }); }
 
-  const { Muxer, ArrayBufferTarget } = await import(/* @vite-ignore */ MUXER_URL);
-  const target = new ArrayBufferTarget();
-  const muxer = new Muxer({
-    target,
-    video: { codec: 'avc', width, height, frameRate: fps },
-    audio: acodec ? { codec: acodec.mux, numberOfChannels: 2, sampleRate: SR } : undefined,
-    fastStart: 'in-memory',
-    firstTimestampBehavior: 'offset',
-  });
+  const output = new MB.Output({ format: new MB.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new MB.BufferTarget() });
+  const vsrc = new MB.EncodedVideoPacketSource(pv.kind);
+  output.addVideoTrack(vsrc, { frameRate: fps });
+  let asrc = null;
+  if (audioBuffer) {
+    asrc = new MB.AudioBufferSource({ codec: 'aac', bitrate: 160000 });
+    output.addAudioTrack(asrc);
+  }
+  await output.start();
 
+  // Gói video phải đưa vào theo đúng thứ tự: xếp hàng bằng một chuỗi promise
+  let chain = Promise.resolve();
   let encErr = null;
   const venc = new VideoEncoder({
-    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+    output: (chunk, meta) => {
+      chain = chain.then(() => vsrc.add(MB.EncodedPacket.fromEncodedChunk(chunk), meta)).catch(e => { encErr = encErr || e; });
+    },
     error: e => { encErr = e; },
   });
-  venc.configure(vcfg);
+  venc.configure(pv.cfg);
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -139,60 +143,67 @@ export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffe
   const ctx = canvas.getContext('2d', { alpha: false });
   const frames = Math.round(tl.duration * fps);
   const us = 1e6 / fps;
-  for (let i = 0; i < frames; i++) {
-    if (signal?.aborted) { venc.close(); throw new DOMException('Đã huỷ', 'AbortError'); }
-    if (encErr) throw encErr;
-    render(ctx, tl, i / fps, { cache, scale, request: false });
-    const frame = new VideoFrame(canvas, { timestamp: Math.round(i * us), duration: Math.round(us) });
-    venc.encode(frame, { keyFrame: i % (fps * 2) === 0 });
-    frame.close();
-    if (venc.encodeQueueSize > 6) {
-      await new Promise(r => {
-        const check = () => (venc.encodeQueueSize <= 3 ? r() : setTimeout(check, 4));
-        check();
-      });
+  try {
+    for (let i = 0; i < frames; i++) {
+      if (signal?.aborted) throw new DOMException('Đã huỷ', 'AbortError');
+      if (encErr) throw encErr;
+      render(ctx, tl, i / fps, { cache, scale, request: false });
+      const frame = new VideoFrame(canvas, { timestamp: Math.round(i * us), duration: Math.round(us) });
+      venc.encode(frame, { keyFrame: i % (fps * 2) === 0 });
+      frame.close();
+      if (venc.encodeQueueSize > 6) {
+        await new Promise(r => {
+          const check = () => (venc.encodeQueueSize <= 3 ? r() : setTimeout(check, 4));
+          check();
+        });
+      }
+      if (i % 3 === 0) {
+        onProgress?.('frames', i + 1, frames);
+        await new Promise(r => setTimeout(r, 0));
+      }
     }
-    if (i % 3 === 0) {
-      onProgress?.('frames', i + 1, frames);
-      await new Promise(r => setTimeout(r, 0));
-    }
+    await venc.flush();
+  } catch (e) {
+    try { venc.close(); } catch { /* đã đóng */ }
+    try { await output.cancel(); } catch { /* bỏ qua */ }
+    throw e;
   }
-  await venc.flush();
   venc.close();
+  await chain;
   if (encErr) throw encErr;
+  vsrc.close();
 
-  if (acodec && audioBuffer) {
+  if (asrc) {
     onProgress?.('audio', 0, 1);
-    let aErr = null;
-    let aChunks = 0;
-    const aenc = new AudioEncoder({
-      output: (chunk, meta) => { aChunks++; muxer.addAudioChunk(chunk, meta); },
-      error: e => { aErr = e; },
-    });
-    aenc.configure(acodec.cfg);
+    // Cắt đúng bằng thời lượng video rồi mã hoá AAC (WebAssembly)
     const total = Math.min(audioBuffer.length, Math.round(tl.duration * SR));
-    const L = audioBuffer.getChannelData(0);
-    const R = audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : L;
-    const CH = 4096;
-    for (let off = 0; off < total; off += CH) {
-      const n = Math.min(CH, total - off);
-      const data = new Float32Array(n * 2);
-      data.set(L.subarray(off, off + n), 0);
-      data.set(R.subarray(off, off + n), n);
-      const ad = new AudioData({ format: 'f32-planar', sampleRate: SR, numberOfFrames: n, numberOfChannels: 2, timestamp: Math.round(off / SR * 1e6), data });
-      aenc.encode(ad);
-      ad.close();
+    let buf = audioBuffer;
+    if (total < audioBuffer.length || audioBuffer.numberOfChannels !== 2) {
+      buf = new AudioBuffer({ numberOfChannels: 2, length: total, sampleRate: audioBuffer.sampleRate });
+      const L = audioBuffer.getChannelData(0), R = audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : L;
+      buf.copyToChannel(L.subarray(0, total), 0);
+      buf.copyToChannel(R.subarray(0, total), 1);
     }
-    await aenc.flush();
-    aenc.close();
-    if (aErr) throw aErr;
-    // Bộ mã hoá báo hỗ trợ nhưng không ra dữ liệu (gặp trên vài máy Android): không trả file câm, chuyển sang quay thời gian thực
-    if (!aChunks) throw Object.assign(new Error('Không ghép được âm thanh'), { code: 'NO_AUDIO_ENCODER' });
+    await asrc.add(buf);
+    asrc.close();
   }
 
-  muxer.finalize();
+  await output.finalize();
   onProgress?.('done', 1, 1);
-  return new Blob([target.buffer], { type: 'video/mp4' });
+  const out = output.target.buffer;
+  // Tự kiểm tra: có tiếng mà file không có luồng âm thanh thì báo lỗi thay vì đưa file câm cho khách
+  if (audioBuffer && !hasAudioTrack(new Uint8Array(out))) {
+    throw Object.assign(new Error('File xuất bị thiếu âm thanh'), { code: 'NO_AUDIO_ENCODER' });
+  }
+  return new Blob([out], { type: 'video/mp4' });
+}
+
+// Tìm hộp 'mp4a' (âm thanh AAC) trong file MP4
+function hasAudioTrack(b) {
+  for (let i = 0; i + 4 < b.length; i++) {
+    if (b[i] === 0x6d && b[i + 1] === 0x70 && b[i + 2] === 0x34 && b[i + 3] === 0x61) return true;
+  }
+  return false;
 }
 
 // Dự phòng: phát thời gian thực và ghi lại canvas

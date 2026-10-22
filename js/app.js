@@ -54,6 +54,7 @@ const state = {
   lotText: '',       // chữ 3D nằm trên lô
   adminArea: null,   // ranh xã/phường + tỉnh {ward, province} (KHÁC state.area = diện tích khách nhập)
   areaWard: '', areaProv: '', roadWidth: '',
+  showStreets: true, // vẽ đường quanh nhà kiểu đường nhựa
   lotArea: '',       // diện tích hiển thị (trống = tự tính)
   stars: [],         // id tiện ích được khoanh vùng nổi bật
   pageVideo: '',     // link video đã đăng (gắn vào trang web căn nhà)
@@ -176,6 +177,7 @@ function buildScene() {
       provName: (state.areaProv || '').trim() || state.adminArea.province?.name || state.admin?.province || '',
     } : null,
     roadWidth: (state.roadWidth || '').trim(),
+    showStreets: state.showStreets !== false,
     roadTheme: state.roadTheme,
     routeTheme: state.routeTheme,
   };
@@ -233,6 +235,7 @@ let tl = null;
 let t = 0;
 let playing = false;
 let editing = false;
+const poiOpen = new Set(); // nhóm tiện ích đã bấm Xem thêm
 let editMode = 'pin'; // pin | lot
 let lotZoom = 18.5;  // mức phóng khi vẽ lô đất (17–20.5)
 let dirty = true;
@@ -271,7 +274,7 @@ function layoutCanvas() {
   const transportH = 52;
   const availH = desktop
     ? inner.clientHeight - transportH - 10
-    : Math.min(window.innerHeight * (document.body.classList.contains('mini-stage') ? 0.19 : state.fmt === 'v' ? 0.31 : 0.27), 520);
+    : Math.min(window.innerHeight * (state.fmt === 'v' ? 0.27 : 0.24), 420);
   const ratio = F.LW / F.LH;
   let w = Math.min(availW, availH * ratio);
   w = Math.max(160, w);
@@ -623,7 +626,11 @@ function renderLists() {
   $('poiList').innerHTML = cats.map(c => {
     const list = groups[c].sort((a, b) => a.km - b.km);
     const nSel = list.filter(p => state.selected.includes(p.id)).length;
-    const rows = list.slice(0, 30).map(p => `
+    // Mỗi nhóm hiện 5 điểm (cộng các điểm đã chọn); bấm Xem thêm để hiện hết
+    const expanded = poiOpen.has(c);
+    const shown = expanded ? list.slice(0, 30) : list.filter((p, i) => i < 5 || state.selected.includes(p.id));
+    const more = expanded || list.length <= shown.length ? '' : `<button type="button" class="btn btn-quiet poi-more" data-more="${c}">Xem thêm ${Math.min(30, list.length) - shown.length} điểm</button>`;
+    const rows = shown.map(p => `
       <label class="poi-row${p.manual ? ' manual' : ''}">
         <input type="checkbox" autocomplete="off" data-poi="${esc(p.id)}" ${state.selected.includes(p.id) ? 'checked' : ''}>
         <span class="poi-name">${esc(p.name)}</span>
@@ -632,7 +639,7 @@ function renderLists() {
       </label>`).join('');
     return `<details class="cat-group" ${nSel ? 'open' : ''}>
       <summary><span class="cat-ic" style="background:${CAT_COLORS[c]}">${iconSvg(CATEGORIES[c].icon)}</span>${CATEGORIES[c].label}<span class="n">${nSel ? nSel + ' chọn · ' : ''}${list.length}</span></summary>
-      ${rows}
+      ${rows}${more}
     </details>`;
   }).join('') || '<p class="hint">Không tìm thấy tiện ích có tên trong bán kính này. Thêm điểm thủ công bên dưới.</p>';
 }
@@ -1078,10 +1085,10 @@ async function doExport() {
   exportAudioCtx?.close?.().catch?.(() => {});
   exportAudioCtx = unlockAudioContext();
   gating = true;
-  $('exportBtn').disabled = true;
+  $('exportBtn').disabled = true; $('stepNext').disabled = true;
   let gate = null;
   try { gate = await beginExport(state.house); }
-  finally { gating = false; $('exportBtn').disabled = false; }
+  finally { gating = false; $('exportBtn').disabled = false; $('stepNext').disabled = false; }
   if (!gate) return;
   if (gate.charged) toast(`Đã trừ 1 lượt, còn ${gate.profile.credits} lượt. Căn này còn ${gate.redo?.exports_left ?? 2} lần xuất lại không trừ lượt.`, 4500);
   else if (gate.mode === 'reexport' && gate.redo) toast(`Xuất lại không trừ lượt. Căn này còn ${gate.redo.exports_left} lần xuất lại.`, 3500);
@@ -1090,7 +1097,7 @@ async function doExport() {
   exporting = true;
   exportCtrl = new AbortController();
   const signal = exportCtrl.signal;
-  $('exportBtn').disabled = true;
+  $('exportBtn').disabled = true; $('stepNext').disabled = true;
   $('exportBox').hidden = false;
   $('resultBox').hidden = true;
   let wake = null;
@@ -1121,7 +1128,7 @@ async function doExport() {
       try {
         blob = await exportMp4({ tl: xtl, width, height, fps: 30, cache, audioBuffer: audio, onProgress, signal });
       } catch (e) {
-        if (e.code !== 'NO_AUDIO_ENCODER') throw e;
+        if (e.code !== 'NO_AUDIO_ENCODER' && e.code !== 'NO_MUXER') throw e;
         progress(30, 'Đang quay theo thời gian thực để giữ nhạc và giọng đọc — giữ màn hình mở, đừng chuyển app…');
         blob = await exportRealtime({ tl: xtl, width, height, fps: 30, cache, audioBuffer: audio, audioCtx: exportAudioCtx, onProgress, signal });
       }
@@ -1152,7 +1159,7 @@ async function doExport() {
     exporting = false;
     dirty = true;
     updateBigPlay();
-    $('exportBtn').disabled = false;
+    $('exportBtn').disabled = false; $('stepNext').disabled = false;
     $('exportBox').hidden = true;
     try { await wake?.release(); } catch { /* bỏ qua */ }
   }
@@ -1224,10 +1231,11 @@ function updateQuick() {
     if (step === 1) { label = state.pois.length ? 'Tiếp tục →' : 'Quét tiện ích'; hide = !state.pois.length; }
     else if (step === 2) label = state.pois.length ? 'Tiếp tục: Nội dung →' : 'Về bước 1';
     else if (step === 3) label = voiceDurations() || !state.aiVoiceOn ? 'Tiếp tục: Xuất video →' : 'Tạo giọng đọc AI';
-    else hide = true;
+    else label = 'Xuất video MP4'; // bước 4: nút chính luôn nằm ở thanh dưới, không bị che
     next.textContent = label;
     next.hidden = hide;
-    $('stepNav').hidden = step === 1 && !state.pois.length ? true : (hide && back.hidden);
+    $('stepNav').hidden = step === 1 && !state.pois.length;
+    $('navPlay').hidden = !state.pois.length;
   }
   // Khung xem trước đổi cỡ khi vừa quét xong (điện thoại)
   const fresh = !state.pois.length;
@@ -1236,6 +1244,7 @@ function updateQuick() {
 }
 let lastFresh = null;
 async function stepNext() {
+  if (step === 4) { doExport(); return; }
   if (step === 1) { if (state.pois.length) showStep(2); else await scan(); return; }
   if (step === 2) { showStep(state.pois.length ? 3 : 1); return; }
   if (step === 3) {
@@ -1259,7 +1268,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'roadWidth', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'roadWidth', 'showStreets', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -1864,6 +1873,8 @@ function init() {
   });
   // Ngôi sao: khoanh vùng nổi bật tiện ích quan trọng (tự chọn luôn điểm đó)
   $('poiList').addEventListener('click', e => {
+    const m = e.target.closest('.poi-more');
+    if (m) { e.preventDefault(); poiOpen.add(m.dataset.more); renderLists(); return; }
     const b = e.target.closest('.poi-star');
     if (!b) return;
     e.preventDefault();
@@ -1971,6 +1982,8 @@ function init() {
   bindSeg('flowSeg', v => { state.flow = v; scheduleRebuild(); });
   bindSeg('qualSeg', v => { state.quality = v; save(); });
   $('titleInput').addEventListener('input', e => { state.title = e.target.value; scheduleRebuild(); });
+  $('showStreets').checked = state.showStreets !== false;
+  $('showStreets').addEventListener('change', e => { state.showStreets = e.target.checked; scheduleRebuild(); });
   for (const [id, key] of [['areaWardInput', 'areaWard'], ['areaProvInput', 'areaProv'], ['roadWidthInput', 'roadWidth']]) {
     $(id).value = state[key] || '';
     $(id).addEventListener('input', e => { state[key] = e.target.value; scheduleRebuild(); });
@@ -2107,15 +2120,15 @@ function init() {
   $('panel').addEventListener('click', e => { const b = e.target.closest('.empty-state [data-go]'); if (b) showStep(+b.dataset.go); });
   $('stepNext').addEventListener('click', stepNext);
   $('stepBack').addEventListener('click', () => showStep(step - 1));
+  // ▶ Xem: cuộn lên khung xem trước rồi phát từ đầu
+  $('navPlay').addEventListener('click', () => {
+    document.querySelector('.stage')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (playing) pause();
+    t = 0; updateTimeUi(); play();
+  });
   $('subtabs').addEventListener('click', e => { const b = e.target.closest('[data-sub]'); if (b) setSub(b.dataset.sub); });
   document.querySelector('[data-nav="studio"]').addEventListener('click', () => showStep(step));
-  // Điện thoại: cuộn xuống thì khung xem trước thu nhỏ để chừa chỗ cho phần chỉnh
-  let miniOn = false;
-  window.addEventListener('scroll', () => {
-    if (window.matchMedia('(min-width: 980px)').matches) return;
-    const m = window.scrollY > 60;
-    if (m !== miniOn) { miniOn = m; document.body.classList.toggle('mini-stage', m); layoutCanvas(); }
-  }, { passive: true });
+  // Điện thoại: khung xem trước giữ MỘT cỡ cố định (trước đây tự thu nhỏ khi cuộn làm cả trang giật lên xuống)
   // Căn đã lưu
   $('saveProjBtn').addEventListener('click', () => openProjects(true));
   $('projListBtn').addEventListener('click', () => openProjects(false));
