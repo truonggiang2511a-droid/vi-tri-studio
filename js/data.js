@@ -237,7 +237,8 @@ const OVT_CAT = { t: 'truong', y: 'yte', c: 'cho', h: 'hanhchinh', p: 'congvien'
 const OVT_KIND = { h: 'hospital', c: 'clinic', m: 'marketplace', s: 'supermarket', l: 'mall' };
 // Tiện ích từ Vietmap (máy chủ /api/map/nearby, có nhớ đệm): bù những điểm OSM/Overture còn thiếu, nhất là gần nhà
 async function loadVietmap(center, radiusKm, signal) {
-  const T = withTimeout(25000, signal);
+  // Vietmap chậm hoặc lỗi thì bỏ qua sau 12 giây, quét vẫn dùng OSM + Overture như cũ
+  const T = withTimeout(12000, signal);
   try {
     const res = await fetch(`/api/map/nearby?lat=${center.lat.toFixed(5)}&lng=${center.lng.toFixed(5)}&r=${radiusKm}`, { signal: T.signal });
     if (!res.ok) return [];
