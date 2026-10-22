@@ -49,8 +49,10 @@ const state = {
   fitVoice: true,
   style: 'neon',     // phong cách video
   base: 'vetinh',    // nền bản đồ
-  flow: 'lanluot',   // cách hiện tiện ích: lanluot | radar | cungluc
+  flow: 'lanluot',   // cách hiện tiện ích: lanluot | radar | tiaxa
   lot: [],           // ranh lô đất khách tự vẽ [{lat,lng}]
+  lotText: '',       // chữ 3D nằm trên lô
+  lotArea: '',       // diện tích hiển thị (trống = tự tính)
   stars: [],         // id tiện ích được khoanh vùng nổi bật
   pageVideo: '',     // link video đã đăng (gắn vào trang web căn nhà)
   pageDesc: '',
@@ -164,6 +166,7 @@ function buildScene() {
     base: state.base,
     flow: state.flow,
     lot: state.lot && state.lot.length >= 3 ? state.lot : null,
+    lotLabel: { text: state.lotText, area: state.lotArea },
     roadTheme: state.roadTheme,
     routeTheme: state.routeTheme,
   };
@@ -222,6 +225,7 @@ let t = 0;
 let playing = false;
 let editing = false;
 let editMode = 'pin'; // pin | lot
+let lotZoom = 18.5;  // mức phóng khi vẽ lô đất (17–20.5)
 let dirty = true;
 let lastFrame = 0;
 let audioCtx = null;
@@ -289,7 +293,7 @@ function frame(now) {
   const scale = canvas.width / FORMATS[state.fmt].LW;
   if (editing) {
     if (now - lastFrame > 33 || dirty) {
-      renderEdit(ctx, state.house, state.fmt, { cache, scale, lot: state.lot, mode: editMode });
+      renderEdit(ctx, state.house, state.fmt, { cache, scale, lot: state.lot, mode: editMode, zoom: editMode === 'lot' ? lotZoom : null });
       lastFrame = now;
       dirty = false;
     }
@@ -397,6 +401,7 @@ function updateLotMsg() {
   const n = state.lot.length;
   $('lotMsg').textContent = n === 0 ? 'Chạm lần lượt các góc lô đất trên ảnh.' : n < 3 ? `Đã chấm ${n} góc, chấm thêm ${3 - n} góc nữa.` : `Lô đất ${n} góc · khoảng ${formatArea(lotAreaM2(state.lot))}`;
   $('lotBtn').textContent = n >= 3 ? 'Sửa lô đất' : 'Vẽ lô đất';
+  $('lotArea').placeholder = n >= 3 ? formatArea(lotAreaM2(state.lot)) : 'Tự tính';
 }
 
 // ---------- Toạ độ ----------
@@ -1232,7 +1237,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -1789,7 +1794,8 @@ function init() {
   setSeg('typeSeg', state.typeLabel);
   setSeg('fmtSeg', state.fmt);
   setSeg('speedSeg', state.speed);
-  setSeg('flowSeg', ['radar', 'cungluc'].includes(state.flow) ? state.flow : 'lanluot');
+  if (state.flow === 'cungluc') state.flow = 'tiaxa';
+  setSeg('flowSeg', ['radar', 'tiaxa'].includes(state.flow) ? state.flow : 'lanluot');
   setSeg('qualSeg', state.quality);
   $('canvasWrap').dataset.fmt = state.fmt;
   updateScanLabel();
@@ -2034,6 +2040,12 @@ function init() {
   });
   $('editPinBtn').addEventListener('click', () => toggleEdit(undefined, 'pin'));
   $('lotBtn').addEventListener('click', () => toggleEdit(undefined, 'lot'));
+  $('lotZoomIn').addEventListener('click', () => { lotZoom = Math.min(20.5, lotZoom + 0.5); dirty = true; });
+  $('lotZoomOut').addEventListener('click', () => { lotZoom = Math.max(16.5, lotZoom - 0.5); dirty = true; });
+  $('lotText').value = state.lotText || '';
+  $('lotArea').value = state.lotArea || '';
+  $('lotText').addEventListener('input', e => { state.lotText = e.target.value; save(); });
+  $('lotArea').addEventListener('input', e => { state.lotArea = e.target.value; save(); });
   $('lotUndo').addEventListener('click', () => { state.lot.pop(); dirty = true; updateLotMsg(); save(); });
   $('lotClear').addEventListener('click', () => { state.lot = []; dirty = true; updateLotMsg(); save(); });
   $('lotDone').addEventListener('click', () => {
@@ -2047,7 +2059,7 @@ function init() {
     const rect = canvas.getBoundingClientRect();
     if (editMode === 'lot') {
       if (state.lot.length >= 12) { toast('Tối đa 12 góc.'); return; }
-      state.lot.push(editTapToLatLng(state.house, state.fmt, (e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height, 18.5));
+      state.lot.push(editTapToLatLng(state.house, state.fmt, (e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height, lotZoom));
       dirty = true; updateLotMsg(); save();
       return;
     }

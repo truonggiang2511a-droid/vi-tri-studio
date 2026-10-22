@@ -654,3 +654,8 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 /* Ngôi sao khoanh vùng tiện ích */
 .poi-star { border: 0; background: transparent; font-size: 18px; line-height: 1; padding: 4px 6px; color: color-mix(in srgb, currentColor 30%, transparent); cursor: pointer; border-radius: 8px; }
 .poi-star[aria-pressed="true"] { color: #f1b23c; text-shadow: 0 0 8px rgba(241,178,60,.6); }
+
+.lot-zoom { display: inline-flex; gap: 6px; }
+.lot-zoom .chip-btn { min-width: 38px; font-size: 18px; font-weight: 800; }
+.lot-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
+.lot-fields .field { margin: 0; }

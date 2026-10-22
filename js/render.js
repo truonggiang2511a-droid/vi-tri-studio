@@ -534,21 +534,39 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   roads.forEach((r, i) => raw.push({ type: 'road', d: 3.1, to: camRoads, move: i === 0 ? 0.6 : 1, drift: i === 0 ? 0 : 0.02, road: i, vkey: 'road:' + r.id }));
   if (boundary) raw.push({ type: 'boundary', d: 7.6, to: camBoundary, move: 0.42, drift: 0.015, vkey: 'boundary' });
   // Chế độ "Quét vòng tròn": một khung cố định thấy cả vòng bán kính và mọi tiện ích, line lần lượt chạy ra rồi giữ lại
-  // radar: quét vòng rồi line chạy lần lượt; cungluc: line chạy tới tất cả tiện ích cùng một lúc
-  const radar = (scene.flow === 'radar' || scene.flow === 'cungluc') && pois.length > 0;
-  const together = scene.flow === 'cungluc';
+  // 3 kiểu hiện tiện ích:
+  // - lanluot: bay tới từng tiện ích, line đường đi chạy ra (mặc định)
+  // - radar:   quét vòng tròn, KHÔNG line; máy quay đi vòng quanh nhà theo hướng các tiện ích, zoom gần, chỉ ghim + nhãn
+  // - tiaxa:   mũi tên thẳng toả ra từ nhà tới từng tiện ích, ghi khoảng cách giữa mũi tên (gọn, dễ hiểu)
+  const flow = scene.flow === 'cungluc' ? 'tiaxa' : scene.flow;
+  const radar = flow === 'radar' && pois.length > 0;
+  const spokes = flow === 'tiaxa' && pois.length > 0;
+  // Quét vòng tròn: sắp tiện ích theo hướng (theo chiều kim đồng hồ từ hướng bắc) để máy quay đi một vòng quanh nhà
+  if (radar) {
+    const brg = p => (Math.atan2((p.lng - H.lng) * Math.cos(H.lat * Math.PI / 180), p.lat - H.lat) + Math.PI * 2) % (Math.PI * 2);
+    pois.sort((a, b) => brg(a) - brg(b));
+  }
   // Khung ôm vòng tròn qua tiện ích xa nhất (không lùi hết bán kính quét khi tiện ích đều ở gần)
-  const farKm = radar ? Math.max(0.35, ...pois.map(p => haversineKm(H, p))) * 1.12 : 0;
+  const farKm = (radar || spokes) ? Math.max(0.35, ...pois.map(p => haversineKm(H, p))) * 1.12 : 0;
   const fLat = farKm / 111.32, fLng = farKm / (111.32 * Math.cos(H.lat * Math.PI / 180));
-  const camRadar = radar
+  const camAll = (radar || spokes)
     ? fitCam([H, ...pois, { lat: H.lat + fLat, lng: H.lng }, { lat: H.lat - fLat, lng: H.lng }, { lat: H.lat, lng: H.lng + fLng }, { lat: H.lat, lng: H.lng - fLng }], LW, LH,
       { left: safe.x + 40, right: safe.x + 40, top: safe.top + 80, bottom: safe.bottom + 70 }, PITCH.summary, 9, 16)
     : null;
   if (radar) {
-    raw.push({ type: 'radar', d: together ? 3.6 : 2.6, to: camRadar, move: 0.7, drift: 0.008, vkey: 'radar', together });
-    pois.forEach((p, i) => raw.push({ type: 'poi', d: together ? 1.5 : 1.9, to: camRadar, move: 0, drift: 0.006, poi: i, vkey: 'poi:' + p.id, radar: true }));
+    raw.push({ type: 'radar', d: 2.8, to: camAll, move: 0.7, drift: 0.008, vkey: 'radar' });
+    // Mỗi tiện ích: khung ôm nhà + tiện ích, zoom gần hơn, chừa chỗ cho nhãn; lần lượt vòng quanh nhà
+    pois.forEach((p, i) => {
+      const cam = fitCam([H, p], LW, LH,
+        { left: safe.x + 90, right: safe.x + 90, top: safe.top + 130, bottom: safe.bottom + 120 }, PITCH.poi, 12, 16.8);
+      raw.push({ type: 'poi', d: 2.6, to: cam, move: 0.75, drift: 0.01, poi: i, vkey: 'poi:' + p.id, radar: true });
+    });
   }
-  if (!radar) pois.forEach((p, i) => {
+  if (spokes) {
+    raw.push({ type: 'radar', d: 1.6 + 0.45 * pois.length, to: camAll, move: 0.6, drift: 0.008, vkey: 'radar', spokes: true });
+    pois.forEach((p, i) => raw.push({ type: 'poi', d: 1.6, to: camAll, move: 0, drift: 0.006, poi: i, vkey: 'poi:' + p.id, spokes: true }));
+  }
+  if (!radar && !spokes) pois.forEach((p, i) => {
     const pts = [H, p];
     const L = p.line;
     for (let j = 0; j < L.xs.length; j += Math.max(1, Math.floor(L.xs.length / 24))) pts.push(unproject(L.xs[j], L.ys[j], 0));
@@ -594,7 +612,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     fmt: fmtKey, LW, LH, safe, duration: t, phases, scene, panelH,
     G: groundDims(LW, LH),
     intro: first('intro'), house: first('house'), overview: first('overview'), boundaryPh: first('boundary'),
-    summary: first('summary'), outro: first('outro'), photosPh: first('photos'), photos, radarPh: first('radar'),
+    summary: first('summary'), outro: first('outro'), photosPh: first('photos'), photos, radarPh: first('radar'), flow: radar ? 'radar' : spokes ? 'tiaxa' : 'lanluot',
     roadPhases: phases.filter(p => p.type === 'road'), poiPhases: phases.filter(p => p.type === 'poi'),
     pois, roads, boundary, captions, hook, lot, lotArea: lot ? lotAreaM2(lot) : 0,
   };
@@ -1964,8 +1982,9 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       // viền phát sáng, chạy dần cho đủ một vòng
       g.setLineDash([per * draw, per]);
       g.lineJoin = 'round';
-      g.globalAlpha = Math.max(focus, keepA) * 0.35; g.strokeStyle = GOLD; g.lineWidth = 12; g.stroke(path);
-      g.globalAlpha = Math.max(focus, keepA); g.lineWidth = 4; g.strokeStyle = '#ffffff'; g.shadowColor = GOLD; g.shadowBlur = 12; g.stroke(path);
+      g.globalAlpha = Math.max(focus, keepA) * 0.45; g.strokeStyle = GOLD; g.lineWidth = 18; g.stroke(path);
+      g.globalAlpha = Math.max(focus, keepA); g.lineWidth = 6; g.strokeStyle = GOLD; g.stroke(path);
+      g.lineWidth = 2.6; g.strokeStyle = '#ffffff'; g.shadowColor = GOLD; g.shadowBlur = 12; g.stroke(path);
       g.setLineDash([]);
       // sóng khoanh vùng lan ra từ lô
       if (focus > 0.05) {
@@ -1978,11 +1997,39 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       }
       g.restore();
     }
+    // Chữ 3D nằm dẹt trên lô: nội dung + diện tích khách tự nhập
+    const lbl = scene.lotLabel || {};
+    const line1 = String(lbl.text || 'LÔ ĐẤT').trim().toUpperCase();
+    const line2 = String(lbl.area || '').trim() || formatArea(tl.lotArea);
+    const txtA = Math.max(fadeWin(t, ho.t0 + 0.5 * hd, ov.t0 + 0.7, 0.5, 0.6), fadeWin(t, ou.t0 + 0.3, T + 10, 0.5, 0.4) * 0.9);
+    if (txtA > 0.01) {
+      const rise = easeOut(clamp01((t - ho.t0 - 0.5 * hd) / 0.8));
+      // Cỡ chữ theo bề rộng lô trên bản đồ (không tràn ra ngoài lô quá nhiều), tối thiểu đọc được
+      const xs = xy.map(q => q.x), ys = xy.map(q => q.y);
+      const lotW = Math.max(...xs) - Math.min(...xs), lotH = Math.max(...ys) - Math.min(...ys);
+      g.save();
+      g.globalAlpha = txtA;
+      g.font = `800 100px ${FONT}`;
+      const w1 = g.measureText(line1).width / 100, w2 = g.measureText(line2).width / 100;
+      // Chữ đủ lớn để đọc (có thể rộng hơn lô), đặt ngay dưới ghim nhà để không bị ghim che
+      const size = Math.min(Math.max(22, Math.min(56, Math.max(lotW * 1.1, 150) / Math.max(w1, w2, 0.1))), (LW * 0.74) / Math.max(w1, w2, 0.1));
+      const ty0 = Math.max(c.y + lotH * 0.15, hg.y + 10) + size * 0.75;
+      const draw3d = (text, sz, y, col) => {
+        g.save();
+        g.translate(hg.x, y); // text3D tự canh giữa
+        text3D(g, text, sz, { faceTop: '#FFFFFF', faceBot: col, side: shade(GOLD.startsWith('#') ? GOLD : '#FFD166', 0.45), depth: sz * 0.28 * rise, ex: 0, ey: 1,
+          sp: sz * 0.07, glow: 'rgba(0,0,0,0.7)', stroke: 'rgba(0,0,0,0.35)', outline: 'rgba(8,10,14,0.9)' });
+        g.restore();
+      };
+      draw3d(line1, size, ty0, '#FFF3D0');
+      draw3d(line2, size * 0.86, ty0 + size * 1.05, '#FFE08A');
+      g.restore();
+    }
   }
 
   // Tia quét radar quay quanh căn nhà: lúc giới thiệu bán kính, pha quét (chế độ vòng tròn) và cảnh tổng kết
   const sweeps = [[ov.t0 + 0.3 * (ov.t1 - ov.t0), ov.t1 + 0.3]];
-  if (tl.radarPh && !tl.radarPh.together) sweeps.push([tl.radarPh.t0, tl.radarPh.t1 + 0.6]);
+  if (tl.radarPh && !tl.radarPh.spokes) sweeps.push([tl.radarPh.t0, tl.radarPh.t1 + 0.6]);
   if (sm) sweeps.push([sm.t0 + 0.2, Math.min(sm.t1, sm.t0 + 3.2)]);
   for (const [s0, s1] of sweeps) {
     if (t < s0 || t >= s1 || rpx < 8) continue;
@@ -2011,31 +2058,62 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   // Đường đi tới tiện ích (giữ như cũ, anh đã duyệt)
   const curIdx = tl.poiPhases.findIndex(ph => t >= ph.t0 && t < ph.t1);
   const afterAll = tl.poiPhases.length && t >= tl.poiPhases[tl.poiPhases.length - 1].t1;
-  const TG = tl.radarPh && tl.radarPh.together ? tl.radarPh : null;
-  // Chế độ cùng lúc: mọi line xuất phát cùng thời điểm trong pha quét, xa thì chạy nhanh hơn để tới cùng lúc
-  const tgP = TG ? clamp01((t - TG.t0 - 0.35) / Math.max(0.8, (TG.t1 - TG.t0) - 1.0)) : 0;
-  tl.poiPhases.forEach((ph, i) => {
-    if (t < (TG ? TG.t0 : ph.t0)) return;
+  // Kiểu "mũi tên toả ra": mỗi tiện ích một mũi tên thẳng từ nhà, nối tiếp nhau rất nhanh
+  const SP = tl.flow === 'tiaxa' ? tl.radarPh : null;
+  const spokeP = i => (SP ? clamp01((t - SP.t0 - 0.45 - i * 0.45) / 0.6) : 0);
+  if (tl.flow === 'lanluot') tl.poiPhases.forEach((ph, i) => {
+    if (t < ph.t0) return;
     const poi = tl.pois[i];
     const L = poi.line;
     const d = ph.t1 - ph.t0;
-    const p = TG ? tgP : clamp01((t - ph.t0 - 0.14 * d) / (0.46 * d));
-    const done = TG ? tgP >= 1 : t >= ph.t1;
-    let a = done ? (ph.radar ? 0.95 : (afterAll ? 0.6 : 0.4)) : 1;
+    const p = clamp01((t - ph.t0 - 0.14 * d) / (0.46 * d));
+    const done = t >= ph.t1;
+    let a = done ? (afterAll ? 0.6 : 0.4) : 1;
     if (t >= ou.t0) a = Math.max(0.25, 0.6 - (t - ou.t0) / 0.8);
     if (poi.approx) g.setLineDash([7, 6]);
     const { path, head } = linePath(v, L, L.len * (done ? 1 : smooth(p)));
     const rs = routeStyle(scene);
-    glowStroke(g, path, done && !ph.radar ? rs.done : rs.core, rs.glow, done && !ph.radar ? 2.4 : 3.4, a);
+    glowStroke(g, path, done ? rs.done : rs.core, rs.glow, done ? 2.4 : 3.4, a);
     g.setLineDash([]);
     if (!done && head && p > 0 && p < 1) headGlow(g, head, rs.core, 13);
   });
+  if (SP && t >= SP.t0) {
+    const rs = routeStyle(scene);
+    const fadeA = t >= ou.t0 ? Math.max(0.3, 1 - (t - ou.t0) / 0.8) : 1;
+    tl.pois.forEach((poi, i) => {
+      const k = easeOut(spokeP(i));
+      if (k <= 0) return;
+      const q = gLL(v, poi.lat, poi.lng);
+      const len = Math.hypot(q.x - hg.x, q.y - hg.y);
+      if (len < 4) return;
+      const ux = (q.x - hg.x) / len, uy = (q.y - hg.y) / len;
+      const r0 = 14, r1 = Math.max(r0, len * k - 16);
+      const ax = hg.x + ux * r0, ay = hg.y + uy * r0, bx = hg.x + ux * r1, by = hg.y + uy * r1;
+      g.save();
+      g.globalAlpha = fadeA;
+      g.lineCap = 'round';
+      g.strokeStyle = CAT_COLORS[poi.cat] || rs.core; g.lineWidth = 14; g.globalAlpha = fadeA * 0.28;
+      g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
+      g.globalAlpha = fadeA;
+      g.strokeStyle = '#ffffff'; g.lineWidth = 6.5;
+      g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
+      g.strokeStyle = CAT_COLORS[poi.cat] || rs.core; g.lineWidth = 4.2;
+      g.setLineDash([14, 8]); g.lineDashOffset = -t * 40;
+      g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
+      g.setLineDash([]);
+      // đầu mũi tên
+      const hw = 11, hl = 18, tx = hg.x + ux * (r1 + 10), ty = hg.y + uy * (r1 + 10);
+      g.fillStyle = '#ffffff'; g.shadowColor = CAT_COLORS[poi.cat] || rs.core; g.shadowBlur = 10;
+      g.beginPath(); g.moveTo(tx, ty); g.lineTo(tx - ux * hl - uy * hw, ty - uy * hl + ux * hw); g.lineTo(tx - ux * hl + uy * hw, ty - uy * hl - ux * hw); g.closePath(); g.fill();
+      g.restore();
+    });
+  }
 
   // Khoanh vùng nổi bật các tiện ích được đánh sao: vùng sáng màu nhóm + sóng lan, giữ tới hết video
   tl.poiPhases.forEach((ph, i) => {
     const poi = tl.pois[i];
     if (!poi.star) return;
-    const show = TG ? (tgP >= 0.9 ? clamp01((t - TG.t0 - 0.3 - 0.9 * ((TG.t1 - TG.t0) - 1.0)) / 0.5) : 0) : clamp01((t - ph.t0 - 0.55 * (ph.t1 - ph.t0)) / 0.5);
+    const show = SP ? clamp01((spokeP(i) - 0.9) / 0.1) : clamp01((t - ph.t0 - 0.55 * (ph.t1 - ph.t0)) / 0.5);
     if (show <= 0) return;
     const q = gLL(v, poi.lat, poi.lng);
     const R = Math.max(26, 160 / metersPerPixel(poi.lat, cam.zoom));
@@ -2122,12 +2200,12 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
 
   // Ghim tiện ích
   tl.poiPhases.forEach((ph, i) => {
-    if (t < (TG ? TG.t0 : ph.t0)) return;
+    if (t < (SP ? SP.t0 : ph.t0)) return;
     const poi = tl.pois[i];
     const d = ph.t1 - ph.t0;
     const s = S(poi.lat, poi.lng);
-    const pop = TG ? clamp01((tgP - 0.85) / 0.15) : clamp01((t - ph.t0 - 0.55 * d) / 0.5);
-    const sc = i === curIdx ? easeOutBack(pop) : (t >= ph.t1 ? (ph.radar ? 0.95 : 0.8) : easeOutBack(pop));
+    const pop = SP ? clamp01((spokeP(i) - 0.85) / 0.15) : clamp01((t - ph.t0 - (ph.radar ? 0.3 : 0.55) * d) / 0.5);
+    const sc = i === curIdx && !SP ? easeOutBack(pop) : (t >= ph.t1 ? (tl.flow !== 'lanluot' ? 0.95 : 0.8) : easeOutBack(pop));
     drawPoiPin(ctx, s.x, s.y, poi.cat, sc * depthScale(s.w), 1, iconOf(poi));
   });
 
@@ -2191,16 +2269,6 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     boundaryCard(ctx, tl, B, fadeWin(t, bp.t0 + 0.62 * d, bp.t1 + 0.3, 0.6, 0.4));
   }
 
-  // Thẻ diện tích lô đất lúc giới thiệu căn nhà
-  if (lotShape) {
-    const hd = ho.t1 - ho.t0;
-    const la = fadeWin(t, ho.t0 + 0.55 * hd, ov.t0 + 0.6, 0.4, 0.5);
-    if (la > 0) {
-      const cs = g2s(P, lotShape.c.x, lotShape.c.y + lotShape.r * 1.15);
-      chip(ctx, Math.max(safe.x + 70, Math.min(LW - safe.x - 70, cs.x)), Math.min(LH - safe.bottom - 30, cs.y + 22), `LÔ ĐẤT · ${String(scene.info?.area || '').trim() || formatArea(tl.lotArea)}`, la, GOLD);
-    }
-  }
-
   // Ghim căn nhà
   const dropT = t >= ho.t0 ? (t - ho.t0) / 0.75 : 0;
   if (t > tl.intro.t0 + tl.intro.hold + (tl.intro.t1 - tl.intro.t0 - tl.intro.hold) * 0.6 || dropT > 0) drawHousePin(ctx, hs.x, hs.y, dropT, t, depthScale(hs.w));
@@ -2239,7 +2307,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   const avoid = [{ x: hs.x - 26, y: hs.y - 64, w: 52, h: 68 }];
   if (logo) avoid.push(logo);
   if (capL) avoid.push(capL);
-  tl.poiPhases.forEach((ph, i) => {
+  if (tl.flow === 'lanluot') tl.poiPhases.forEach((ph, i) => {
     const d = ph.t1 - ph.t0;
     const a = fadeWin(t, ph.t0 + 0.6 * d, ph.t1 + 0.2, 0.4, 0.3);
     if (a <= 0) return;
@@ -2248,20 +2316,76 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     poiCard(ctx, poi, s.x, s.y, a, tl, avoid);
   });
 
-  // Chế độ quét vòng tròn: tiện ích đã hiện giữ nhãn tên + khoảng cách nhỏ cạnh ghim
-  if (tl.radarPh) {
-    const endA = sm ? Math.max(0, 1 - (t - sm.t0 - 0.2) / 0.5) : 1;
+  // Quét vòng tròn / mũi tên: nhãn dán cạnh ghim (tên + khoảng cách), tự tránh đè nhau, đè chữ, đè nhà
+  if (tl.flow !== 'lanluot') {
+    const endA = t >= ou.t0 ? Math.max(0, 1 - (t - ou.t0) / 0.5) : 1;
+    const placed = avoid.slice();
+    placed.push({ x: hs.x - 30, y: hs.y - 70, w: 60, h: 76 });
+    if (sumP > 0.05) placed.push(tl.fmt === 'h' ? { x: LW - safe.x - 384, y: 0, w: 400, h: LH } : { x: 0, y: LH - safe.bottom - tl.panelH, w: LW, h: tl.panelH + safe.bottom });
+    const bounds = { x0: safe.x + 6, x1: LW - safe.x - 6, y0: safe.top + 8, y1: LH - safe.bottom - 8 };
+    const items = [];
     tl.poiPhases.forEach((ph, i) => {
-      if ((TG ? tgP < 1 : t < ph.t1 - 0.05) || t >= ou.t0) return;
       const poi = tl.pois[i];
-      const s = S(poi.lat, poi.lng);
-      const nm = String(poi.name || '').replace(/^(trường|bệnh viện|siêu thị|ủy ban nhân dân|uỷ ban nhân dân)\s+/i, m => m.split(' ')[0] + ' ');
-      const short = nm.length > 20 ? nm.slice(0, 19) + '…' : nm;
-      const km = poi.route ? formatKm(poi.route.km) : formatKm(poi.km, true, '≈ ');
-      const y = s.y - 30 * depthScale(s.w);
-      if (Math.abs(s.x - hs.x) < 40 && Math.abs(y - hs.y) < 50) return;
-      chip(ctx, Math.max(safe.x + 60, Math.min(LW - safe.x - 60, s.x)), y, `${short} · ${km}`, Math.min(endA, TG ? clamp01((t - TG.t1 + 0.9) / 0.4) : clamp01((t - ph.t1 + 0.05) / 0.3)), CAT_COLORS[poi.cat] || ST.acc);
+      const shown = SP ? spokeP(i) >= 1 : t >= ph.t0 + 0.35 * (ph.t1 - ph.t0);
+      if (!shown) return;
+      const cur = t >= ph.t0 && t < ph.t1;
+      const a = Math.min(endA, SP ? clamp01((t - SP.t0 - 0.45 - i * 0.45 - 0.6) / 0.3) : clamp01((t - ph.t0 - 0.35 * (ph.t1 - ph.t0)) / 0.3));
+      items.push({ poi, i, cur, a });
     });
+    // Nhãn đang nói tới đặt trước để luôn có chỗ đẹp nhất
+    items.sort((x, y) => (y.cur - x.cur) || (x.poi.km - y.poi.km));
+    for (const it of items) {
+      const { poi, cur, a } = it;
+      if (a <= 0.01) continue;
+      const s = S(poi.lat, poi.lng);
+      const nm = String(poi.name || '');
+      const short = cur ? (nm.length > 30 ? nm.slice(0, 29) + '…' : nm) : (nm.length > 22 ? nm.slice(0, 21) + '…' : nm);
+      const km = poi.route ? formatKm(poi.route.km) : formatKm(poi.km, true, '≈ ');
+      const col = CAT_COLORS[poi.cat] || ST.acc;
+      ctx.save();
+      const fs = cur ? 14.5 : 12;
+      ctx.font = `800 ${fs}px ${FONT}`;
+      const kmW = ctx.measureText(km).width;
+      ctx.font = `700 ${fs}px ${FONT}`;
+      const nameW = ctx.measureText(short).width;
+      const sub = cur ? CATEGORIES[poi.cat]?.short || '' : '';
+      const w = Math.ceil(nameW + kmW + 34), h = cur ? (sub ? 46 : 32) : 26;
+      const pinTop = s.y - 34 * depthScale(s.w);
+      const cands = [
+        [s.x - w / 2, pinTop - h - 6], [s.x - w / 2, s.y + 8], [s.x + 18, pinTop - h / 2 + 8], [s.x - w - 18, pinTop - h / 2 + 8],
+        [s.x + 14, pinTop - h - 4], [s.x - w - 14, pinTop - h - 4], [s.x + 14, s.y + 6], [s.x - w - 14, s.y + 6],
+        [s.x - w / 2, pinTop - h - 40], [s.x - w / 2, s.y + 40],
+      ];
+      let best = null;
+      for (const [x0, y0] of cands) {
+        const r = { x: Math.max(bounds.x0, Math.min(bounds.x1 - w, x0)), y: Math.max(bounds.y0, Math.min(bounds.y1 - h, y0)), w, h };
+        const hits = placed.reduce((n, o) => n + (r.x < o.x + o.w + 4 && r.x + r.w + 4 > o.x && r.y < o.y + o.h + 4 && r.y + r.h + 4 > o.y ? 1 : 0), 0);
+        if (!best || hits < best.hits) best = { r, hits };
+        if (!hits) break;
+      }
+      // Nhãn phụ không có chỗ trống thì ẩn (không đè); nhãn đang nói tới luôn hiện
+      if (best.hits && !cur) { ctx.restore(); continue; }
+      const r = best.r;
+      placed.push(r);
+      ctx.globalAlpha = a;
+      // đường dẫn mảnh từ nhãn về ghim khi nhãn bị đẩy xa
+      const cx = Math.max(r.x, Math.min(r.x + r.w, s.x)), cy = Math.max(r.y, Math.min(r.y + r.h, pinTop));
+      if (Math.hypot(cx - s.x, cy - pinTop) > 22) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(s.x, pinTop + 6); ctx.stroke();
+      }
+      roundRect(ctx, r.x, r.y, r.w, r.h, cur ? 10 : 8);
+      ctx.fillStyle = ST.card; ctx.fill();
+      ctx.lineWidth = cur ? 2 : 1.2; ctx.strokeStyle = col; ctx.stroke();
+      ctx.fillStyle = col;
+      roundRect(ctx, r.x, r.y, 5, r.h, 3); ctx.fill();
+      ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      const ty = sub ? r.y + r.h - 15 : r.y + r.h / 2 + 0.5;
+      if (sub) { ctx.font = `800 9.5px ${FONT}`; ctx.fillStyle = col; ctx.fillText(sub, r.x + 13, r.y + 13); }
+      ctx.font = `700 ${fs}px ${FONT}`; ctx.fillStyle = ST.ink; ctx.fillText(short, r.x + 13, ty);
+      ctx.font = `800 ${fs}px ${FONT}`; ctx.fillStyle = ST.light ? ST.ink : GOLD; ctx.fillText(km, r.x + 21 + nameW, ty);
+      ctx.restore();
+    }
   }
   if (sm) drawSummary(ctx, tl, sumP);
   drawBrand(ctx, tl, scene.brand, scene.phone, brandA);
@@ -2301,7 +2425,7 @@ export function lotAreaM2(pts) {
 }
 export const formatArea = m2 => (m2 >= 10000 ? (m2 / 10000).toFixed(2).replace('.', ',') + ' ha' : Math.round(m2).toLocaleString('vi-VN') + ' m²');
 
-export function renderEdit(ctx, house, fmtKey, { cache, scale = 1, lot = null, mode = 'pin' }, zoom = mode === 'lot' ? 18.5 : 17) {
+export function renderEdit(ctx, house, fmtKey, { cache, scale = 1, lot = null, mode = 'pin', zoom: zIn = null }, zoom = zIn ?? (mode === 'lot' ? 18.5 : 17)) {
   const { LW, LH } = FORMATS[fmtKey];
   const cam = { lat: house.lat, lng: house.lng, zoom };
   ctx.setTransform(scale, 0, 0, scale, LW / 2 * scale, LH / 2 * scale);
@@ -2326,7 +2450,8 @@ export function renderEdit(ctx, house, fmtKey, { cache, scale = 1, lot = null, m
     }
     ctx.restore();
   }
-  if (mode !== 'lot') drawHousePin(ctx, LW / 2, LH / 2, 1, (typeof performance !== 'undefined' ? performance.now() : 0) / 1000);
+  // Ghim căn nhà luôn hiện (cả khi vẽ lô) để khách biết đang ở đúng chỗ
+  drawHousePin(ctx, LW / 2, LH / 2, 1, (typeof performance !== 'undefined' ? performance.now() : 0) / 1000, mode === 'lot' ? 0.8 : 1);
   ctx.save();
   ctx.font = `700 14px ${FONT}`;
   const txt = mode === 'lot' ? 'Chạm lần lượt từng góc lô đất' : 'Chạm vào đúng căn nhà để dời ghim';
