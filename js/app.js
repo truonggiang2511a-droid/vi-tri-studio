@@ -52,6 +52,8 @@ const state = {
   flow: 'lanluot',   // cách hiện tiện ích: lanluot | radar
   lot: [],           // ranh lô đất khách tự vẽ [{lat,lng}]
   lotText: '',       // chữ 3D nằm trên lô
+  adminArea: null,   // ranh xã/phường + tỉnh {ward, province} (KHÁC state.area = diện tích khách nhập)
+  areaWard: '', areaProv: '', roadWidth: '',
   lotArea: '',       // diện tích hiển thị (trống = tự tính)
   stars: [],         // id tiện ích được khoanh vùng nổi bật
   pageVideo: '',     // link video đã đăng (gắn vào trang web căn nhà)
@@ -168,6 +170,12 @@ function buildScene() {
     lot: state.lot && state.lot.length >= 3 ? state.lot : null,
     lotLabel: { text: state.lotText, area: state.lotArea },
     streets: state.streets || null,
+    adminArea: state.adminArea ? {
+      ward: state.adminArea.ward, province: state.adminArea.province,
+      wardName: (state.areaWard || '').trim() || state.adminArea.ward?.name || state.admin?.commune || '',
+      provName: (state.areaProv || '').trim() || state.adminArea.province?.name || state.admin?.province || '',
+    } : null,
+    roadWidth: (state.roadWidth || '').trim(),
     roadTheme: state.roadTheme,
     routeTheme: state.routeTheme,
   };
@@ -398,6 +406,10 @@ function toggleEdit(on, mode = 'pin') {
   updateBigPlay();
 }
 
+function updateAreaPlaceholders() {
+  $('areaWardInput').placeholder = state.adminArea?.ward?.name || state.admin?.commune || 'Tự lấy theo vị trí';
+  $('areaProvInput').placeholder = state.adminArea?.province?.name || state.admin?.province || 'Tự lấy theo vị trí';
+}
 function updateLotMsg() {
   const n = state.lot.length;
   $('lotMsg').textContent = n === 0 ? 'Chạm lần lượt các góc lô đất trên ảnh.' : n < 3 ? `Đã chấm ${n} góc, chấm thêm ${3 - n} góc nữa.` : `Lô đất ${n} góc · khoảng ${formatArea(lotAreaM2(state.lot))}`;
@@ -461,7 +473,7 @@ function setHouse(h) {
   if (moved > 0.3 && state.lot?.length) state.lot = [];
   if (moved > 0.5) {
     if (state.pois.length) toast('Đã đổi vị trí. Bấm Quét tiện ích để tìm lại quanh căn nhà mới.');
-    state.pois = []; state.roads = []; state.streets = null; state.selected = []; state.selectedRoads = []; state.routes = {}; state.admin = null;
+    state.pois = []; state.roads = []; state.streets = null; state.adminArea = null; state.selected = []; state.selectedRoads = []; state.routes = {}; state.admin = null;
     state.cloudId = null; state.projName = '';
     renderLists();
   } else if (moved > 0.001) {
@@ -489,6 +501,8 @@ async function scan() {
     state.pois = [...res.pois, ...manual];
     state.roads = res.roads;
     state.streets = res.streets || null;
+    state.adminArea = res.area || null;
+    updateAreaPlaceholders();
     state.selected = [...autoPick(res.pois), ...manual.map(p => p.id)].slice(0, MAX_POIS);
     state.selectedRoads = state.roads.slice(0, 3).map(x => x.id);
     state.routes = {};
@@ -1239,7 +1253,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'roadWidth', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -1951,6 +1965,11 @@ function init() {
   bindSeg('flowSeg', v => { state.flow = v; scheduleRebuild(); });
   bindSeg('qualSeg', v => { state.quality = v; save(); });
   $('titleInput').addEventListener('input', e => { state.title = e.target.value; scheduleRebuild(); });
+  for (const [id, key] of [['areaWardInput', 'areaWard'], ['areaProvInput', 'areaProv'], ['roadWidthInput', 'roadWidth']]) {
+    $(id).value = state[key] || '';
+    $(id).addEventListener('input', e => { state[key] = e.target.value; scheduleRebuild(); });
+  }
+  updateAreaPlaceholders();
   $('brandInput').addEventListener('input', e => { state.brand = e.target.value; scheduleRebuild(); });
   $('musicFile').addEventListener('change', e => pickAudio('music', e.target.files[0]));
   $('musicLib').innerHTML = '<option value="">— Không dùng —</option>' + MUSIC_LIB.map(x => `<option value="${x.id}">${esc(x.label)}</option>`).join('');

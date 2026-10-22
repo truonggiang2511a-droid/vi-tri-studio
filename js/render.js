@@ -528,7 +528,19 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   const hook = makeHook(scene, roads, pois);
   const HOLD = hook ? 2.7 : 0;
   const raw = [];
-  raw.push({ type: 'intro', d: 5.0 + HOLD, hold: HOLD, to: camHouseTop, move: 1, vkey: 'intro' });
+  // Có ranh xã/phường: mở đầu khoanh vùng tỉnh → xã/phường (ngoài vùng tối lại) rồi mới zoom vào căn nhà/lô đất
+  const AREA = scene.adminArea && scene.adminArea.ward && scene.adminArea.ward.rings && scene.adminArea.ward.rings.length ? scene.adminArea : null;
+  let camArea = null;
+  if (AREA) {
+    const pts = [];
+    for (const r of AREA.ward.rings) for (let i = 0; i < r.length; i += Math.max(1, Math.floor(r.length / 60))) pts.push({ lat: r[i][0], lng: r[i][1] });
+    pts.push(H);
+    camArea = fitCam(pts, LW, LH, { left: safe.x + 24, right: safe.x + 24, top: safe.top + 110, bottom: safe.bottom + 90 }, 18, 9, 15.6);
+  }
+  if (AREA && camArea) {
+    raw.push({ type: 'intro', d: 3.6 + HOLD, hold: HOLD, to: camArea, move: 1, vkey: 'intro' });
+    raw.push({ type: 'area', d: 3.6, to: camArea, move: 0, drift: 0.035, vkey: 'area' });
+  } else raw.push({ type: 'intro', d: 5.0 + HOLD, hold: HOLD, to: camHouseTop, move: 1, vkey: 'intro' });
   // Có lô đất / đường quanh nhà: giữ cảnh cận lâu hơn cho khách nhìn kỹ rồi mới lùi ra bán kính
   const hasStreets = !!(scene.streets && scene.streets.lines && scene.streets.lines.length);
   raw.push({ type: 'house', d: lot ? 7.2 : hasStreets ? 5.2 : 3.8, to: camHouse, move: lot ? 0.5 : 0.8, drift: lot || hasStreets ? 0.025 : 0, vkey: 'house' });
@@ -609,7 +621,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     fmt: fmtKey, LW, LH, safe, duration: t, phases, scene, panelH,
     G: groundDims(LW, LH),
     intro: first('intro'), house: first('house'), overview: first('overview'), boundaryPh: first('boundary'),
-    summary: first('summary'), outro: first('outro'), photosPh: first('photos'), photos, radarPh: first('radar'), flow: radar ? 'radar' : 'lanluot',
+    summary: first('summary'), outro: first('outro'), photosPh: first('photos'), photos, radarPh: first('radar'), areaPh: first('area'), flow: radar ? 'radar' : 'lanluot',
     roadPhases: phases.filter(p => p.type === 'road'), poiPhases: phases.filter(p => p.type === 'poi'),
     pois, roads, boundary, captions, hook, lot, lotArea: lot ? lotAreaM2(lot) : 0,
   };
@@ -1954,6 +1966,71 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     }
   }
 
+  // Khoanh vùng hành chính ở cảnh mở đầu: tỉnh/thành (viền đứt) rồi xã/phường (viền sáng), ngoài vùng tối lại
+  const ARP = tl.areaPh, AR = scene.adminArea;
+  if (ARP && AR) {
+    const it = tl.intro;
+    const i0 = it.t0 + (it.hold || 0);
+    const provA = fadeWin(t, i0, ARP.t0 + 0.6, 0.6, 0.9);
+    const wardA = fadeWin(t, i0 + 0.5 * (it.t1 - i0), ho.t0 + 0.45 * (ho.t1 - ho.t0), 0.7, 1.0);
+    const ringPath = rings => {
+      const pth = new Path2D();
+      for (const r of rings) r.forEach((p, i) => { const q = gLL(v, p[0], p[1]); i ? pth.lineTo(q.x, q.y) : pth.moveTo(q.x, q.y); });
+      return pth;
+    };
+    const R0 = rect;
+    const dim = (pth, a) => {
+      const m = new Path2D();
+      m.rect(R0.x0 - 50, R0.y0 - 50, R0.x1 - R0.x0 + 100, R0.y1 - R0.y0 + 100);
+      m.addPath(pth);
+      g.fillStyle = `rgba(4,8,12,${0.62 * a})`;
+      g.fill(m, 'evenodd');
+    };
+    g.save();
+    if (provA > 0.01 && AR.province?.rings?.length) {
+      const pp = ringPath(AR.province.rings);
+      dim(pp, provA * (1 - wardA));
+      g.globalAlpha = provA; g.setLineDash([10, 7]); g.lineDashOffset = -t * 20;
+      g.strokeStyle = '#ffffff'; g.lineWidth = 2.4; g.shadowColor = 'rgba(0,0,0,0.6)'; g.shadowBlur = 6; g.stroke(pp);
+      g.setLineDash([]); g.shadowBlur = 0;
+    }
+    if (wardA > 0.01 && AR.ward?.rings?.length) {
+      const wp = ringPath(AR.ward.rings);
+      g.globalAlpha = 1;
+      dim(wp, wardA);
+      const draw = clamp01((t - i0 - 0.5 * (it.t1 - i0)) / 1.6);
+      g.globalAlpha = wardA * 0.18; g.fillStyle = ST.acc2; g.fill(wp, 'evenodd');
+      g.globalAlpha = wardA * 0.45; g.strokeStyle = GOLD; g.lineWidth = 12; g.lineJoin = 'round'; g.stroke(wp);
+      g.globalAlpha = wardA * (0.5 + 0.5 * draw); g.strokeStyle = '#ffffff'; g.lineWidth = 3; g.shadowColor = GOLD; g.shadowBlur = 14; g.stroke(wp);
+      g.shadowBlur = 0;
+    }
+    g.restore();
+    // Tên xã/phường + tỉnh/thành: chữ 3D nằm trên bản đồ, đặt trong vùng xã/phường, không tràn khung
+    const nameA = Math.min(wardA, fadeWin(t, ARP.t0 - 0.4, ho.t0 + 0.3 * (ho.t1 - ho.t0), 0.6, 0.7));
+    const wName = String(AR.wardName || '').toUpperCase(), pName = String(AR.provName || '').toUpperCase();
+    if (nameA > 0.01 && (wName || pName)) {
+      const rise = easeOut(clamp01((t - ARP.t0 + 0.4) / 0.9));
+      let sx = 0, sy = 0, n = 0;
+      for (const r of AR.ward.rings) for (const p of r) { const q = gLL(v, p[0], p[1]); sx += q.x; sy += q.y; n++; }
+      // đặt tên lệch lên trên căn nhà một chút để không đè ghim
+      const cx = n ? (sx / n) * 0.5 + hg.x * 0.5 : hg.x, cy = Math.min(n ? sy / n : hg.y, hg.y - 70);
+      g.save();
+      g.globalAlpha = nameA;
+      g.font = `800 100px ${FONT}`;
+      const ww = (g.measureText(wName).width + 7 * wName.length) / 100, pw = (g.measureText(pName).width + 7 * pName.length) / 100 * 0.62;
+      const sz = Math.max(16, Math.min(40, (LW * 0.8) / Math.max(ww, pw, 0.1)));
+      const t3 = (text, z, y, col, side) => {
+        if (!text) return;
+        g.save(); g.translate(cx, y);
+        text3D(g, text, z, { faceTop: '#FFFFFF', faceBot: col, side, depth: z * 0.26 * rise, ex: 0, ey: 1, sp: z * 0.07, glow: 'rgba(0,0,0,0.75)', stroke: 'rgba(0,0,0,0.35)', outline: 'rgba(8,10,14,0.9)' });
+        g.restore();
+      };
+      t3(wName, sz, cy - sz * 0.4, '#E8FBFF', shade('#5EEAF5', 0.45));
+      t3(pName, sz * 0.62, cy + sz * 0.62, '#FFF1C9', shade('#FFD166', 0.45));
+      g.restore();
+    }
+  }
+
   // Đường quanh nhà kiểu đường nhựa (viền sáng, mặt nhựa, vạch giữa) ở cảnh giới thiệu căn nhà
   const STR = scene.streets;
   if (STR && STR.lines && STR.lines.length) {
@@ -1982,7 +2059,8 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       const fr = STR.front;
       if (fr) {
         const nm = String(fr.name || '');
-        const text = (/^(đường|hẻm|ngõ|kiệt|quốc lộ|tỉnh lộ|đại lộ)\b/i.test(nm) ? nm : 'Đường ' + nm).toUpperCase();
+        const rw = String(scene.roadWidth || '').trim().replace(/^(\d+(?:[.,]\d+)?)\s*$/, '$1M');
+        const text = (/^(đường|hẻm|ngõ|kiệt|quốc lộ|tỉnh lộ|đại lộ)\b/i.test(nm) ? nm : 'Đường ' + nm).toUpperCase() + (rw ? ' · ' + rw.toUpperCase() : '');
         const rise = clamp01((t - ho.t0 - 0.3 * hd0) / 0.8);
         groundText(g, v, { text, size: Math.min(30, Math.max(16, 360 / Math.max(8, text.length))), at: fr.at, a: fr.a, b: fr.b }, '#FFD166', sA * clamp01(rise * 1.5), easeOut(rise));
       }

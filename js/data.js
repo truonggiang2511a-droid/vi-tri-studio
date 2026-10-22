@@ -741,9 +741,24 @@ export async function loadStreets(center, signal, maxKm = 0.35) {
   return { lines: lines.slice(0, 400), front: front && front.km < 0.12 ? front : null };
 }
 
+// Ranh xã/phường + tỉnh chứa căn nhà (máy chủ /api/map/area). Lỗi thì bỏ qua, video vẫn dựng như cũ.
+export async function loadAdminArea(center, signal) {
+  const T = withTimeout(20000, signal);
+  try {
+    const r = await fetch(`/api/map/area?lat=${center.lat.toFixed(5)}&lng=${center.lng.toFixed(5)}`, { signal: T.signal });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j.ward || j.province ? j : null;
+  } catch (e) {
+    if (signal?.aborted) throw e;
+    return null;
+  } finally { T.done(); }
+}
+
 // ---------- Quét toàn bộ ----------
 export async function scanArea(center, radiusKm, signal, onProgress) {
   const streetJob = loadStreets(center, signal).catch(e => { if (signal?.aborted) throw e; return null; });
+  const areaJob = loadAdminArea(center, signal).catch(e => { if (signal?.aborted) throw e; return null; });
   const kcnJob = findIndustrial(center, radiusKm, signal).catch(e => { if (signal?.aborted) throw e; return []; });
   const ovtJob = loadOverture(center, radiusKm, signal).catch(e => { if (signal?.aborted) throw e; return []; });
   const vmJob = loadVietmap(center, radiusKm, signal).catch(e => { if (signal?.aborted) throw e; return []; });
@@ -763,7 +778,7 @@ export async function scanArea(center, radiusKm, signal, onProgress) {
     pois.push(z);
   }
   pois.sort((a, b) => a.km - b.km);
-  return { pois, roads: buildRoads(raw.roads, center, radiusKm), admin, streets: await streetJob };
+  return { pois, roads: buildRoads(raw.roads, center, radiusKm), admin, streets: await streetJob, area: await areaJob };
 }
 
 // ---------- Khu công nghiệp ----------
