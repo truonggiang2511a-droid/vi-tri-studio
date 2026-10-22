@@ -49,7 +49,7 @@ const state = {
   fitVoice: true,
   style: 'neon',     // phong cách video
   base: 'vetinh',    // nền bản đồ
-  flow: 'lanluot',   // cách hiện tiện ích: lanluot | radar | tiaxa
+  flow: 'lanluot',   // cách hiện tiện ích: lanluot | radar
   lot: [],           // ranh lô đất khách tự vẽ [{lat,lng}]
   lotText: '',       // chữ 3D nằm trên lô
   lotArea: '',       // diện tích hiển thị (trống = tự tính)
@@ -1796,8 +1796,8 @@ function init() {
   setSeg('typeSeg', state.typeLabel);
   setSeg('fmtSeg', state.fmt);
   setSeg('speedSeg', state.speed);
-  if (state.flow === 'cungluc') state.flow = 'tiaxa';
-  setSeg('flowSeg', ['radar', 'tiaxa'].includes(state.flow) ? state.flow : 'lanluot');
+  if (['cungluc', 'tiaxa'].includes(state.flow)) state.flow = 'radar';
+  setSeg('flowSeg', state.flow === 'radar' ? 'radar' : 'lanluot');
   setSeg('qualSeg', state.quality);
   $('canvasWrap').dataset.fmt = state.fmt;
   updateScanLabel();
