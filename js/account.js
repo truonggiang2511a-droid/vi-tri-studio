@@ -41,6 +41,7 @@ const S = {
   profile: null,
   info: null,          // gói, ngân hàng, số lượt dùng thử
   reexportUntil: null, // còn được xuất lại miễn phí vị trí hiện tại tới lúc nào
+  redo: null,          // số lần còn lại ở vị trí hiện tại {exports_left, tts_left, until}
   loc: null,
   order: null,         // đơn đang chờ thanh toán
   ref: null,           // mã giới thiệu của mình + số người đã mời
@@ -85,7 +86,7 @@ function setSession(token, profile) {
   emit();
 }
 function clearSession() {
-  S.token = null; S.profile = null; S.reexportUntil = null; S.order = null;
+  S.token = null; S.profile = null; S.reexportUntil = null; S.redo = null; S.order = null;
   writeToken(null);
   emit();
 }
@@ -105,6 +106,7 @@ export async function refreshAccount() {
     }
     S.profile = r.profile;
     S.reexportUntil = r.reexport_until;
+    S.redo = r.redo || null;
     S.ref = r.ref || null;
     S.leadsNew = r.leads_new || 0;
     S.tgLinked = !!r.tg_linked;
@@ -196,12 +198,12 @@ function renderBadge() {
     const trial = S.info?.trial_credits ?? 3;
     if (!p) {
       note.innerHTML = `Đăng ký miễn phí để nhận <strong>${trial} video</strong> dùng thử. <button type="button" class="link-btn" data-act="register">Đăng ký</button>`;
-    } else if (S.reexportUntil && new Date(S.reexportUntil) > new Date()) {
-      note.innerHTML = `Vị trí này xuất lại <strong>miễn phí</strong> tới ${fmtDate(S.reexportUntil)}.`;
+    } else if (S.redo && new Date(S.redo.until) > new Date() && (S.redo.exports_left > 0 || S.redo.tts_left > 0)) {
+      note.innerHTML = `Căn này còn <strong>${S.redo.exports_left} lần xuất</strong> và <strong>${S.redo.tts_left} lần tạo giọng</strong> không trừ lượt (tới ${fmtDate(S.redo.until)}).`;
     } else if (p.unlimited) {
       note.innerHTML = `Gói không giới hạn tới ${fmtDate(p.unlimited_until, false)}.`;
     } else if (p.credits > 0) {
-      note.innerHTML = `Còn <strong>${p.credits} lượt</strong>. Mỗi vị trí trừ 1 lượt, xuất lại trong 24 giờ không trừ thêm.`;
+      note.innerHTML = `Còn <strong>${p.credits} lượt</strong>. Mỗi lượt = 1 căn, gồm ${S.info?.redo_exports ?? 3} lần xuất video và ${S.info?.redo_tts ?? 3} lần tạo giọng AI trong ${S.info?.reexport_hours ?? 24} giờ.`;
     } else {
       note.innerHTML = promoOn()
         ? `Đã hết lượt. Mua lần đầu được <strong>giảm ${S.promo.percent}%</strong> (còn <span data-promo-left="min">${leftText(S.promo.until)}</span>). <button type="button" class="link-btn" data-act="buy">Xem gói ưu đãi</button>`
@@ -303,6 +305,7 @@ export async function beginExport(loc) {
         return null;
       }
       S.reexportUntil = r.until;
+      S.redo = r.redo || null;
       emit();
       if (r.charged || r.mode === 'unlimited') track('export');
       return r;

@@ -947,10 +947,15 @@ async function generateVoices() {
   if (!todo.length) { msg.textContent = 'Giọng đọc đã khớp với kịch bản hiện tại.'; return; }
   // Tạo giọng ở căn mới tính 1 lượt (xuất video căn này trong thời hạn xuất lại không mất thêm)
   const p0 = account.profile;
-  const freeHere = account.reexportUntil && new Date(account.reexportUntil) > new Date();
+  // Căn đã trừ lượt và còn lần tạo giọng → không hỏi; hết lần hoặc căn mới → báo sẽ trừ 1 lượt
+  const R = account.redo;
+  const freeHere = R && new Date(R.until) > new Date() && R.tts_left > 0;
   if (ai.gated && p0 && !p0.unlimited && !freeHere) {
-    if (p0.credits <= 0) { openPricing('Đã hết lượt. Mua thêm lượt để tạo giọng đọc và xuất video.'); return; }
-    if (!confirm(`Tạo giọng đọc sẽ dùng 1 lượt cho căn này (còn ${p0.credits} lượt).\nSau đó tạo lại giọng hoặc xuất video căn này trong 24 giờ không mất thêm lượt.\n\nTiếp tục?`)) return;
+    const info = account.info || {};
+    if (p0.credits <= 0) { openPricing(R ? 'Căn này đã dùng hết số lần tạo giọng. Mua thêm lượt để tạo lại.' : 'Đã hết lượt. Mua thêm lượt để tạo giọng đọc và xuất video.'); return; }
+    if (!confirm(`${R ? 'Căn này đã dùng hết số lần tạo giọng của lượt trước.\n' : ''}Tạo giọng đọc sẽ dùng 1 lượt cho căn này (còn ${p0.credits} lượt).\nMỗi lượt gồm ${info.redo_exports ?? 3} lần xuất video và ${info.redo_tts ?? 3} lần tạo giọng trong ${info.reexport_hours ?? 24} giờ.\n\nTiếp tục?`)) return;
+  } else if (freeHere) {
+    $('ttsMsg').textContent = `Lần tạo giọng này không trừ lượt (còn ${R.tts_left} lần cho căn này).`;
   }
   ttsBusy = true;
   const btn = $('ttsBtn');
@@ -1078,7 +1083,8 @@ async function doExport() {
   try { gate = await beginExport(state.house); }
   finally { gating = false; $('exportBtn').disabled = false; }
   if (!gate) return;
-  if (gate.charged) toast(`Đã trừ 1 lượt, còn ${gate.profile.credits} lượt. Xuất lại vị trí này trong 24 giờ không trừ thêm.`, 4200);
+  if (gate.charged) toast(`Đã trừ 1 lượt, còn ${gate.profile.credits} lượt. Căn này còn ${gate.redo?.exports_left ?? 2} lần xuất lại không trừ lượt.`, 4500);
+  else if (gate.mode === 'reexport' && gate.redo) toast(`Xuất lại không trừ lượt. Căn này còn ${gate.redo.exports_left} lần xuất lại.`, 3500);
   pause();
   toggleEdit(false);
   exporting = true;
@@ -1139,7 +1145,7 @@ async function doExport() {
     else toast('Đã dựng xong video.');
     $('resultBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (e) {
-    const keep = gate?.charged || gate?.mode === 'unlimited' ? ' Lượt đã trừ vẫn giữ: xuất lại vị trí này trong 24 giờ không mất thêm lượt.' : '';
+    const keep = gate?.charged || gate?.mode === 'unlimited' ? ` Lượt đã trừ vẫn giữ: căn này còn ${gate.redo?.exports_left ?? 0} lần xuất lại không trừ lượt.` : '';
     if (e.name === 'AbortError') toast('Đã huỷ xuất video.' + keep, keep ? 5000 : 2600);
     else { console.error(e); toast('Xuất video lỗi: ' + (e.message || e) + keep, 7000); }
   } finally {
