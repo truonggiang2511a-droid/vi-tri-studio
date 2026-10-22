@@ -654,8 +654,16 @@ function scriptSeedBase() {
   const h = state.house ? Math.round(Math.abs(state.house.lat * 1e4) + Math.abs(state.house.lng * 1e4)) : 7;
   return h + (state.scriptSeed || 0) * 7;
 }
-const CAT_WORD = { truong: 'trường học', cho: 'chợ', yte: 'bệnh viện', kcn: 'khu công nghiệp', congvien: 'công viên', hanhchinh: 'cơ quan hành chính', giaothong: 'bến xe', nganhang: 'ngân hàng' };
-const CAT_RANK = ['truong', 'cho', 'yte', 'kcn', 'congvien', 'hanhchinh', 'giaothong', 'nganhang'];
+const CAT_WORD = { truong: 'trường học', cho: 'chợ', yte: 'bệnh viện', kcn: 'khu công nghiệp', khudothi: 'khu đô thị', congvien: 'công viên', hanhchinh: 'cơ quan hành chính', giaothong: 'nhà ga, bến xe', congcong: 'tiện ích công cộng', nganhang: 'ngân hàng' };
+const CAT_RANK = ['truong', 'cho', 'yte', 'kcn', 'khudothi', 'congvien', 'hanhchinh', 'giaothong', 'congcong', 'nganhang'];
+// Câu riêng theo loại cụ thể (ưu tiên hơn câu theo nhóm)
+const KIND_LINES = {
+  airport: ['Cách {n} khoảng {d}, bay đi đâu cũng nhanh.', 'Ra {n} chỉ khoảng {d}, rất tiện cho người hay đi công tác.'],
+  station: ['{n} chỉ cách {d}, đi tàu, metro rất tiện.'],
+  beach: ['Chỉ {d} là ra {n}, sáng chiều tắm biển, hóng gió thoải mái.', 'Cách {n} chỉ {d}, sống gần biển trong lành.'],
+  charging_station: ['{n} cách {d}, xe điện sạc pin tiện lợi.'],
+  fuel: ['{n} chỉ cách {d}, đổ xăng tiện lợi.'],
+};
 const POI_LINES = {
   truong: ['Con đi học gần, chỉ {d} là tới {n}.', '{n} cách nhà chỉ {d}, đưa đón con rất tiện.', 'Chỉ {d} là tới {n}, con nhỏ đi học thoải mái.'],
   yte: ['{n} cách khoảng {d}, yên tâm khi cần khám chữa bệnh.', 'Cần khám bệnh đã có {n}, chỉ cách {d}.'],
@@ -664,6 +672,8 @@ const POI_LINES = {
   congvien: ['{n} cách {d}, cuối tuần cả nhà có chỗ vui chơi, thư giãn.', 'Chỉ {d} là tới {n}, nơi cả nhà đi dạo, thư giãn.'],
   kcn: ['{n} chỉ cách {d}, thuận tiện cho người đi làm, rất hợp đầu tư cho thuê.', 'Gần {n}, chỉ {d}, người đi làm đi lại dễ dàng.'],
   giaothong: ['{n} cách {d}, đi tỉnh, về quê đều tiện.'],
+  khudothi: ['Ngay cạnh {n}, chỉ cách {d}, hạ tầng đồng bộ, giá trị tăng tốt.', 'Chỉ {d} là tới {n}, khu dân trí cao, tiện ích đầy đủ.'],
+  congcong: ['{n} chỉ cách {d}, rất tiện cho sinh hoạt hằng ngày.', 'Chỉ {d} là tới {n}.'],
   nganhang: ['{n} chỉ cách {d}, giao dịch thuận tiện.'],
 };
 // Câu thông tin căn nhà: "Diện tích 5x20m, 3 phòng ngủ, sổ hồng riêng, giá chỉ 3,2 tỷ."
@@ -749,7 +759,7 @@ function scriptSegments() {
   const seen = {};
   for (const p of pois) {
     const k = seen[p.cat] = (seen[p.cat] || 0) + 1;
-    const pool = POI_LINES[p.cat] || ['{n}, cách khoảng {d}.'];
+    const pool = KIND_LINES[p.kind] || POI_LINES[p.cat] || ['{n}, cách khoảng {d}.'];
     add('poi:' + p.id, p.name, fill(pool[(seed + k + 1) % pool.length], { n: nameSpeak(p.name), d: kmSpeak(p.route ? p.route.km : p.km) }));
   }
   if (pois.length || b) add('summary', 'Tổng kết', pick([`Tất cả chỉ trong bán kính ${R} km quanh nhà, sống tiện, đi lại dễ.`, `Mọi tiện ích thiết yếu đều nằm trong bán kính ${R} km.`], 3));

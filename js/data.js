@@ -18,9 +18,15 @@ export const CATEGORIES = {
   hanhchinh: { label: 'Hành chính',        short: 'HÀNH CHÍNH', icon: 'gov',    order: 4 },
   congvien:  { label: 'Công viên / Thể thao', short: 'CÔNG VIÊN', icon: 'park', order: 5 },
   kcn:       { label: 'Khu công nghiệp',   short: 'KHU CÔNG NGHIỆP', icon: 'factory', order: 6 },
-  giaothong: { label: 'Bến xe',            short: 'GIAO THÔNG', icon: 'bus',    order: 7 },
-  nganhang:  { label: 'Ngân hàng',         short: 'NGÂN HÀNG',  icon: 'bank',   order: 8 },
+  khudothi:  { label: 'Khu đô thị',        short: 'KHU ĐÔ THỊ', icon: 'city',   order: 7 },
+  giaothong: { label: 'Sân bay / Nhà ga / Bến xe', short: 'GIAO THÔNG', icon: 'bus', order: 8 },
+  congcong:  { label: 'Công cộng (biển, trạm sạc…)', short: 'CÔNG CỘNG', icon: 'pin', order: 9 },
+  nganhang:  { label: 'Ngân hàng',         short: 'NGÂN HÀNG',  icon: 'bank',   order: 10 },
 };
+// Biểu tượng theo loại cụ thể trong nhóm (sân bay khác nhà ga, biển khác trạm sạc)
+const KIND_ICON = { airport: 'plane', aerodrome: 'plane', station: 'train', halt: 'train', subway: 'train', metro: 'train',
+  beach: 'beach', charging_station: 'plug', fuel: 'fuel' };
+export function iconOf(p) { return KIND_ICON[p?.kind] || CATEGORIES[p?.cat]?.icon || 'pin'; }
 
 // ---------- Tiện ích nhỏ ----------
 function withTimeout(ms, signal) {
@@ -177,6 +183,32 @@ function decodeTile(buf, z, x, y) {
       res.pois.push({ cls: pr.class, sub: pr.subclass, name: tidy(pr['name:vi'] || pr.name), lat, lng });
     }
   }
+  // Sân bay nằm ở lớp riêng; khu đô thị có tên ở lớp địa danh (place)
+  const ae = t.layers.aerodrome_label;
+  if (ae) {
+    for (let i = 0; i < ae.length; i++) {
+      const f = ae.feature(i);
+      const pr = f.properties;
+      if (!pr.name || f.type !== 1) continue;
+      const g = f.loadGeometry()[0]?.[0];
+      if (!g || g.x < 0 || g.y < 0 || g.x >= ae.extent || g.y >= ae.extent) continue;
+      const [lat, lng] = conv(g, ae.extent);
+      res.pois.push({ cls: 'aerodrome', sub: 'airport', name: tidy(pr['name:vi'] || pr.name), lat, lng });
+    }
+  }
+  const pl = t.layers.place;
+  if (pl) {
+    for (let i = 0; i < pl.length; i++) {
+      const f = pl.feature(i);
+      const pr = f.properties;
+      const nm = tidy(pr['name:vi'] || pr.name || '');
+      if (!nm || f.type !== 1 || !/^(khu đô thị|kđt\b|vinhomes|ecopark|phú mỹ hưng)/i.test(nm)) continue;
+      const g = f.loadGeometry()[0]?.[0];
+      if (!g || g.x < 0 || g.y < 0 || g.x >= pl.extent || g.y >= pl.extent) continue;
+      const [lat, lng] = conv(g, pl.extent);
+      res.pois.push({ cls: 'place', sub: 'urban', name: nm, lat, lng });
+    }
+  }
   const tn = t.layers.transportation_name;
   if (tn) {
     for (let i = 0; i < tn.length; i++) {
@@ -244,7 +276,7 @@ async function loadVietmap(center, radiusKm, signal) {
     if (!res.ok) return [];
     const j = await res.json();
     return (j.items || []).filter(x => x.cat && Number.isFinite(x.lat) && Number.isFinite(x.lng))
-      .map(x => ({ name: tidy(x.name), cat: x.cat, kind: x.cat, lat: x.lat, lng: x.lng, src: 'vm', address: x.address || '' }));
+      .map(x => ({ name: tidy(x.name), cat: x.cat, kind: x.kind || x.cat, lat: x.lat, lng: x.lng, src: 'vm', address: x.address || '' }));
   } catch (e) {
     if (signal?.aborted) throw e;
     return [];
@@ -304,16 +336,30 @@ function classifyPoi(p) {
   if (['park', 'stadium', 'sports_centre', 'garden'].includes(s) || c === 'stadium') return 'congvien';
   if (s === 'community_centre' && /(văn hóa|văn hoá|thể thao|thiếu nhi)/i.test(n)) return 'congvien';
   if (s === 'bus_station' || s === 'ferry_terminal' || (c === 'railway' && ['station', 'halt'].includes(s))) return 'giaothong';
+  if (c === 'aerodrome' || s === 'aerodrome' || (/^(sân bay|cảng hàng không)/i.test(n) && !['bus_stop', 'platform', 'parking', 'taxi', 'cafe', 'restaurant', 'hotel'].includes(s))) return 'giaothong';
+  if (/^(khu đô thị|kđt\b|vinhomes|ecopark|phú mỹ hưng|khu dân cư)/i.test(n) && !['cafe', 'restaurant', 'convenience'].includes(s)) return 'khudothi';
+  if (s === 'beach' || c === 'beach' || s === 'beach_resort' || /^(bãi biển|bãi tắm|biển )/i.test(n)) return 'congcong';
+  if (s === 'charging_station' || /^(trạm sạc|vinfast.*sạc)/i.test(n)) return 'congcong';
+  if (['library', 'cinema', 'theatre', 'museum'].includes(s)) return 'congcong';
   if (s === 'bank') return 'nganhang';
   return null;
 }
 
+// Loại cụ thể theo tên (để chọn biểu tượng + câu đọc): sân bay, nhà ga, biển, trạm sạc
+function kindFix(name, cat, kind) {
+  const n = String(name || '');
+  if (cat === 'giaothong' && /^(sân bay|cảng hàng không)/i.test(n)) return 'airport';
+  if (cat === 'giaothong' && /^(ga\b|nhà ga|ga metro|ga tàu)/i.test(n)) return 'station';
+  if (cat === 'congcong' && /^(bãi biển|bãi tắm|biển )/i.test(n)) return 'beach';
+  if (cat === 'congcong' && /^(trạm sạc|vinfast)/i.test(n)) return 'charging_station';
+  return kind;
+}
 function buildPois(raw, center, radiusKm, extra = []) {
   const out = [];
   for (const p of extra) {
     const km = haversineKm(center, p);
-    if (km > radiusKm * 1.02) continue;
-    out.push({ id: (p.src === 'vm' ? 'v' : 'o') + Math.round(p.lat * 1e5) + '_' + Math.round(p.lng * 1e5), name: p.name, cat: p.cat, kind: p.kind, lat: p.lat, lng: p.lng, km, src: p.src || 'ovt' });
+    if (km > (p.kind === 'airport' ? Math.max(30, radiusKm) : radiusKm * 1.02)) continue;
+    out.push({ id: (p.src === 'vm' ? 'v' : 'o') + Math.round(p.lat * 1e5) + '_' + Math.round(p.lng * 1e5), name: p.name, cat: p.cat, kind: kindFix(p.name, p.cat, p.kind), lat: p.lat, lng: p.lng, km, src: p.src || 'ovt' });
   }
   for (const p of raw) {
     const cat = classifyPoi(p);
@@ -321,8 +367,9 @@ function buildPois(raw, center, radiusKm, extra = []) {
     if (/^(nhà lồng|dãy|lô|sạp|kiosk|cổng|bãi xe|nhà xe)\b/i.test(p.name)) continue;
     if (cat === 'congvien' && p.sub === 'garden' && !/công viên|vườn hoa/i.test(p.name)) continue;
     const km = haversineKm(center, p);
-    if (km > radiusKm * 1.02) continue;
-    out.push({ id: 'p' + Math.round(p.lat * 1e5) + '_' + Math.round(p.lng * 1e5), name: p.name, cat, kind: p.sub, lat: p.lat, lng: p.lng, km });
+    // Sân bay ở xa vẫn là điểm cộng lớn: cho phép tới 30 km
+    if (km > (p.sub === 'airport' ? Math.max(30, radiusKm) : radiusKm * 1.02)) continue;
+    out.push({ id: 'p' + Math.round(p.lat * 1e5) + '_' + Math.round(p.lng * 1e5), name: p.name, cat, kind: kindFix(p.name, cat, p.sub), lat: p.lat, lng: p.lng, km });
   }
   out.sort((a, b) => a.km - b.km);
   // Bỏ trùng giữa hai nguồn: tên giống nhau (bỏ dấu, chứa nhau) gần nhau -> giữ một, lấy tên có dấu đầy đủ hơn
@@ -333,6 +380,8 @@ function buildPois(raw, center, radiusKm, extra = []) {
       if (k.id === p.id) return true;
       const fk = dkey(k.name);
       const same = fk === fp || (fk.length > 6 && fp.length > 6 && (fk.includes(fp) || fp.includes(fk)));
+      // Sân bay, nhà ga là khu rộng: cùng loại trong bán kính vài trăm mét là một điểm dù tên khác
+      if (k.cat === p.cat && k.kind === p.kind && ['airport', 'station'].includes(p.kind) && haversineKm(k, p) < (p.kind === 'airport' ? 2.5 : 0.4)) return true;
       return same && haversineKm(k, p) < (k.cat === p.cat ? 0.3 : 0.12);
     });
     if (dup) {
@@ -807,6 +856,9 @@ export async function searchPlaces(q, center, signal) {
 export function guessCategory(x) {
   const fake = { cls: x.key, sub: x.value, name: x.name };
   if (x.key === 'landuse' && x.value === 'industrial') return 'kcn';
+  if (x.key === 'aeroway' || /^(sân bay|cảng hàng không)/i.test(x.name)) return 'giaothong';
+  if (/^(khu đô thị|kđt\b|vinhomes|ecopark|khu dân cư)/i.test(x.name)) return 'khudothi';
+  if (/^(bãi biển|bãi tắm|trạm sạc|cây xăng|cửa hàng xăng dầu|thư viện|rạp)/i.test(x.name) || ['beach', 'charging_station', 'fuel'].includes(x.value)) return 'congcong';
   return classifyPoi(fake) || (KCN_NAME.test(x.name) ? 'kcn' : /trường|mầm non|đại học/i.test(x.name) ? 'truong'
     : /bệnh viện|phòng khám|trạm y tế/i.test(x.name) ? 'yte' : /chợ|siêu thị|trung tâm thương mại/i.test(x.name) ? 'cho' : 'congvien');
 }
@@ -817,11 +869,11 @@ export function autoPick(pois, max = 6) {
   const byCat = {};
   for (const p of pois) (byCat[p.cat] ||= []).push(p);
   // Khu công nghiệp là điểm cộng lớn với nhà đất vùng ven (thuê trọ, công nhân): ưu tiên trước hành chính, công viên
-  const order = ['truong', 'yte', 'cho', 'kcn', 'hanhchinh', 'congvien'];
+  const order = ['truong', 'yte', 'cho', 'kcn', 'khudothi', 'hanhchinh', 'congvien'];
   for (const c of order) {
     const arr = byCat[c];
     if (!arr?.length || picked.length >= max) continue;
-    if (c === 'giaothong' || c === 'nganhang') continue;
+    if (c === 'giaothong' || c === 'nganhang' || c === 'congcong') continue;
     let best = arr[0];
     if (c === 'yte') best = arr.find(p => p.kind === 'hospital') || arr[0];
     if (c === 'cho') best = arr.find(p => p.kind === 'marketplace' && p.km <= Math.max(1.5, arr[0].km * 1.5)) || arr[0];

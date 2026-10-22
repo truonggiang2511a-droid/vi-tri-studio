@@ -3,7 +3,7 @@
 // Mọi thứ phụ thuộc thời gian t nên cùng một hàm dùng cho xem trước và xuất video từng khung.
 import { project, unproject, haversineKm, metersPerPixel, formatKm, fitZoom } from './geo.js';
 import { drawIcon } from './icons.js';
-import { CATEGORIES } from './data.js';
+import { CATEGORIES, iconOf } from './data.js';
 
 export const BASE_FONT = '"Be Vietnam Pro", "Segoe UI", system-ui, sans-serif';
 export let FONT = BASE_FONT;
@@ -17,6 +17,7 @@ export const SPEEDS = { cham: 1, vua: 0.82, nhanh: 0.66 };
 export const CAT_COLORS = {
   truong: '#3D8BFF', yte: '#FF4D5E', cho: '#FF9F1C', hanhchinh: '#A78BFA',
   congvien: '#2FBF71', kcn: '#8FA3B8', giaothong: '#1FB8CC', nganhang: '#E9B949',
+  khudothi: '#F472B6', congcong: '#14B8A6',
 };
 const HOUSE = '#FF3B30';
 let GOLD = '#FFD166';
@@ -993,7 +994,7 @@ function spacedCaps(ctx, text, x, y, sp) {
   return cx;
 }
 
-function drawPoiPin(ctx, x, y, cat, s, alpha) {
+function drawPoiPin(ctx, x, y, cat, s, alpha, ic = null) {
   if (s <= 0.01) return;
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -1007,7 +1008,7 @@ function drawPoiPin(ctx, x, y, cat, s, alpha) {
   ctx.lineWidth = 2.6; ctx.strokeStyle = '#fff'; ctx.stroke();
   ctx.beginPath(); ctx.moveTo(-5, -2.5); ctx.lineTo(0, 3); ctx.lineTo(5, -2.5); ctx.closePath();
   ctx.fillStyle = '#fff'; ctx.fill();
-  drawIcon(ctx, CATEGORIES[cat]?.icon || 'house', 0, -15, 16, '#fff');
+  drawIcon(ctx, ic || CATEGORIES[cat]?.icon || 'house', 0, -15, 16, '#fff');
   ctx.restore();
 }
 
@@ -1269,7 +1270,7 @@ function drawSummary(ctx, tl, p) {
       ctx.fillStyle = '#fff';
       ctx.fillRect(x + 24, ry + 6, 2, 13);
       ctx.beginPath(); ctx.moveTo(x + 26, ry + 6); ctx.lineTo(x + 34, ry + 9); ctx.lineTo(x + 26, ry + 12); ctx.closePath(); ctx.fill();
-    } else drawIcon(ctx, CATEGORIES[r.cat].icon, x + 28, ry + 12, 13, '#fff');
+    } else drawIcon(ctx, iconOf(r), x + 28, ry + 12, 13, '#fff');
     ctx.font = `800 14px ${FONT}`;
     const dw = ctx.measureText(r.dist).width;
     ctx.fillStyle = CA();
@@ -2127,7 +2128,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     const s = S(poi.lat, poi.lng);
     const pop = TG ? clamp01((tgP - 0.85) / 0.15) : clamp01((t - ph.t0 - 0.55 * d) / 0.5);
     const sc = i === curIdx ? easeOutBack(pop) : (t >= ph.t1 ? (ph.radar ? 0.95 : 0.8) : easeOutBack(pop));
-    drawPoiPin(ctx, s.x, s.y, poi.cat, sc * depthScale(s.w), 1);
+    drawPoiPin(ctx, s.x, s.y, poi.cat, sc * depthScale(s.w), 1, iconOf(poi));
   });
 
   // Ranh giới: cờ qua ranh, chữ địa phận 3D, thẻ khoảng cách
