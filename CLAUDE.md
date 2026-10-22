@@ -34,6 +34,8 @@ Biến môi trường trên Cloudflare (Settings → Variables and Secrets). Kh�
 - **Máy quay luôn chuyển động**: `breathe()` cộng nhịp zoom/lia vào `camAt()` (KHÔNG cộng vào `camAtPhase`, vì pha sau lấy điểm cuối pha trước làm điểm đầu).
 - **Lô đất** (`state.lot`, `scene.lot`, ≥3 góc): chế độ sửa `editMode='lot'` ở zoom 18.5; video bay sát lô trong cảnh `house`, viền + sóng khoanh vùng, thẻ diện tích (`lotAreaM2`; ô Diện tích khách nhập được ưu tiên).
 - **Tiện ích gắn sao** (`state.stars` → `poi.star`): khoanh vùng phát sáng trên mặt đất.
+- **Nhóm tiện ích** (`CATEGORIES` trong `js/data.js`): thêm nhóm mới phải sửa đủ: `CATEGORIES`, `classifyPoi`, `guessCategory`, `CAT_COLORS` (render.js), `CAT_WORD`/`CAT_RANK`/`POI_LINES` (app.js), `CAT_ICON` (lib/pages.js), `NEAR_Q` (lib/map.js), biểu tượng (`js/icons.js`). Biểu tượng/câu đọc theo loại cụ thể qua `kind` (`iconOf`, `KIND_LINES`, `kindFix`): airport, station, beach, charging_station.
+- **Vietmap `NEAR_Q`**: mỗi dòng `[nhóm, từ khoá, regex tên, kind, bán kính riêng, lớp]`. Khu đô thị phải tìm ở lớp `VILLAGE`. Bãi biển Vietmap không có → dựa OSM. Tên phải `normalize('NFC')` trước khi so regex. Chọn điểm xen kẽ theo loại (không chỉ theo khoảng cách) để loại xa vẫn có mặt.
 - **Đường lớn**: `stitchWays()` trong `js/data.js` nối các đoạn cùng tuyến hở < 300 m, cùng hướng.
 - **Giọng đọc**: giọng AI và giọng khách tự đọc đều nằm trong `media.voiceSegs` (mỗi cảnh một đoạn, khoá `voiceKey(text)`). Tự đọc: `applyOwnVoice()` — thu trong app thì cắt theo mốc bấm "Câu tiếp" (`splitAt`), tải file thì cắt theo khoảng lặng (`splitVoice`).
 - **Dữ liệu tiện ích** (`js/data.js`): OSM (OpenFreeMap) + Overture (`poi/`) + **Vietmap** (`/api/map/nearby`, đầy đủ nhất ở VN). Tìm theo tên: dữ liệu đã quét + Vietmap (`/api/map/vsearch`) + Photon.
@@ -140,5 +142,6 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 - 2026-10: Bản đồ "mờ" do phủ màu nhân + lớp tối + ô ảnh tối đa z17 → nền "Vệ tinh rõ nét" + z18 + lọc tăng tương phản.
 - 2026-10: Quét sót tiện ích gần nhà (OSM ở VN thiếu) → thêm Vietmap; lần đầu trả rỗng vì vượt giới hạn 50 lần gọi của Worker.
 - 2026-10: `build.sh` xoá và tạo lại `site/` → máy chủ thử chạy *trong* `site/` bị chết; chạy `python3 -m http.server --directory site`. Đừng `pkill -f` theo mẫu có trong chính lệnh đang chạy (tự giết shell).
+- 2026-10: Tên từ Vietmap có thể ở dạng Unicode tổ hợp (NFD) → regex không khớp ("Bến Xe Buýt" lọt lưới) → chuẩn hoá NFC.
 - 2026-10: Line trục đường đứt quãng do OSM thiếu cầu/nút giao giữa các đoạn → nối đầu mút cùng hướng.
 - 2026-10: Đề xuất "Kết nối CRM" của Meta chỉ dành cho quảng cáo biểu mẫu tức thì, không áp dụng cho quảng cáo về web.
