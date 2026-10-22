@@ -29,7 +29,12 @@ Biến môi trường trên Cloudflare (Settings → Variables and Secrets). Kh�
 ### Các phần dễ hỏng (đọc trước khi sửa)
 - **Xuất video** (`js/export.js`): MP4 chỉ được dùng tiếng **AAC**. Opus trong MP4 phát được trên Chrome nhưng iPhone/Zalo/Facebook phát **mất tiếng** (lỗi khách báo 10/2026). Không có AAC → quay thời gian thực (`exportRealtime`) với AudioContext mở khoá ngay trong cú bấm (`unlockAudioContext`). Có bộ đếm gói tiếng: 0 gói thì không trả file câm.
 - **Nền bản đồ** (`BASES` trong `js/render.js`): `vetinh` (mặc định, ảnh thật tươi rõ), `phim`, `duongpho`, `toi`, `sang`. Mỗi nền có `src` (nguồn ô ảnh Esri), `maxz`, lọc màu `fx`. Khoá bộ nhớ ô ảnh gồm cả nguồn. `render()` và `collectTiles()` phải gọi `useBase(tl.scene.base)`.
-- **Cách hiện tiện ích** (`scene.flow`): `lanluot` (bay tới từng điểm) hoặc `radar` (pha `radar` quét vòng tròn + mỗi tiện ích 1 pha `poi` cùng một camera, line/nhãn giữ lại).
+- **Cách hiện tiện ích** (`scene.flow`): `lanluot` (bay tới từng điểm), `radar` (pha `radar` quét vòng tròn + mỗi tiện ích 1 pha `poi` cùng một camera, line/nhãn giữ lại), `cungluc` (pha `radar` có `together`: mọi line chạy cùng tiến độ `tgP` rồi mới tới các pha `poi` cho thẻ + giọng). Vẫn giữ mỗi tiện ích một pha `poi` để giọng đọc/phụ đề theo từng điểm không vỡ.
+- **Radar quét**: vẽ trong mảng `sweeps` (cảnh bán kính, pha radar khi không `together`, cảnh tổng kết).
+- **Máy quay luôn chuyển động**: `breathe()` cộng nhịp zoom/lia vào `camAt()` (KHÔNG cộng vào `camAtPhase`, vì pha sau lấy điểm cuối pha trước làm điểm đầu).
+- **Lô đất** (`state.lot`, `scene.lot`, ≥3 góc): chế độ sửa `editMode='lot'` ở zoom 18.5; video bay sát lô trong cảnh `house`, viền + sóng khoanh vùng, thẻ diện tích (`lotAreaM2`; ô Diện tích khách nhập được ưu tiên).
+- **Tiện ích gắn sao** (`state.stars` → `poi.star`): khoanh vùng phát sáng trên mặt đất.
+- **Đường lớn**: `stitchWays()` trong `js/data.js` nối các đoạn cùng tuyến hở < 300 m, cùng hướng.
 - **Giọng đọc**: giọng AI và giọng khách tự đọc đều nằm trong `media.voiceSegs` (mỗi cảnh một đoạn, khoá `voiceKey(text)`). Tự đọc: `applyOwnVoice()` — thu trong app thì cắt theo mốc bấm "Câu tiếp" (`splitAt`), tải file thì cắt theo khoảng lặng (`splitVoice`).
 - **Dữ liệu tiện ích** (`js/data.js`): OSM (OpenFreeMap) + Overture (`poi/`) + **Vietmap** (`/api/map/nearby`, đầy đủ nhất ở VN). Tìm theo tên: dữ liệu đã quét + Vietmap (`/api/map/vsearch`) + Photon.
 - **Vietmap / Cloudflare**: mỗi yêu cầu Worker chỉ được ~50 lần gọi ra ngoài. `nearby` = 10 lần tìm + tối đa 24 lần lấy toạ độ, không nhớ đệm từng điểm. Kết quả rỗng thì KHÔNG nhớ đệm (`noCache`). Thêm `&debug=1` để xem số kết quả từng từ khoá. Đổi logic thì đổi tên khoá nhớ đệm (`vmnear3`→`vmnear4`) để bỏ kết quả cũ.
@@ -134,4 +139,6 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 - 2026-10: Video xuất mất nhạc/giọng trên iPhone/Zalo do Opus trong MP4 → chỉ dùng AAC, không có thì quay thời gian thực.
 - 2026-10: Bản đồ "mờ" do phủ màu nhân + lớp tối + ô ảnh tối đa z17 → nền "Vệ tinh rõ nét" + z18 + lọc tăng tương phản.
 - 2026-10: Quét sót tiện ích gần nhà (OSM ở VN thiếu) → thêm Vietmap; lần đầu trả rỗng vì vượt giới hạn 50 lần gọi của Worker.
+- 2026-10: `build.sh` xoá và tạo lại `site/` → máy chủ thử chạy *trong* `site/` bị chết; chạy `python3 -m http.server --directory site`. Đừng `pkill -f` theo mẫu có trong chính lệnh đang chạy (tự giết shell).
+- 2026-10: Line trục đường đứt quãng do OSM thiếu cầu/nút giao giữa các đoạn → nối đầu mút cùng hướng.
 - 2026-10: Đề xuất "Kết nối CRM" của Meta chỉ dành cho quảng cáo biểu mẫu tức thì, không áp dụng cho quảng cáo về web.
