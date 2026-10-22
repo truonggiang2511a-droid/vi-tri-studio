@@ -26,6 +26,14 @@ Biến môi trường trên Cloudflare (Settings → Variables and Secrets). Kh�
 `META_PIXEL_ID` (đang có: tập dữ liệu "vitristudio"), `META_CAPI_TOKEN` (chưa có — chờ tạo), `META_TEST_CODE` (chỉ đặt khi kiểm tra, xoá ngay sau đó),
 `TIKTOK_PIXEL_ID`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_NAME`, `APP_URL`.
 
+### Các phần dễ hỏng (đọc trước khi sửa)
+- **Xuất video** (`js/export.js`): MP4 chỉ được dùng tiếng **AAC**. Opus trong MP4 phát được trên Chrome nhưng iPhone/Zalo/Facebook phát **mất tiếng** (lỗi khách báo 10/2026). Không có AAC → quay thời gian thực (`exportRealtime`) với AudioContext mở khoá ngay trong cú bấm (`unlockAudioContext`). Có bộ đếm gói tiếng: 0 gói thì không trả file câm.
+- **Nền bản đồ** (`BASES` trong `js/render.js`): `vetinh` (mặc định, ảnh thật tươi rõ), `phim`, `duongpho`, `toi`, `sang`. Mỗi nền có `src` (nguồn ô ảnh Esri), `maxz`, lọc màu `fx`. Khoá bộ nhớ ô ảnh gồm cả nguồn. `render()` và `collectTiles()` phải gọi `useBase(tl.scene.base)`.
+- **Cách hiện tiện ích** (`scene.flow`): `lanluot` (bay tới từng điểm) hoặc `radar` (pha `radar` quét vòng tròn + mỗi tiện ích 1 pha `poi` cùng một camera, line/nhãn giữ lại).
+- **Giọng đọc**: giọng AI và giọng khách tự đọc đều nằm trong `media.voiceSegs` (mỗi cảnh một đoạn, khoá `voiceKey(text)`). Tự đọc: `applyOwnVoice()` — thu trong app thì cắt theo mốc bấm "Câu tiếp" (`splitAt`), tải file thì cắt theo khoảng lặng (`splitVoice`).
+- **Dữ liệu tiện ích** (`js/data.js`): OSM (OpenFreeMap) + Overture (`poi/`) + **Vietmap** (`/api/map/nearby`, đầy đủ nhất ở VN). Tìm theo tên: dữ liệu đã quét + Vietmap (`/api/map/vsearch`) + Photon.
+- **Vietmap / Cloudflare**: mỗi yêu cầu Worker chỉ được ~50 lần gọi ra ngoài. `nearby` = 10 lần tìm + tối đa 24 lần lấy toạ độ, không nhớ đệm từng điểm. Kết quả rỗng thì KHÔNG nhớ đệm (`noCache`). Thêm `&debug=1` để xem số kết quả từng từ khoá. Đổi logic thì đổi tên khoá nhớ đệm (`vmnear3`→`vmnear4`) để bỏ kết quả cũ.
+
 ---
 
 ## 2. Quy trình cập nhật an toàn (BẮT BUỘC mỗi lần sửa)
@@ -100,6 +108,13 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 - Tối ưu quảng cáo theo sự kiện có đủ ~50 lượt/tuần (thường là Đăng ký); chuyển sang Purchase khi đơn đủ nhiều.
 
 **Kiểm thử & sửa lỗi**
+- Bộ thử trong phiên Claude: Playwright + `channel="chrome"`, chạy `site/` bằng `python3 -m http.server`, mở ở `127.0.0.1`.
+  Mạng ra ngoài: thêm cờ `--proxy-server=$HTTPS_PROXY` (KHÔNG dùng `proxy=` của Playwright và KHÔNG thêm `<-loopback>`, sẽ chặn trang cục bộ).
+  `wait_for_function("window.fn")` sẽ GỌI hàm đó — dùng `"typeof window.fn==='function'"`.
+  Chrome trong máy thử không có H.264/AAC: kiểm tra đường dự phòng ở đây, còn mã hoá thật kiểm trên máy khách.
+  Micro giả: `--use-fake-ui-for-media-stream --use-fake-device-for-media-stream --use-file-for-fake-audio-capture=file.wav`.
+  Xem file xuất có tiếng: `ffprobe` (có luồng audio) + `ffmpeg -af volumedetect` (mean_volume không phải -91 dB).
+  Chụp khung xem trước: đặt `localStorage['vitri.project.v1']`, bấm `#scanBtn`, tua `#scrub`, chụp `#preview`; `window.__vitri.tl` xem các pha.
 - Mỗi thay đổi: build → chạy thử cục bộ → push → kiểm tra trên web thật bằng `curl` → thử luồng chính trên điện thoại.
 - Tìm nguyên nhân gốc trước khi sửa: đọc code đường đi của dữ liệu (trình duyệt → API → SQL), không đoán.
 - Sửa lỗi xong ghi 1 dòng bài học vào mục 5 bên dưới.
@@ -116,4 +131,7 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 - 2026-10: Sửa `js/` mà quên `bash build.sh` → bản web không đổi. Luôn build + commit `site/`.
 - 2026-10: Git proxy trong phiên Claude chặn push nếu repo chưa được thêm vào phiên → dùng `add_repo` (quyền push) trước.
 - 2026-10: Meta báo EMQ Mua hàng = 0 vì Purchase chỉ bắn từ trình duyệt → thêm CAPI (`lib/capi.js`), chờ `META_CAPI_TOKEN`.
+- 2026-10: Video xuất mất nhạc/giọng trên iPhone/Zalo do Opus trong MP4 → chỉ dùng AAC, không có thì quay thời gian thực.
+- 2026-10: Bản đồ "mờ" do phủ màu nhân + lớp tối + ô ảnh tối đa z17 → nền "Vệ tinh rõ nét" + z18 + lọc tăng tương phản.
+- 2026-10: Quét sót tiện ích gần nhà (OSM ở VN thiếu) → thêm Vietmap; lần đầu trả rỗng vì vượt giới hạn 50 lần gọi của Worker.
 - 2026-10: Đề xuất "Kết nối CRM" của Meta chỉ dành cho quảng cáo biểu mẫu tức thì, không áp dụng cho quảng cáo về web.
