@@ -8,7 +8,7 @@ import {
 import { sfxEvents } from './sfx.js';
 import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4, unlockAudioContext } from './export.js';
 import { initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount } from './account.js';
-import { splitVoice, joinForTts } from './voicesplit.js';
+import { splitVoice, joinForTts, splitAt } from './voicesplit.js';
 import { loadConfig, initTracking, countVisit } from './track.js';
 import { initInstall } from './install.js';
 import { initLeads, downloadPageQr, pageUrl, openLeads } from './leads.js';
@@ -49,6 +49,7 @@ const state = {
   fitVoice: true,
   style: 'neon',     // phong cách video
   base: 'vetinh',    // nền bản đồ
+  flow: 'lanluot',   // cách hiện tiện ích: lanluot | radar
   pageVideo: '',     // link video đã đăng (gắn vào trang web căn nhà)
   pageDesc: '',
   roadTheme: 'auto',
@@ -159,6 +160,7 @@ function buildScene() {
     titleSub: state.sub,
     style: state.style,
     base: state.base,
+    flow: state.flow,
     roadTheme: state.roadTheme,
     routeTheme: state.routeTheme,
   };
@@ -1201,7 +1203,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'fmt', 'speed', 'style', 'base', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'fmt', 'speed', 'style', 'base', 'flow', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -1607,6 +1609,138 @@ function clearAudio(kind) {
   scheduleRebuild();
 }
 
+// ---------- Tự đọc theo kịch bản ----------
+// Khách đọc lời đọc từng cảnh bằng giọng của mình (thu ngay trong app hoặc tải file). App cắt thành từng câu
+// (theo mốc bấm "Câu tiếp", không có mốc thì theo khoảng lặng) rồi gắn vào từng cảnh như giọng AI:
+// mỗi cảnh kéo dài đúng bằng câu đọc của nó, phụ đề chạy theo, không tốn lượt.
+const rec = { stream: null, mr: null, chunks: [], marks: [], t0: 0, idx: -1, segs: [], timer: 0, actx: null, an: null, blob: null, url: '' };
+const recSegs = () => scriptSegments().filter(sg => speakable(sg.text));
+async function applyOwnVoice(buf, marks) {
+  const segs = recSegs();
+  if (!segs.length) { toast('Chưa có kịch bản. Quét và chọn tiện ích trước.'); return false; }
+  const parts = segs.map(sg => speakable(sg.text));
+  const pieces = marks && marks.length === segs.length - 1 ? splitAt(buf, marks) : splitVoice(buf, parts);
+  media.voiceSegs.clear();
+  segs.forEach((sg, i) => media.voiceSegs.set(sg.key, { ck: voiceKey(sg.text), buffer: pieces[i], own: true }));
+  // Bỏ file giọng liền (nếu có) để không phát chồng
+  if (media.voice) { media.voice = null; media.voiceName = ''; $('voiceName').textContent = 'Chưa có'; $('voiceClear').hidden = true; }
+  state.aiVoiceOn = true; $('aiVoiceOn').checked = true;
+  media.mixKey = '';
+  renderScript();
+  scheduleRebuild();
+  const total = pieces.reduce((x, b) => x + b.duration, 0);
+  $('ownVoiceMsg').textContent = `Đã khớp giọng của anh/chị vào ${segs.length} cảnh (${fmtTime(total)}). Bấm phát để nghe thử; câu nào lệch thì thu lại.`;
+  return true;
+}
+function renderRecLines() {
+  const el = $('recLines');
+  el.innerHTML = rec.segs.map((sg, i) => `<div class="rec-line${i === rec.idx ? ' on' : i < rec.idx ? ' done' : ''}"><small>${i + 1}/${rec.segs.length} · ${esc(sg.label || '')}</small>${esc(sg.text)}</div>`).join('');
+  el.querySelector('.on')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  $('recNext').textContent = rec.idx >= rec.segs.length - 1 ? 'Xong ✓' : 'Câu tiếp ›';
+}
+function recButtons(mode) {
+  $('recStart').hidden = mode !== 'idle';
+  $('recNext').hidden = mode !== 'rec';
+  $('recRedo').hidden = mode !== 'done';
+  $('recUse').hidden = mode !== 'done';
+  $('recPlay').hidden = mode !== 'done';
+}
+function recCleanup() {
+  clearInterval(rec.timer);
+  try { if (rec.mr && rec.mr.state !== 'inactive') rec.mr.stop(); } catch { /* bỏ qua */ }
+  rec.stream?.getTracks().forEach(tr => tr.stop());
+  rec.actx?.close().catch(() => {});
+  rec.stream = null; rec.actx = null; rec.an = null;
+}
+function openRecorder() {
+  rec.segs = recSegs();
+  if (!rec.segs.length) { toast('Chưa có kịch bản. Quét và chọn tiện ích trước.'); return; }
+  pause();
+  rec.idx = -1; rec.marks = []; rec.blob = null;
+  $('recTime').textContent = '00:00';
+  renderRecLines();
+  recButtons('idle');
+  $('recDlg').showModal();
+}
+async function recStart() {
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+    toast('Trình duyệt này không thu âm được. Dùng Chrome hoặc Safari bản mới, hoặc tải file đã đọc.', 5000); return;
+  }
+  try {
+    rec.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  } catch {
+    toast('Không mở được micro. Cho phép trình duyệt dùng micro rồi thử lại.', 5000); return;
+  }
+  const types = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg'];
+  const mimeType = types.find(t => MediaRecorder.isTypeSupported?.(t)) || '';
+  rec.mr = new MediaRecorder(rec.stream, mimeType ? { mimeType } : undefined);
+  rec.chunks = [];
+  rec.mr.ondataavailable = e => { if (e.data.size) rec.chunks.push(e.data); };
+  // Đồng hồ + vạch âm lượng để khách biết micro đang nhận tiếng
+  try {
+    rec.actx = new AudioContext();
+    rec.an = rec.actx.createAnalyser(); rec.an.fftSize = 512;
+    rec.actx.createMediaStreamSource(rec.stream).connect(rec.an);
+  } catch { rec.an = null; }
+  rec.mr.start(250);
+  rec.t0 = performance.now();
+  rec.idx = 0; rec.marks = [];
+  renderRecLines();
+  recButtons('rec');
+  const cv = $('recMeter'), cx = cv.getContext('2d'), buf = new Uint8Array(256);
+  rec.timer = setInterval(() => {
+    $('recTime').textContent = fmtTime((performance.now() - rec.t0) / 1000);
+    if (!rec.an) return;
+    rec.an.getByteTimeDomainData(buf);
+    let m = 0; for (const v of buf) m = Math.max(m, Math.abs(v - 128));
+    cx.clearRect(0, 0, cv.width, cv.height);
+    cx.fillStyle = m > 100 ? '#e5484d' : '#2fb67c';
+    cx.fillRect(0, 6, cv.width * Math.min(1, m / 110), 16);
+  }, 60);
+}
+function recNext() {
+  if (!rec.mr || rec.mr.state !== 'recording') return;
+  if (rec.idx < rec.segs.length - 1) {
+    rec.marks.push((performance.now() - rec.t0) / 1000);
+    rec.idx++;
+    renderRecLines();
+  } else recStop();
+}
+async function recStop() {
+  const mr = rec.mr;
+  const stopped = new Promise(r => { mr.onstop = r; });
+  mr.stop();
+  await stopped;
+  recCleanup();
+  rec.idx = rec.segs.length;
+  renderRecLines();
+  rec.blob = new Blob(rec.chunks, { type: mr.mimeType || 'audio/webm' });
+  if (rec.url) URL.revokeObjectURL(rec.url);
+  rec.url = URL.createObjectURL(rec.blob);
+  $('recPlay').src = rec.url;
+  recButtons('done');
+}
+async function recUse() {
+  if (!rec.blob) return;
+  $('recUse').disabled = true;
+  try {
+    const buf = await decodeAudioFile(rec.blob);
+    if (await applyOwnVoice(buf, rec.marks)) { $('recDlg').close(); toast('Đã khớp giọng của anh/chị vào video.'); }
+  } catch {
+    toast('Không đọc được bản thu. Thử thu lại.', 4000);
+  } finally { $('recUse').disabled = false; }
+}
+async function pickOwnVoice(file) {
+  if (!file) return;
+  $('ownVoiceMsg').textContent = 'Đang cắt giọng theo từng câu…';
+  try {
+    const buf = await decodeAudioFile(file);
+    await applyOwnVoice(buf, null);
+  } catch {
+    $('ownVoiceMsg').textContent = 'Không đọc được file này. Thử file MP3, M4A hoặc WAV.';
+  } finally { $('ownVoiceFile').value = ''; }
+}
+
 // ---------- Gắn sự kiện ----------
 function init() {
   countVisit('app');
@@ -1626,6 +1760,7 @@ function init() {
   setSeg('typeSeg', state.typeLabel);
   setSeg('fmtSeg', state.fmt);
   setSeg('speedSeg', state.speed);
+  setSeg('flowSeg', state.flow === 'radar' ? 'radar' : 'lanluot');
   setSeg('qualSeg', state.quality);
   $('canvasWrap').dataset.fmt = state.fmt;
   updateScanLabel();
@@ -1758,6 +1893,7 @@ function init() {
 
   bindSeg('fmtSeg', v => { state.fmt = v; $('canvasWrap').dataset.fmt = v; layoutCanvas(); scheduleRebuild(); });
   bindSeg('speedSeg', v => { state.speed = v; scheduleRebuild(); });
+  bindSeg('flowSeg', v => { state.flow = v; scheduleRebuild(); });
   bindSeg('qualSeg', v => { state.quality = v; save(); });
   $('titleInput').addEventListener('input', e => { state.title = e.target.value; scheduleRebuild(); });
   $('brandInput').addEventListener('input', e => { state.brand = e.target.value; scheduleRebuild(); });
@@ -1792,6 +1928,16 @@ function init() {
   try { savedLogo = localStorage.getItem(LOGO_STORE); } catch { /* bỏ qua */ }
   if (savedLogo) loadLogo(savedLogo).then(img => { media.logo = img; showLogo(); scheduleRebuild(); });
   $('voiceFile').addEventListener('change', e => pickAudio('voice', e.target.files[0]));
+  $('ownVoiceFile').addEventListener('change', e => pickOwnVoice(e.target.files[0]));
+  $('recOpen').addEventListener('click', openRecorder);
+  $('recStart').addEventListener('click', recStart);
+  $('recNext').addEventListener('click', recNext);
+  $('recRedo').addEventListener('click', () => { rec.idx = -1; rec.marks = []; renderRecLines(); recButtons('idle'); recStart(); });
+  $('recUse').addEventListener('click', recUse);
+  $('recDlg').addEventListener('close', recCleanup);
+  document.addEventListener('keydown', e => {
+    if (e.code === 'Space' && $('recDlg').open && rec.mr?.state === 'recording') { e.preventDefault(); recNext(); }
+  });
   $('musicClear').addEventListener('click', () => clearAudio('music'));
   $('voiceClear').addEventListener('click', () => clearAudio('voice'));
   $('musicVol').addEventListener('input', e => { state.musicVol = parseFloat(e.target.value); media.mixKey = ''; save(); });

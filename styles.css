@@ -633,3 +633,16 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 @media (min-width: 600px) and (max-width: 979px) {
   .panel { max-width: 640px; margin-inline: auto; }
 }
+
+/* Thu âm theo kịch bản */
+.rec-card { max-width: 640px; }
+.rec-lines { max-height: 46vh; overflow: auto; display: grid; gap: 8px; margin: 12px 0; padding: 4px; }
+.rec-line { padding: 10px 12px; border-radius: 12px; background: var(--surface-2, rgba(127,127,127,.08)); font-size: 15px; line-height: 1.5; opacity: .55; transition: opacity .2s, background .2s; }
+.rec-line small { display: block; font-size: 11.5px; font-weight: 700; letter-spacing: .02em; opacity: .7; margin-bottom: 2px; text-transform: uppercase; }
+.rec-line.on { opacity: 1; background: color-mix(in srgb, var(--accent, #f1b23c) 22%, transparent); font-size: 18px; font-weight: 600; }
+.rec-line.done { opacity: .4; }
+.rec-bar { display: flex; align-items: center; gap: 10px; margin: 6px 0 10px; }
+.rec-bar canvas { flex: 1; max-width: 220px; height: 28px; }
+.rec-actions { flex-wrap: wrap; }
+#recPlay { width: 100%; margin-top: 10px; }
+.own-voice { margin-top: 10px; }

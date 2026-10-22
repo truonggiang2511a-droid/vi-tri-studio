@@ -210,6 +210,13 @@
           <div class="style-grid" id="styleRow" role="radiogroup" aria-label="Phong cách video"></div>
         </div>
         <div class="field">
+          <span class="field-label">Cách hiện tiện ích</span>
+          <div class="seg" id="flowSeg" role="radiogroup" aria-label="Cách hiện tiện ích">
+            <button type="button" role="radio" data-v="lanluot">Bay tới từng tiện ích</button>
+            <button type="button" role="radio" data-v="radar">Quét vòng tròn, hiện tất cả</button>
+          </div>
+        </div>
+        <div class="field">
           <span class="field-label">Nền bản đồ</span>
           <div class="style-grid" id="baseRow" role="radiogroup" aria-label="Nền bản đồ"></div>
         </div>
@@ -260,6 +267,17 @@
           <label class="check"><input autocomplete="off" id="aiVoiceOn" type="checkbox" checked> Dùng giọng AI</label>
         </div>
         <p id="ttsMsg" class="hint" aria-live="polite"></p>
+        <div class="field own-voice">
+          <span class="field-label">Tự đọc bằng giọng của anh/chị <em>video tự khớp từng câu</em></span>
+          <div class="ai-actions">
+            <button id="recOpen" class="btn btn-quiet" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z" fill="currentColor"/></svg>
+              Thu âm theo kịch bản
+            </button>
+            <label class="btn btn-quiet file-btn">Tải file đã đọc<input autocomplete="off" id="ownVoiceFile" type="file" accept="audio/*,video/mp4"></label>
+          </div>
+          <p id="ownVoiceMsg" class="hint" aria-live="polite">Đọc đúng lời đọc từng cảnh (sửa được ở mục "Sửa lời đọc"), nghỉ một nhịp giữa các câu. App sẽ cắt từng câu và cho mỗi cảnh chạy đúng theo lời anh/chị.</p>
+        </div>
         <div class="field">
           <span class="field-label">Nhạc nền <em>không lo bản quyền</em></span>
           <select id="musicLib" class="input" autocomplete="off" aria-label="Nhạc nền có sẵn"></select>
@@ -376,6 +394,26 @@
     </div>
   </section>
 </main>
+
+<dialog id="recDlg" class="dlg dlg-wide" aria-labelledby="recTitle">
+  <div class="dlg-card rec-card">
+    <button class="dlg-x" type="button" data-close aria-label="Đóng">×</button>
+    <h3 id="recTitle">Thu âm theo kịch bản</h3>
+    <p class="hint" id="recHint">Bấm Bắt đầu, đọc câu đang sáng. Đọc xong câu nào bấm <b>Câu tiếp</b> (hoặc phím cách). Đọc hết bấm <b>Xong</b>.</p>
+    <div id="recLines" class="rec-lines"></div>
+    <div class="rec-bar">
+      <span id="recTime" class="mono">00:00</span>
+      <canvas id="recMeter" width="160" height="28" aria-hidden="true"></canvas>
+    </div>
+    <div class="ai-actions rec-actions">
+      <button id="recStart" class="btn btn-primary" type="button">Bắt đầu thu</button>
+      <button id="recNext" class="btn btn-primary" type="button" hidden>Câu tiếp ›</button>
+      <button id="recRedo" class="btn btn-quiet" type="button" hidden>Thu lại</button>
+      <button id="recUse" class="btn btn-primary" type="button" hidden>Dùng bản thu này</button>
+    </div>
+    <audio id="recPlay" controls hidden></audio>
+  </div>
+</dialog>
 
 <dialog id="authDlg" class="dlg" aria-labelledby="authTitle">
   <form id="authForm" class="dlg-card" novalidate>

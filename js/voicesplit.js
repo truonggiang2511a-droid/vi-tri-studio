@@ -77,6 +77,50 @@ export function splitVoice(buf, parts) {
   });
 }
 
+// Cắt theo mốc thời gian khách bấm "Câu tiếp" lúc thu âm: mỗi mốc dời về chỗ lặng nhất trong ±0,6 giây
+// (người đọc thường bấm hơi sớm hoặc hơi trễ), rồi bỏ khoảng lặng thừa ở hai đầu mỗi câu.
+export function splitAt(buf, marks) {
+  const sr = buf.sampleRate;
+  const data = buf.getChannelData(0);
+  const hop = Math.max(1, Math.round(sr * 0.01));
+  const n = Math.floor(data.length / hop);
+  const rms = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let s = 0;
+    for (let j = i * hop, e = j + hop; j < e; j++) s += data[j] * data[j];
+    rms[i] = Math.sqrt(s / hop);
+  }
+  const sorted = Array.from(rms).sort((x, y) => x - y);
+  const loud = sorted[Math.floor(n * 0.9)] || 0.05;
+  const thr = Math.max(0.003, loud * 0.08);
+  const cuts = [];
+  let prev = 0;
+  for (const m of marks) {
+    const c = Math.round(m * 100);
+    let best = Math.min(n - 1, Math.max(prev + 10, c)), bestV = Infinity;
+    for (let i = Math.max(prev + 10, c - 60); i <= Math.min(n - 1, c + 60); i++) {
+      // ưu tiên chỗ lặng, gần mốc bấm
+      let v = 0;
+      for (let k = -3; k <= 3; k++) v += rms[Math.max(0, Math.min(n - 1, i + k))];
+      v += Math.abs(i - c) * loud * 0.004;
+      if (v < bestV) { bestV = v; best = i; }
+    }
+    cuts.push(best);
+    prev = best;
+  }
+  const edges = [0, ...cuts, n];
+  const out = [];
+  for (let k = 0; k < edges.length - 1; k++) {
+    let a = edges[k], b = edges[k + 1];
+    while (a < b - 1 && rms[a] < thr) a++;
+    while (b > a + 1 && rms[b - 1] < thr) b--;
+    a = Math.max(0, a - 6);
+    b = Math.min(n, b + 12);
+    out.push(sliceBuffer(buf, a * hop, Math.min(data.length, b * hop)));
+  }
+  return out;
+}
+
 // Ghép các câu thành một lời đọc liền, mỗi câu kết thúc bằng dấu chấm và xuống đoạn để có nhịp nghỉ rõ
 export function joinForTts(parts) {
   return parts.map(p => {
