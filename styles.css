@@ -200,7 +200,7 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .cat-ic { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; color: #fff; }
 .cat-ic svg { width: 15px; height: 15px; }
 .poi-row {
-  display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto; align-items: center; gap: 8px;
   padding: 8px 4px 8px 6px; border-radius: 8px; cursor: pointer;
 }
 .poi-row:hover { background: var(--surface-2); }
@@ -646,3 +646,11 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .rec-actions { flex-wrap: wrap; }
 #recPlay { width: 100%; margin-top: 10px; }
 .own-voice { margin-top: 10px; }
+
+/* Vẽ lô đất */
+.lot-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 12px; }
+.lot-bar .hint { flex: 1 1 180px; margin: 0; }
+
+/* Ngôi sao khoanh vùng tiện ích */
+.poi-star { border: 0; background: transparent; font-size: 18px; line-height: 1; padding: 4px 6px; color: color-mix(in srgb, currentColor 30%, transparent); cursor: pointer; border-radius: 8px; }
+.poi-star[aria-pressed="true"] { color: #f1b23c; text-shadow: 0 0 8px rgba(241,178,60,.6); }

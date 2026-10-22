@@ -78,6 +78,13 @@
         <input autocomplete="off" id="scrub" type="range" min="0" max="1000" value="0" step="1" aria-label="Tua video">
         <span id="timeLabel" class="time">00:00 / 00:00</span>
         <button id="editPinBtn" class="chip-btn" type="button" aria-pressed="false">Dời ghim</button>
+        <button id="lotBtn" class="chip-btn" type="button" aria-pressed="false">Vẽ lô đất</button>
+      </div>
+      <div id="lotBar" class="lot-bar" hidden>
+        <span id="lotMsg" class="hint"></span>
+        <button id="lotUndo" class="link-btn" type="button">Bỏ góc cuối</button>
+        <button id="lotClear" class="link-btn" type="button">Xoá hết</button>
+        <button id="lotDone" class="btn btn-primary btn-sm" type="button">Xong</button>
       </div>
     </div>
   </section>
@@ -213,7 +220,8 @@
           <span class="field-label">Cách hiện tiện ích</span>
           <div class="seg" id="flowSeg" role="radiogroup" aria-label="Cách hiện tiện ích">
             <button type="button" role="radio" data-v="lanluot">Bay tới từng tiện ích</button>
-            <button type="button" role="radio" data-v="radar">Quét vòng tròn, hiện tất cả</button>
+            <button type="button" role="radio" data-v="radar">Quét vòng tròn, hiện lần lượt</button>
+            <button type="button" role="radio" data-v="cungluc">Line tới tất cả cùng lúc</button>
           </div>
         </div>
         <div class="field">

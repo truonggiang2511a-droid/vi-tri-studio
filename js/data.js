@@ -460,6 +460,44 @@ function isDuplicate(chain, kept) {
   return n > 0 && near / n > 0.6;
 }
 
+// Nối các đoạn của cùng một tuyến bị hở (thiếu cầu, nút giao, đoạn chưa có tên trên OSM) để line không đứt quãng:
+// hai đầu mút cách nhau dưới gapKm và hướng đi thuận nhau thì ghép thành một đường liền.
+function stitchWays(ways, F, gapKm = 0.3) {
+  let list = ways.map(w => ({ pts: w, xy: w.map(F.xy) }));
+  const dirAt = (xy, end) => {
+    const a = end ? xy[xy.length - 1] : xy[0];
+    const b = end ? xy[Math.max(0, xy.length - 4)] : xy[Math.min(xy.length - 1, 3)];
+    const d = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1;
+    return [(a[0] - b[0]) / d, (a[1] - b[1]) / d]; // hướng đi ra khỏi đầu mút
+  };
+  for (let guard = 0; guard < 60; guard++) {
+    let best = null;
+    for (let i = 0; i < list.length; i++) for (let j = 0; j < list.length; j++) {
+      if (i === j) continue;
+      for (const ei of [true, false]) for (const ej of [true, false]) {
+        const A = list[i].xy, B = list[j].xy;
+        const pa = ei ? A[A.length - 1] : A[0], pb = ej ? B[B.length - 1] : B[0];
+        const d = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]);
+        if (d > gapKm || d < 1e-6) continue;
+        const da = dirAt(A, ei), db = dirAt(B, ej);
+        const c = [(pb[0] - pa[0]) / d, (pb[1] - pa[1]) / d];
+        // đi ra từ A về phía B, và B đi ra ngược về phía A
+        const ok = d < 0.04 || (da[0] * c[0] + da[1] * c[1] > 0.55 && -(db[0] * c[0] + db[1] * c[1]) > 0.55);
+        if (!ok) continue;
+        if (!best || d < best.d) best = { i, j, ei, ej, d };
+      }
+    }
+    if (!best) break;
+    const A = list[best.i], B = list[best.j];
+    const a = best.ei ? A.pts : A.pts.slice().reverse();
+    const b = best.ej ? B.pts.slice().reverse() : B.pts;
+    const merged = a.concat(b);
+    list = list.filter((_, k) => k !== best.i && k !== best.j);
+    list.push({ pts: merged, xy: merged.map(F.xy) });
+  }
+  return list.map(x => x.pts);
+}
+
 function buildRoads(raw, center, radiusKm) {
   const F = localFrame(center);
   // Tên → ref, để mảnh chỉ có tên vẫn vào đúng tuyến có số hiệu (vd. "Lê Khả Phiêu" là QL.1)
@@ -502,7 +540,7 @@ function buildRoads(raw, center, radiusKm) {
   }
   const list = [];
   for (const g of groups.values()) {
-    const chains = chainPieces(g.pieces, F, 0.015)
+    const chains = chainPieces(g.pieces, F, 0.04)
       .map(c => ({ ...c, len: polyLenKm(c.pts), near: chainNear(c, F) }))
       .filter(c => c.len > 0.25)
       .sort((a, b) => a.near - b.near);
@@ -522,6 +560,8 @@ function buildRoads(raw, center, radiusKm) {
       }
     }
     if (!ways.length) continue;
+    const joined = stitchWays(ways, F);
+    ways.length = 0; ways.push(...joined);
     const ref = Object.entries(g.refs).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
     const name = Object.entries(g.names).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
     const label = roadLabelOf(g.level, ref, name);
@@ -540,7 +580,7 @@ function buildRoads(raw, center, radiusKm) {
   for (const r of list.sort((a, b) => a.score - b.score)) {
     const k = r.label.toLowerCase();
     const prev = byLabel.get(k);
-    if (prev) { prev.ways.push(...r.ways); prev.lenKm += r.lenKm; continue; }
+    if (prev) { prev.ways = stitchWays([...prev.ways, ...r.ways], localFrame(center)); prev.lenKm += r.lenKm; continue; }
     byLabel.set(k, r);
   }
   return [...byLabel.values()].sort((a, b) => a.score - b.score).slice(0, 14);
