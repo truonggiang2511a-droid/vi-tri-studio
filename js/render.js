@@ -6,6 +6,8 @@ import { drawIcon } from './icons.js';
 import { CATEGORIES, iconOf } from './data.js';
 
 export const BASE_FONT = '"Be Vietnam Pro", "Segoe UI", system-ui, sans-serif';
+// Chữ tên xã/phường, tỉnh/thành: Montserrat đậm, to rộng
+const NAME_FONT = '"Montserrat", "Be Vietnam Pro", system-ui, sans-serif';
 export let FONT = BASE_FONT;
 export const MAXZ = 18;
 export const FORMATS = {
@@ -528,22 +530,29 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   const hook = makeHook(scene, roads, pois);
   const HOLD = hook ? 2.7 : 0;
   const raw = [];
-  // Có ranh xã/phường: mở đầu khoanh vùng tỉnh → xã/phường (ngoài vùng tối lại) rồi mới zoom vào căn nhà/lô đất
+  // Trình tự mở đầu (yêu cầu của Giang, 10/2026):
+  // 1) intro: trung cảnh ghim bất động sản ("Đây là vị trí … thuộc phường …"), giữ 0,5–1 s, xã/phường sáng lên
+  // 2) province: lùi ra vẽ nổi cả tỉnh/thành phố, đọc tên, ghim bất động sản vẫn hiện
+  // 3) house: bay về cận cảnh, máy lượn vòng quanh bất động sản, đọc thông tin (diện tích, thổ cư, đường trước nhà…)
+  // 4) overview…: ra bán kính như cũ. Không có ranh hành chính thì bỏ qua bước 2.
   const AREA = scene.adminArea && scene.adminArea.ward && scene.adminArea.ward.rings && scene.adminArea.ward.rings.length ? scene.adminArea : null;
-  let camArea = null;
-  if (AREA) {
+  const ringPtsOf = (rings, n = 80) => {
     const pts = [];
-    for (const r of AREA.ward.rings) for (let i = 0; i < r.length; i += Math.max(1, Math.floor(r.length / 60))) pts.push({ lat: r[i][0], lng: r[i][1] });
-    pts.push(H);
-    camArea = fitCam(pts, LW, LH, { left: safe.x + 24, right: safe.x + 24, top: safe.top + 110, bottom: safe.bottom + 90 }, 18, 9, 15.6);
+    for (const r of rings) for (let i = 0; i < r.length; i += Math.max(1, Math.floor(r.length / n))) pts.push({ lat: r[i][0], lng: r[i][1] });
+    return pts;
+  };
+  // Trung cảnh: thấy căn nhà và một phần xã/phường xung quanh
+  const camMid = anchorCam(H.lat, H.lng, 15.2, 24, LW, LH, 0.5, fmtKey === 'v' ? 0.56 : 0.58);
+  let camProv = null;
+  if (AREA && AREA.province && AREA.province.rings && AREA.province.rings.length) {
+    camProv = fitCam([...ringPtsOf(AREA.province.rings), H], LW, LH,
+      { left: safe.x + 20, right: safe.x + 20, top: safe.top + 120, bottom: safe.bottom + 110 }, 14, 6, 12.5);
   }
-  if (AREA && camArea) {
-    raw.push({ type: 'intro', d: 3.6 + HOLD, hold: HOLD, to: camArea, move: 1, vkey: 'intro' });
-    raw.push({ type: 'area', d: 3.6, to: camArea, move: 0, drift: 0.035, vkey: 'area' });
-  } else raw.push({ type: 'intro', d: 5.0 + HOLD, hold: HOLD, to: camHouseTop, move: 1, vkey: 'intro' });
+  raw.push({ type: 'intro', d: (AREA ? 4.6 : 5.0) + HOLD, hold: HOLD, to: camMid, move: 0.62, drift: 0.02, vkey: 'intro' });
+  if (camProv) raw.push({ type: 'province', d: 4.4, to: camProv, move: 0.75, drift: 0.015, vkey: 'province' });
   // Có lô đất / đường quanh nhà: giữ cảnh cận lâu hơn cho khách nhìn kỹ rồi mới lùi ra bán kính
   const hasStreets = !!(scene.streets && scene.streets.lines && scene.streets.lines.length);
-  raw.push({ type: 'house', d: lot ? 7.2 : hasStreets ? 5.2 : 3.8, to: camHouse, move: lot ? 0.5 : 0.8, drift: lot || hasStreets ? 0.025 : 0, vkey: 'house' });
+  raw.push({ type: 'house', d: lot ? 7.4 : 6.0, to: camHouse, move: camProv ? 0.5 : 0.6, drift: 0.02, orbit: true, vkey: 'house' });
   raw.push({ type: 'overview', d: lot ? 4.2 : 3.6, to: camOverview, move: lot ? 0.9 : 0.8, drift: 0.02, vkey: 'overview' });
   roads.forEach((r, i) => raw.push({ type: 'road', d: 3.1, to: camRoads, move: i === 0 ? 0.6 : 1, drift: i === 0 ? 0 : 0.02, road: i, vkey: 'road:' + r.id }));
   if (boundary) raw.push({ type: 'boundary', d: 7.6, to: camBoundary, move: 0.42, drift: 0.015, vkey: 'boundary' });
@@ -623,7 +632,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     fmt: fmtKey, LW, LH, safe, duration: t, phases, scene, panelH,
     G: groundDims(LW, LH),
     intro: first('intro'), house: first('house'), overview: first('overview'), boundaryPh: first('boundary'),
-    summary: first('summary'), outro: first('outro'), photosPh: first('photos'), photos, radarPh: first('radar'), areaPh: first('area'), flow: radar ? 'radar' : 'lanluot',
+    summary: first('summary'), outro: first('outro'), photosPh: first('photos'), photos, radarPh: first('radar'), provPh: first('province'), flow: radar ? 'radar' : 'lanluot',
     roadPhases: phases.filter(p => p.type === 'road'), poiPhases: phases.filter(p => p.type === 'poi'),
     pois, roads, boundary, captions, hook, lot, lotArea: lot ? lotAreaM2(lot) : 0,
   };
@@ -707,6 +716,16 @@ function camAtPhase(ph, t) {
   const e = smooth(clamp01((t - ph.t0 - hold) / ((d - hold) * (ph.move || 1))));
   const cam = lerpCam(ph.from, ph.to, e);
   if (ph.drift) cam.zoom += ph.drift * Math.max(0, t - ph.t0);
+  // Máy lượn quanh bất động sản: tâm khung đi theo vòng cung nhỏ quanh điểm đích sau khi đã bay tới
+  if (ph.orbit) {
+    const k = smooth(clamp01((t - ph.t0) / (ph.t1 - ph.t0)));
+    const arr = clamp01((t - ph.t0 - (ph.t1 - ph.t0) * (ph.move || 1) * 0.6) / 0.8);
+    const ang = -0.9 + k * 1.8;
+    const mpp = metersPerPixel(cam.lat, cam.zoom);
+    const r = 34 * arr; // px trên màn hình
+    cam.lng += Math.sin(ang) * r * mpp / (111320 * Math.cos(cam.lat * Math.PI / 180));
+    cam.lat += (Math.cos(ang) - 1) * r * 0.5 * mpp / 110540;
+  }
   return cam;
 }
 export function camAt(tl, t) {
@@ -1501,7 +1520,8 @@ function infoData(scene) {
   const i = scene.info || {};
   const clean = v => String(v ?? '').replace(/\s+/g, ' ').trim();
   const beds = clean(i.beds);
-  const det = [clean(i.area), beds ? (/^\d+$/.test(beds) ? beds + ' phòng ngủ' : beds) : '', clean(i.legal)].filter(Boolean);
+  const tc = clean(i.thoCu);
+  const det = [clean(i.area), tc ? (/thổ cư/i.test(tc) ? tc : tc + ' thổ cư') : '', beds ? (/^\d+$/.test(beds) ? beds + ' phòng ngủ' : beds) : '', clean(i.legal)].filter(Boolean);
   const price = clean(i.price);
   return price || det.length ? { price, det } : null;
 }
@@ -1968,13 +1988,17 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     }
   }
 
-  // Khoanh vùng hành chính ở cảnh mở đầu: tỉnh/thành (viền đứt) rồi xã/phường (viền sáng), ngoài vùng tối lại
-  const ARP = tl.areaPh, AR = scene.adminArea;
-  if (ARP && AR) {
+  // Khoanh vùng hành chính ở cảnh mở đầu: xã/phường sáng lên ở trung cảnh, rồi lùi ra vẽ nổi cả tỉnh/thành phố.
+  // Ngoài vùng tối lại; ghim bất động sản luôn hiện.
+  const AR = scene.adminArea, PV = tl.provPh;
+  if (AR && AR.ward && AR.ward.rings && AR.ward.rings.length) {
     const it = tl.intro;
     const i0 = it.t0 + (it.hold || 0);
-    const provA = fadeWin(t, i0, ARP.t0 + 0.6, 0.6, 0.9);
-    const wardA = fadeWin(t, i0 + 0.5 * (it.t1 - i0), ho.t0 + 0.45 * (ho.t1 - ho.t0), 0.7, 1.0);
+    const iEnd = it.t1;
+    const pvEnd = PV ? PV.t1 : iEnd;
+    // xã/phường: sáng từ giữa cảnh trung, giữ suốt cảnh tỉnh (mờ bớt), tắt khi bay về cận cảnh
+    const wardA = fadeWin(t, i0 + 0.35 * (iEnd - i0), ho.t0 + 0.4 * (ho.t1 - ho.t0), 0.8, 1.0);
+    const provA = PV ? fadeWin(t, PV.t0 + 0.1, ho.t0 + 0.5, 0.9, 1.0) : 0;
     const ringPath = rings => {
       const pth = new Path2D();
       for (const r of rings) r.forEach((p, i) => { const q = gLL(v, p[0], p[1]); i ? pth.lineTo(q.x, q.y) : pth.moveTo(q.x, q.y); });
@@ -1985,52 +2009,60 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       const m = new Path2D();
       m.rect(R0.x0 - 50, R0.y0 - 50, R0.x1 - R0.x0 + 100, R0.y1 - R0.y0 + 100);
       m.addPath(pth);
-      g.fillStyle = `rgba(4,8,12,${0.62 * a})`;
+      g.fillStyle = `rgba(4,8,12,${0.6 * a})`;
       g.fill(m, 'evenodd');
     };
     g.save();
+    g.lineJoin = 'round';
     if (provA > 0.01 && AR.province?.rings?.length) {
       const pp = ringPath(AR.province.rings);
-      dim(pp, provA * (1 - wardA));
-      g.globalAlpha = provA; g.setLineDash([10, 7]); g.lineDashOffset = -t * 20;
-      g.strokeStyle = '#ffffff'; g.lineWidth = 2.4; g.shadowColor = 'rgba(0,0,0,0.6)'; g.shadowBlur = 6; g.stroke(pp);
-      g.setLineDash([]); g.shadowBlur = 0;
+      dim(pp, provA);
+      const draw = clamp01((t - PV.t0 - 0.2) / 1.8);
+      g.globalAlpha = provA * 0.16; g.fillStyle = '#FFD54A'; g.fill(pp, 'evenodd');
+      g.globalAlpha = provA * 0.5; g.strokeStyle = '#FFB800'; g.lineWidth = 9; g.stroke(pp);
+      g.globalAlpha = provA * (0.4 + 0.6 * draw); g.strokeStyle = '#FFF4C2'; g.lineWidth = 2.6; g.shadowColor = '#FFB800'; g.shadowBlur = 12; g.stroke(pp);
+      g.shadowBlur = 0;
     }
-    if (wardA > 0.01 && AR.ward?.rings?.length) {
+    if (wardA > 0.01) {
       const wp = ringPath(AR.ward.rings);
       g.globalAlpha = 1;
-      dim(wp, wardA);
-      const draw = clamp01((t - i0 - 0.5 * (it.t1 - i0)) / 1.6);
-      g.globalAlpha = wardA * 0.18; g.fillStyle = ST.acc2; g.fill(wp, 'evenodd');
-      g.globalAlpha = wardA * 0.45; g.strokeStyle = GOLD; g.lineWidth = 12; g.lineJoin = 'round'; g.stroke(wp);
-      g.globalAlpha = wardA * (0.5 + 0.5 * draw); g.strokeStyle = '#ffffff'; g.lineWidth = 3; g.shadowColor = GOLD; g.shadowBlur = 14; g.stroke(wp);
+      if (provA < 0.5) dim(wp, wardA * (1 - provA));
+      g.globalAlpha = wardA * (provA > 0.3 ? 0.3 : 0.2); g.fillStyle = '#FFD54A'; g.fill(wp, 'evenodd');
+      g.globalAlpha = wardA * 0.5; g.strokeStyle = '#FFB800'; g.lineWidth = 11; g.stroke(wp);
+      g.globalAlpha = wardA; g.strokeStyle = '#ffffff'; g.lineWidth = 3; g.shadowColor = '#FFB800'; g.shadowBlur = 14; g.stroke(wp);
       g.shadowBlur = 0;
     }
     g.restore();
-    // Tên xã/phường + tỉnh/thành: chữ 3D nằm trên bản đồ, đặt trong vùng xã/phường, không tràn khung
-    const nameA = Math.min(wardA, fadeWin(t, ARP.t0 - 0.4, ho.t0 + 0.3 * (ho.t1 - ho.t0), 0.6, 0.7));
-    const wName = String(AR.wardName || '').toUpperCase(), pName = String(AR.provName || '').toUpperCase();
-    if (nameA > 0.01 && (wName || pName)) {
-      const rise = easeOut(clamp01((t - ARP.t0 + 0.4) / 0.9));
-      let sx = 0, sy = 0, n = 0;
-      for (const r of AR.ward.rings) for (const p of r) { const q = gLL(v, p[0], p[1]); sx += q.x; sy += q.y; n++; }
-      // đặt tên lệch lên trên căn nhà một chút để không đè ghim
-      const cx = n ? (sx / n) * 0.5 + hg.x * 0.5 : hg.x, cy = Math.min(n ? sy / n : hg.y, hg.y - 70);
+
+    // Tên xã/phường và tỉnh/thành: chữ phẳng Montserrat in dẹt trên bản đồ, vàng, đổ bóng đậm, gần ghim nhà, không tràn khung
+    const flatName = (text, alpha, dy, maxSize) => {
+      if (!text || alpha <= 0.01) return;
       g.save();
-      g.globalAlpha = nameA;
-      g.font = `800 100px ${FONT}`;
-      const ww = (g.measureText(wName).width + 7 * wName.length) / 100, pw = (g.measureText(pName).width + 7 * pName.length) / 100 * 0.62;
-      const sz = Math.max(16, Math.min(40, (LW * 0.8) / Math.max(ww, pw, 0.1)));
-      const t3 = (text, z, y, col, side) => {
-        if (!text) return;
-        g.save(); g.translate(cx, y);
-        text3D(g, text, z, { faceTop: '#FFFFFF', faceBot: col, side, depth: z * 0.26 * rise, ex: 0, ey: 1, sp: z * 0.07, glow: 'rgba(0,0,0,0.75)', stroke: 'rgba(0,0,0,0.35)', outline: 'rgba(8,10,14,0.9)' });
-        g.restore();
-      };
-      t3(wName, sz, cy - sz * 0.4, '#E8FBFF', shade('#5EEAF5', 0.45));
-      t3(pName, sz * 0.62, cy + sz * 0.62, '#FFF1C9', shade('#FFD166', 0.45));
+      g.globalAlpha = alpha;
+      g.font = `900 100px ${NAME_FONT}`;
+      const w100 = g.measureText(text).width / 100;
+      const size = Math.max(16, Math.min(maxSize, (LW * 0.84) / Math.max(w100, 0.1)));
+      g.font = `900 ${size}px ${NAME_FONT}`;
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      const x = hg.x, y = hg.y + dy;
+      // bóng đậm: nhiều lớp lệch xuống dưới-phải + viền tối
+      g.fillStyle = 'rgba(0,0,0,0.85)';
+      for (let k = 1; k <= 5; k++) g.fillText(text, x + k * size * 0.018, y + k * size * 0.03);
+      g.shadowColor = 'rgba(0,0,0,0.9)'; g.shadowBlur = size * 0.35; g.shadowOffsetY = size * 0.06;
+      g.lineJoin = 'round'; g.lineWidth = Math.max(2, size * 0.1); g.strokeStyle = 'rgba(20,12,0,0.95)';
+      g.strokeText(text, x, y);
+      g.shadowBlur = 0; g.shadowOffsetY = 0;
+      const gr = g.createLinearGradient(0, y - size * 0.5, 0, y + size * 0.5);
+      gr.addColorStop(0, '#FFE680'); gr.addColorStop(1, '#FFC107');
+      g.fillStyle = gr;
+      g.fillText(text, x, y);
       g.restore();
-    }
+    };
+    const wName = String(AR.wardName || '').toUpperCase(), pName = String(AR.provName || '').toUpperCase();
+    const wNameA = Math.min(wardA, fadeWin(t, i0 + 0.4 * (iEnd - i0), PV ? PV.t0 + 1.0 : ho.t0 + 0.4, 0.5, 0.6));
+    const pNameA = PV ? fadeWin(t, PV.t0 + 0.6, ho.t0 + 0.4, 0.6, 0.7) : 0;
+    flatName(wName, wNameA, 64, 44);
+    flatName(pName, pNameA, 64, 48);
   }
 
   // Đường quanh nhà kiểu đường nhựa (viền sáng, mặt nhựa, vạch giữa) ở cảnh giới thiệu căn nhà
@@ -2363,8 +2395,12 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   }
 
   // Ghim căn nhà
-  const dropT = t >= ho.t0 ? (t - ho.t0) / 0.75 : 0;
-  if (t > tl.intro.t0 + tl.intro.hold + (tl.intro.t1 - tl.intro.t0 - tl.intro.hold) * 0.6 || dropT > 0) drawHousePin(ctx, hs.x, hs.y, dropT, t, depthScale(hs.w));
+  // Ghim thả xuống ngay ở trung cảnh (khi xã/phường sáng lên) và giữ suốt cảnh tỉnh/thành
+  const it0 = tl.intro, dropAt = tl.provPh || scene.adminArea ? it0.t0 + it0.hold + (it0.t1 - it0.t0 - it0.hold) * 0.3 : ho.t0;
+  const dropT = t >= dropAt ? (t - dropAt) / 0.75 : 0;
+  // Ở cảnh tỉnh/thành (rất xa) ghim to hơn một chút để vẫn thấy rõ vị trí bất động sản
+  const pv = tl.provPh, pinBoost = pv ? 1 + 0.35 * fadeWin(t, pv.t0, ho.t0 + 0.6, 0.6, 0.8) : 1;
+  if (t > it0.t0 + it0.hold + (it0.t1 - it0.t0 - it0.hold) * 0.6 || dropT > 0) drawHousePin(ctx, hs.x, hs.y, dropT, t, depthScale(hs.w) * pinBoost);
 
   // Tiêu đề + thẻ căn nhà
   const logo = logoBox(tl);
@@ -2373,7 +2409,8 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   labelCard(ctx, hs.x, hs.y - 60 * depthScale(hs.w), scene.label, scene.sub, houseCardA, LW, safe);
 
   // Thẻ giá & thông tin căn nhà: lúc giới thiệu căn nhà và lúc kết
-  const infoHouseA = fadeWin(t, ho.t0 + 0.6, ov.t0 + 0.3, 0.45, 0.4);
+  // Bay từ cảnh tỉnh về: chờ máy tới gần bất động sản rồi mới hiện thẻ thông tin
+  const infoHouseA = fadeWin(t, ho.t0 + (tl.provPh ? 0.45 * (ho.t1 - ho.t0) : 0.6), ov.t0 + 0.3, 0.45, 0.4);
   const infoEndA = fadeWin(t, ou.t0 + 0.6, T + 10, 0.45, 0.4);
   const infoBottom = infoHouseA > 0 ? infoBox(tl, 'bottom', logo) : null;
   const infoTop = infoEndA > 0 ? infoBox(tl, 'top', logo) : null;

@@ -23,7 +23,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,500;0,700;1,500&family=Baloo+2:wght@600;800&family=JetBrains+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,500;0,700;1,500&family=Baloo+2:wght@600;800&family=Montserrat:wght@800;900&family=JetBrains+Mono:wght@500&display=swap">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body class="studio">
@@ -190,6 +190,8 @@
         <div class="grid2">
           <label class="field"><span class="field-label">Giá bán</span><input autocomplete="off" id="priceInput" class="input" type="text" maxlength="30" placeholder="3,2 tỷ"></label>
           <label class="field"><span class="field-label">Diện tích</span><input autocomplete="off" id="areaInput" class="input" type="text" maxlength="30" placeholder="5x20m"></label>
+          <label class="field"><span class="field-label">Đất thổ cư</span><input autocomplete="off" id="thoCuInput" class="input" type="text" maxlength="20" placeholder="VD: 100m² (để trống nếu full thổ cư)"></label>
+          <label class="field"><span class="field-label">Số tầng</span><input autocomplete="off" id="floorsInput" class="input" type="text" maxlength="20" placeholder="VD: 1 trệt 2 lầu"></label>
           <label class="field"><span class="field-label">Phòng ngủ</span><input autocomplete="off" id="bedsInput" class="input" type="text" inputmode="numeric" maxlength="20" placeholder="3"></label>
           <label class="field"><span class="field-label">Pháp lý</span><input autocomplete="off" id="legalInput" class="input" type="text" maxlength="30" placeholder="Sổ hồng riêng" list="legalList"></label>
         </div>
@@ -323,7 +325,7 @@
               </div>
             </div>
             <div class="field">
-              <span class="field-label">Lời đọc từng cảnh <span class="lbl-acts"><button id="altScriptBtn" class="link-btn" type="button">Đổi cách viết</button><button id="aiScriptBtn" class="link-btn" type="button" hidden>Viết lại bằng AI</button></span></span>
+              <span class="field-label">Lời đọc từng cảnh <span class="lbl-acts"><button id="altScriptBtn" class="link-btn" type="button">Đổi cách viết</button><button id="aiScriptBtn" class="link-btn" type="button" hidden>✨ AI viết kịch bản hay hơn</button></span></span>
               <div id="scriptList" class="script-list"></div>
             </div>
             <div class="field">

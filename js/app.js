@@ -33,6 +33,8 @@ const state = {
   price: '',         // thông tin căn nhà hiện trên video + giọng đọc
   area: '',
   beds: '',
+  thoCu: '',         // diện tích đất thổ cư
+  floors: '',        // số tầng (nhà)
   legal: '',
   subsOn: true,      // phụ đề chạy chữ theo giọng AI
   logoBg: true,      // nền trắng sau logo
@@ -156,7 +158,7 @@ function buildScene() {
     logo: media.logo,
     logoBg: state.logoBg,
     photos: media.photos.map(p => p.img),
-    info: { price: state.price, area: state.area, beds: state.beds, legal: state.legal },
+    info: { price: state.price, area: state.area, thoCu: state.thoCu, beds: state.beds, legal: state.legal },
     radiusKm: state.radiusKm,
     speed: state.speed,
     pois: selectedPois(),
@@ -707,17 +709,24 @@ const POI_LINES = {
 // Câu thông tin căn nhà: "Diện tích 5x20m, 3 phòng ngủ, sổ hồng riêng, giá chỉ 3,2 tỷ."
 function infoSentence(pick, skipPrice = false) {
   const c = v => String(v || '').replace(/\s+/g, ' ').trim();
-  const beds = c(state.beds);
-  const legal = c(state.legal);
+  const isLand = /LÔ ĐẤT/.test(state.typeLabel || '');
+  const beds = c(state.beds), legal = c(state.legal), floors = c(state.floors), thoCu = c(state.thoCu), rw = c(state.roadWidth);
   const parts = [];
   if (c(state.area)) parts.push('diện tích ' + c(state.area));
-  if (beds) parts.push(/^\d+$/.test(beds) ? beds + ' phòng ngủ' : beds);
+  if (thoCu) parts.push(/thổ cư/i.test(thoCu) ? thoCu : thoCu + ' thổ cư');
+  if (!isLand && floors) parts.push(/^\d+$/.test(floors) ? floors + ' tầng' : floors);
+  if (!isLand && beds) parts.push(/^\d+$/.test(beds) ? beds + ' phòng ngủ' : beds);
+  if (rw) parts.push('đường trước nhà ' + (/^\d+([.,]\d+)?$/.test(rw) ? rw + ' mét' : rw.replace(/(\d)\s*m\b/i, '$1 mét')));
   if (legal) parts.push(legal.charAt(0).toLowerCase() + legal.slice(1));
   if (c(state.price) && !skipPrice) parts.push(pick(['giá chỉ ', 'giá bán '], 5) + c(state.price));
   if (!parts.length) return '';
   const s = parts.join(', ');
   return s.charAt(0).toUpperCase() + s.slice(1) + '.';
 }
+// Tên xã/phường, tỉnh/thành để đọc (khách sửa được ở bước Nội dung); "Phường X" -> "phường X" khi nằm giữa câu
+function wardName() { return (state.areaWard || '').trim() || state.adminArea?.ward?.name || state.admin?.commune || ''; }
+function provName() { return (state.areaProv || '').trim() || state.adminArea?.province?.name || state.admin?.province || ''; }
+const midSentence = s => nameSpeak(s).replace(/^(Xã|Phường|Thị trấn|Đặc khu|Tỉnh)(?=\s)/, m => m.toLowerCase());
 function scriptSegments() {
   const tw = TYPE_WORD[state.typeLabel] || 'Căn nhà';
   const twl = tw.toLowerCase();
@@ -751,11 +760,22 @@ function scriptSegments() {
     `Chỉ ${price} cho ${twl}${near}! Cùng xem xung quanh có gì nhé!`,
     `${tw} ${price}${near}, giá này còn rất ít. Xem ngay nhé!`,
   ];
-  add('intro', 'Mở đầu', price
-    ? (generic ? pick(priceHooks) : `${nameSpeak(title)}, giá chỉ ${price}${near}. Cùng xem vị trí và tiện ích xung quanh nhé!`)
-    : generic ? pick(hooks) : `${nameSpeak(title)}. Cùng xem vị trí và tiện ích xung quanh nhé!`);
+  // Trình tự: trung cảnh "Đây là vị trí … thuộc phường …" → cả tỉnh/thành → cận cảnh thông tin → bán kính
+  const ward = wardName(), prov = provName();
+  const hasProvScene = !!(state.adminArea?.province?.rings?.length && state.adminArea?.ward?.rings?.length);
+  if (ward) {
+    const head = price ? (generic ? `${tw} giá chỉ ${price}${near}. ` : `${nameSpeak(title)}, giá chỉ ${price}. `) : (generic ? '' : `${nameSpeak(title)}. `);
+    add('intro', 'Mở đầu · xã/phường', head + pick([`Đây là vị trí ${twl} thuộc ${midSentence(ward)}.`, `Đây là vị trí ${twl}, nằm tại ${midSentence(ward)}.`], 1));
+  } else {
+    add('intro', 'Mở đầu', price
+      ? (generic ? pick(priceHooks) : `${nameSpeak(title)}, giá chỉ ${price}${near}. Cùng xem vị trí và tiện ích xung quanh nhé!`)
+      : generic ? pick(hooks) : `${nameSpeak(title)}. Cùng xem vị trí và tiện ích xung quanh nhé!`);
+  }
+  if (hasProvScene && prov) add('province', 'Tỉnh / thành phố', pick([`Thuộc ${midSentence(prov)}.`, `Nằm trong địa phận ${midSentence(prov)}.`], 2));
   const info = infoSentence(pick, !!price);
-  add('house', 'Căn nhà', (loc ? pick([`${tw} nằm tại ${loc}.`, `Đây là vị trí ${twl}, thuộc ${loc}.`], 1) : `Đây là vị trí ${twl} trên bản đồ.`) + (info ? ' ' + info : ''));
+  add('house', 'Thông tin ' + twl, ward
+    ? (info || pick([`Cùng xem kỹ vị trí ${twl} nhé.`, `Nhìn gần hơn vị trí ${twl} nhé.`], 1))
+    : (loc ? pick([`${tw} nằm tại ${loc}.`, `Đây là vị trí ${twl}, thuộc ${loc}.`], 1) : `Đây là vị trí ${twl} trên bản đồ.`) + (info ? ' ' + info : ''));
 
   // Kể tối đa 4 nhóm quan trọng nhất cho gọn tai
   const cats = CAT_RANK.filter(c => pois.some(p => p.cat === c)).slice(0, 4).map(c => CAT_WORD[c]);
@@ -880,8 +900,9 @@ async function aiRewrite() {
     const facts = {
       loai_bds: TYPE_WORD[state.typeLabel] || 'Căn nhà', tieu_de: state.title, dong_phu: state.sub, thuong_hieu: state.brand,
       so_dien_thoai_lien_he: phoneDisplay(state.phone) || null,
-      thong_tin_nha: { gia: state.price || null, dien_tich: state.area || null, phong_ngu: state.beds || null, phap_ly: state.legal || null },
-      ban_kinh_km: state.radiusKm, tinh_thanh: state.admin?.province || '', xa_phuong: state.admin?.commune || '',
+      thong_tin_nha: { gia: state.price || null, dien_tich: state.area || null, tho_cu: state.thoCu || null, so_tang: state.floors || null,
+        phong_ngu: state.beds || null, phap_ly: state.legal || null, duong_truoc_nha: state.roadWidth || null },
+      ban_kinh_km: state.radiusKm, tinh_thanh: provName(), xa_phuong: wardName(),
       duong_lon: selectedRoads().map(r => ({ ten: r.label, ten_duong: r.alt || '', cach_km: +r.nearKm.toFixed(2) })),
       ranh_gioi: state.useBoundary && state.admin?.boundary ? { tinh: state.admin.boundary.short, chim_bay_km: +state.admin.boundary.km.toFixed(2), duong_di_km: state.routes.__ranh ? +state.routes.__ranh.km.toFixed(2) : null, phut_o_to: state.routes.__ranh?.min ? Math.round(state.routes.__ranh.min) : null } : null,
       tien_ich: selectedPois().map(p => ({ ten: p.name, nhom: CATEGORIES[p.cat].label, cach_km: +(p.route ? p.route.km : p.km).toFixed(2) })),
@@ -1183,6 +1204,7 @@ async function fontsReady() {
     await Promise.race([
       Promise.all([
         ...['300', '500', '600', '700', '800'].map(w => document.fonts.load(`${w} 20px ${FONT}`, 'Vị trí ạ')),
+        document.fonts.load('900 40px "Montserrat"', 'PHƯỜNG THÀNH PHỐ Ồ'),
         ...(STYLES[state.style] && STYLES[state.style].head !== FONT
           ? ['500', '700', '800', 'italic 500'].map(w => document.fonts.load(`${w} 20px ${STYLES[state.style].head}`, 'Giá chỉ ạ'))
           : []),
@@ -1268,7 +1290,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'roadWidth', 'showStreets', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'roadWidth', 'showStreets', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -1996,7 +2018,7 @@ function init() {
   $('musicLib').addEventListener('change', e => pickLibrary(e.target.value));
   if (state.musicLib) pickLibrary(state.musicLib);
   // Thông tin căn nhà
-  for (const [id, key] of [['priceInput', 'price'], ['areaInput', 'area'], ['bedsInput', 'beds'], ['legalInput', 'legal']]) {
+  for (const [id, key] of [['priceInput', 'price'], ['areaInput', 'area'], ['thoCuInput', 'thoCu'], ['floorsInput', 'floors'], ['bedsInput', 'beds'], ['legalInput', 'legal']]) {
     $(id).value = state[key] || '';
     $(id).addEventListener('input', e => { state[key] = e.target.value; renderScript(); scheduleRebuild(); });
   }
