@@ -2371,7 +2371,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       ctx.save();
       ctx.transform(sx.x - s0.x, sx.y - s0.y, sy.x - s0.x, sy.y - s0.y, s0.x, s0.y);
       groundText(ctx, v, L, st.core, Math.min(roadLabelA, clamp01(rise * 1.5)), easeOut(rise),
-        { face: scene.roadLabelFace || 'vangkim', scale: scl, sweep, k: scale / s0.w, local: true });
+        { face: scene.roadLabelFace || 'trang', scale: scl, sweep, k: scale / s0.w, local: true });
       ctx.restore();
     }
   }

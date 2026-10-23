@@ -67,7 +67,8 @@ const state = {
   pageDesc: '',
   roadTheme: 'auto',
   routeTheme: 'vang',
-  roadLabelFace: 'vangkim', // chữ tên trục đường: vangkim | trang | vang
+  roadLabelFace: 'trang', // chữ tên trục đường: trang (mặc định) | vangkim | vang
+  labelV: 2,
   sfxOn: true,
   sfxVol: 0.7,
   voiceId: 'nu-nam',
@@ -105,7 +106,12 @@ function fixSpeed(o) {
 function load() {
   try {
     const raw = localStorage.getItem(STORE);
-    if (raw) Object.assign(state, fixSpeed(JSON.parse(raw)));
+    if (raw) {
+      const o = fixSpeed(JSON.parse(raw));
+      // 23/10/2026: mặc định chữ trục đường đổi từ Vàng kim sang Trắng bóng
+      if (o.labelV !== 2) { if (!o.roadLabelFace || o.roadLabelFace === 'vangkim') o.roadLabelFace = 'trang'; o.labelV = 2; }
+      Object.assign(state, o);
+    }
   } catch { /* bỏ qua */ }
 }
 
@@ -2173,7 +2179,7 @@ function init() {
   $('fitVoice').addEventListener('change', e => { state.fitVoice = e.target.checked; scheduleRebuild(); });
   renderSwatches('roadThemeRow', 'roadTheme', true);
   renderSwatches('routeThemeRow', 'routeTheme', false);
-  setSeg('labelFaceSeg', state.roadLabelFace || 'vangkim');
+  setSeg('labelFaceSeg', state.roadLabelFace || 'trang');
   bindSeg('labelFaceSeg', v => { state.roadLabelFace = v; save(); scheduleRebuild(); });
   renderStyles();
   renderBases();
