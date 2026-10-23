@@ -781,7 +781,7 @@ function placeRoadLabels(tl, cam, only = () => true) {
   const H = tl.scene.house;
   const hg = gLL(v, H.lat, H.lng);
   const hs = g2s(P, hg.x, hg.y);
-  const house = { x: hs.x - 24, y: hs.y - 66, w: 48, h: 72 }; // sát thân ghim để chữ được nằm gần nhà
+  const house = { x: hs.x - 34, y: hs.y - 72, w: 68, h: 84 };
   const placed = [house];
   for (const r of tl.roads) {
     const pg = gLL(v, r.P.lat, r.P.lng), ps = g2s(P, pg.x, pg.y);
@@ -793,24 +793,23 @@ function placeRoadLabels(tl, cam, only = () => true) {
     if (!only(gi)) return;
     let text = labelText(g);
     if (text.length > 22 && text.startsWith('CAO TỐC ')) text = 'CT ' + text.slice(8);
-    // Ưu tiên đặt chữ GẦN căn nhà (đoạn đường ngay chỗ gần nhà nhất), tránh ghim nhà và nhãn khoảng cách đã có
-    const target = 0.12 + 0.18 * gi;
+    const target = 0.5 + 0.45 * gi;
     const base = roadFontSize(text);
     const cands = [];
     for (const q of g.samples) {
-      if (q.dist > g.rrMax * 0.9 || q.dist < 0.03) continue;
+      if (q.dist > g.rrMax * 0.9 || q.dist < 0.08) continue;
       const gp = gLL(v, q.lat, q.lng);
       const sc = g2s(P, gp.x, gp.y);
       if (sc.x < 0 || sc.x > LW || sc.y < 0 || sc.y > LH) continue;
       const ga = gLL(v, q.a[0], q.a[1]), gb = gLL(v, q.b[0], q.b[1]);
       const sa = g2s(P, ga.x, ga.y), sb = g2s(P, gb.x, gb.y);
       let ang = Math.atan2(sb.y - sa.y, sb.x - sa.x);
-      cands.push({ q, s: sc, ang, steep: Math.abs(Math.sin(ang)), score: Math.abs(q.dist - target) * 2.5 + Math.abs(Math.sin(ang)) * 0.9 }); // gần nhà là chính, đoạn nằm ngang là phụ (dễ đọc)
+      cands.push({ q, s: sc, ang, steep: Math.abs(Math.sin(ang)), score: Math.abs(q.dist - target) + Math.abs(Math.sin(ang)) * 0.8 });
     }
     cands.sort((a, b) => a.score - b.score);
     const rectOf = (c, size) => {
       const pk = 1 / Math.max(0.4, c.s.w || 1); // gần đáy khung, phối cảnh làm chữ to ra trên màn hình
-      const w = (text.length * size * 0.8 + 24) * pk, h = size * 1.35 * pk; // chữ đậm 900 + giãn chữ
+      const w = (text.length * size * 0.68 + 18) * pk, h = size * 1.7 * pk;
       const cs = Math.abs(Math.cos(c.ang)), sn = Math.abs(Math.sin(c.ang));
       const bw = w * cs + h * sn, bh = w * sn + h * cs;
       return { x: c.s.x - bw / 2, y: c.s.y - bh / 2, w: bw, h: bh };
@@ -1091,9 +1090,9 @@ function groundText(g, v, L, color, alpha, rise, opt = null) {
   g.scale(s, s);
   const ex = Math.sin(ang), ey = Math.cos(ang);
   if (opt?.face) { glossyText(g, L.text, L.size, opt.face, L.size * 0.3 * rise, ex, ey, opt.sweep || 0, (opt.k || 1) * s); g.restore(); return; }
-  // Mặt chữ trắng (khác màu line), thân 3D màu đường tối, viền đen dày
+  // Mặt chữ trắng (hoặc vàng), thân 3D màu đường tối, viền đen dày
   text3D(g, L.text, L.size, {
-    faceTop: '#FFFFFF', faceBot: '#EDEFF2', side: shade(color, 0.42),
+    faceTop: opt?.yellow ? '#FFF3A6' : '#FFFFFF', faceBot: opt?.yellow ? '#FFCF1F' : '#EDEFF2', side: shade(color, 0.42),
     depth: L.size * 0.32 * rise, ex, ey, sp: L.size * 0.07, glow: 'rgba(0,0,0,0.75)', stroke: 'rgba(0,0,0,0.35)', outline: 'rgba(8,10,14,0.92)',
   });
   g.restore();
@@ -2419,20 +2418,14 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       const rise = clamp01((t - ph.t0 - 0.5 * d) / 0.7);
       if (rise <= 0) continue;
       const st = roadStyle(scene, tl.roads[L.road].level);
-      // Hiệu ứng vào: bật phóng to (hơi vượt rồi về), khối nổi dâng lên, vệt sáng lướt qua ngay khi chữ hiện.
-      // Hiệu ứng ra: thu nhỏ và mờ dần khi qua cảnh khác.
-      const pop = easeOutBack(clamp01(rise * 1.3));
-      const scl = (0.5 + 0.5 * pop) * (0.8 + 0.2 * roadLabelA);
-      const age = t - (ph.t0 + 0.5 * d);
-      // Đúng 1 vệt bóng kính lướt qua ngay sau khi chữ hiện, rồi thôi
-      const sweep = age < 1.3 ? clamp01((age - 0.45) / 0.75) : 0;
+      // Kiểu cũ (Giang chốt 23/10): chữ 3D in đậm, mặt trắng hoặc vàng, thân khối tối, viền đen dày; dâng khối khi hiện
       const q = gLL(v, L.at.lat, L.at.lng);
       const s0 = g2s(P, q.x, q.y), sx = g2s(P, q.x + 1, q.y), sy = g2s(P, q.x, q.y + 1);
       if (s0.w <= 0.05) continue;
       ctx.save();
       ctx.transform(sx.x - s0.x, sx.y - s0.y, sy.x - s0.x, sy.y - s0.y, s0.x, s0.y);
       groundText(ctx, v, L, st.core, Math.min(roadLabelA, clamp01(rise * 1.5)), easeOut(rise),
-        { face: scene.roadLabelFace || 'trang', scale: scl, sweep, k: scale / s0.w, local: true });
+        { local: true, yellow: scene.roadLabelFace === 'vang' || scene.roadLabelFace === 'vangkim' });
       ctx.restore();
     }
   }
