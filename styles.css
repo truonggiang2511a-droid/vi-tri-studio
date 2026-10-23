@@ -715,5 +715,3 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .vo-card { grid-template-columns: minmax(0, 1fr); }
 .vo-src { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
 .vo-card .field-label { flex-wrap: wrap; white-space: normal; }
-#flowSeg { display: grid; grid-template-columns: 1fr; gap: 6px; }
-#flowSeg button { text-align: left; }

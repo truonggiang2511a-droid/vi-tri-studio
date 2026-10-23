@@ -2009,7 +2009,7 @@ function init() {
   setSeg('fmtSeg', state.fmt);
   setSeg('speedSeg', state.speed);
   if (['cungluc', 'tiaxa'].includes(state.flow)) state.flow = 'radar';
-  setSeg('flowSeg', ['radar', 'vomcung'].includes(state.flow) ? state.flow : 'lanluot');
+  setSeg('flowSeg', state.flow === 'radar' ? 'radar' : 'lanluot');
   setSeg('qualSeg', state.quality);
   $('canvasWrap').dataset.fmt = state.fmt;
   updateScanLabel();

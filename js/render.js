@@ -602,11 +602,9 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   if (!radar && !spokes) pois.forEach((p, i) => {
     const pts = [H, p];
     const L = p.line;
-    const arc = flow === 'vomcung';
-    // Vòm cung không đi theo đường thật: chỉ cần khung ôm nhà + tiện ích, chừa trên cao cho vòm vồng lên
-    if (!arc) for (let j = 0; j < L.xs.length; j += Math.max(1, Math.floor(L.xs.length / 24))) pts.push(unproject(L.xs[j], L.ys[j], 0));
+    for (let j = 0; j < L.xs.length; j += Math.max(1, Math.floor(L.xs.length / 24))) pts.push(unproject(L.xs[j], L.ys[j], 0));
     const cam = fitCam(pts, LW, LH,
-      { left: safe.x + 60, right: safe.x + 60, top: safe.top + (arc ? 260 : 120), bottom: safe.bottom + (arc ? 90 : 50) }, PITCH.poi, 11, arc ? 17.3 : 16);
+      { left: safe.x + 50, right: safe.x + 50, top: safe.top + 120, bottom: safe.bottom + 50 }, PITCH.poi, 11, 16);
     raw.push({ type: 'poi', d: 3.5, to: cam, move: 0.6, drift: 0.02, poi: i, vkey: 'poi:' + p.id });
   });
   if (pois.length || boundary) raw.push({ type: 'summary', d: 5.6, to: camSummary, move: 0.5, drift: 0.012, vkey: 'summary' });
@@ -649,7 +647,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     fmt: fmtKey, LW, LH, safe, duration: t, phases, scene, panelH,
     G: groundDims(LW, LH),
     intro: first('intro'), house: first('house'), overview: first('overview'), boundaryPh: first('boundary'),
-    summary: first('summary'), outro: first('outro'), photosPh: first('photos'), photos, radarPh: first('radar'), provPh: first('province'), flow: radar ? 'radar' : flow === 'vomcung' ? 'vomcung' : 'lanluot',
+    summary: first('summary'), outro: first('outro'), photosPh: first('photos'), photos, radarPh: first('radar'), provPh: first('province'), flow: radar ? 'radar' : 'lanluot',
     roadPhases: phases.filter(p => p.type === 'road'), poiPhases: phases.filter(p => p.type === 'poi'),
     pois, roads, boundary, captions, hook, lot, lotArea: lot ? lotAreaM2(lot) : 0,
   };
@@ -2462,51 +2460,6 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     chip(ctx, Math.max(safe.x + 50, Math.min(LW - safe.x - 50, cx)), cy, `cách ${formatKm(r.nearKm, true, '≈ ')}`, a, roadStyle(scene, r.level).core);
   });
 
-  // Kiểu "Vòm cung": line sáng cong vồng lên từ nhà bay tới từng tiện ích (thay cho đường đi chi tiết)
-  if (tl.flow === 'vomcung') {
-    const rs = routeStyle(scene);
-    tl.poiPhases.forEach((ph, i) => {
-      if (t < ph.t0) return;
-      const poi = tl.pois[i];
-      const d = ph.t1 - ph.t0;
-      const p = clamp01((t - ph.t0 - 0.14 * d) / (0.46 * d));
-      const done = t >= ph.t1;
-      let a = done ? (afterAll ? 0.6 : 0.4) : 1;
-      if (t >= ou.t0) a = Math.max(0.25, 0.6 - (t - ou.t0) / 0.8);
-      if (p <= 0) return;
-      const a0 = gLL(v, H.lat, H.lng), b0 = gLL(v, poi.lat, poi.lng);
-      const N = 48, upto = done ? 1 : smooth(p);
-      const sa = g2s(P, a0.x, a0.y), sb = g2s(P, b0.x, b0.y);
-      const span = Math.hypot(sb.x - sa.x, sb.y - sa.y);
-      const hMax = Math.min(LH * 0.3, Math.max(70, span * 0.55));
-      const pth = new Path2D();
-      let head = null;
-      for (let k = 0; k <= N; k++) {
-        const u = (k / N) * upto;
-        const q = g2s(P, a0.x + (b0.x - a0.x) * u, a0.y + (b0.y - a0.y) * u);
-        const y = q.y - Math.sin(Math.PI * u) * hMax;
-        k ? pth.lineTo(q.x, y) : pth.moveTo(q.x, y);
-        head = { x: q.x, y };
-      }
-      // bóng vòm in mờ trên mặt đất cho có chiều sâu
-      ctx.save();
-      ctx.setLineDash([4, 7]); ctx.globalAlpha = a * 0.35; ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1.4;
-      ctx.beginPath(); ctx.moveTo(sa.x, sa.y);
-      const gq = g2s(P, a0.x + (b0.x - a0.x) * upto, a0.y + (b0.y - a0.y) * upto); ctx.lineTo(gq.x, gq.y); ctx.stroke();
-      ctx.restore();
-      glowStroke(ctx, pth, done ? rs.done : rs.core, rs.glow, done ? 3 : 4.4, a);
-      if (!done && head && upto < 1) headGlow(ctx, head, rs.core, 14);
-      // gợn sóng khi vòm đáp xuống tiện ích
-      if (upto >= 1 && t < ph.t1 + 0.6) {
-        const q = ((t - (ph.t0 + 0.6 * d)) / 0.9);
-        if (q > 0 && q < 1) {
-          ctx.save(); ctx.globalAlpha = a * (1 - q); ctx.strokeStyle = rs.core; ctx.lineWidth = 2.2;
-          ctx.beginPath(); ctx.ellipse(sb.x, sb.y, 10 + q * 34, (10 + q * 34) * 0.45, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
-        }
-      }
-    });
-  }
-
   // Ghim tiện ích
   tl.poiPhases.forEach((ph, i) => {
     if (t < (SP ? SP.t0 : ph.t0)) return;
@@ -2514,7 +2467,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     const d = ph.t1 - ph.t0;
     const s = S(poi.lat, poi.lng);
     const pop = SP ? clamp01((spokeP(i) - 0.85) / 0.15) : clamp01((t - ph.t0 - (ph.radar ? 0.3 : 0.55) * d) / 0.5);
-    const sc = i === curIdx && !SP ? easeOutBack(pop) : (t >= ph.t1 ? (tl.flow === 'radar' ? 0.95 : 0.8) : easeOutBack(pop));
+    const sc = i === curIdx && !SP ? easeOutBack(pop) : (t >= ph.t1 ? (tl.flow !== 'lanluot' ? 0.95 : 0.8) : easeOutBack(pop));
     drawPoiPin(ctx, s.x, s.y, poi.cat, sc * depthScale(s.w), 1, iconOf(poi));
   });
 
@@ -2621,7 +2574,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   const avoid = [{ x: hs.x - 26, y: hs.y - 64, w: 52, h: 68 }];
   if (logo) avoid.push(logo);
   if (capL) avoid.push(capL);
-  if (tl.flow !== 'radar') tl.poiPhases.forEach((ph, i) => {
+  if (tl.flow === 'lanluot') tl.poiPhases.forEach((ph, i) => {
     const d = ph.t1 - ph.t0;
     const a = fadeWin(t, ph.t0 + 0.6 * d, ph.t1 + 0.2, 0.4, 0.3);
     if (a <= 0) return;
@@ -2631,7 +2584,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   });
 
   // Quét vòng tròn / mũi tên: nhãn dán cạnh ghim (tên + khoảng cách), tự tránh đè nhau, đè chữ, đè nhà
-  if (tl.flow === 'radar') {
+  if (tl.flow !== 'lanluot') {
     const endA = t >= ou.t0 ? Math.max(0, 1 - (t - ou.t0) / 0.5) : 1;
     const placed = avoid.slice();
     placed.push({ x: hs.x - 30, y: hs.y - 70, w: 60, h: 76 });
