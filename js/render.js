@@ -769,7 +769,7 @@ function placeRoadLabels(tl, cam) {
   const H = tl.scene.house;
   const hg = gLL(v, H.lat, H.lng);
   const hs = g2s(P, hg.x, hg.y);
-  const house = { x: hs.x - 34, y: hs.y - 72, w: 68, h: 84 };
+  const house = { x: hs.x - 24, y: hs.y - 66, w: 48, h: 72 }; // sát thân ghim để chữ được nằm gần nhà
   const placed = [house];
   for (const r of tl.roads) {
     const pg = gLL(v, r.P.lat, r.P.lng), ps = g2s(P, pg.x, pg.y);
@@ -780,23 +780,24 @@ function placeRoadLabels(tl, cam) {
   tl.roads.forEach((g, gi) => {
     let text = labelText(g);
     if (text.length > 22 && text.startsWith('CAO TỐC ')) text = 'CT ' + text.slice(8);
-    const target = 0.5 + 0.45 * gi;
+    // Ưu tiên đặt chữ GẦN căn nhà (đoạn đường ngay chỗ gần nhà nhất), tránh ghim nhà và nhãn khoảng cách đã có
+    const target = 0.12 + 0.18 * gi;
     const base = roadFontSize(text);
     const cands = [];
     for (const q of g.samples) {
-      if (q.dist > g.rrMax * 0.9 || q.dist < 0.08) continue;
+      if (q.dist > g.rrMax * 0.9 || q.dist < 0.03) continue;
       const gp = gLL(v, q.lat, q.lng);
       const sc = g2s(P, gp.x, gp.y);
       if (sc.x < 0 || sc.x > LW || sc.y < 0 || sc.y > LH) continue;
       const ga = gLL(v, q.a[0], q.a[1]), gb = gLL(v, q.b[0], q.b[1]);
       const sa = g2s(P, ga.x, ga.y), sb = g2s(P, gb.x, gb.y);
       let ang = Math.atan2(sb.y - sa.y, sb.x - sa.x);
-      cands.push({ q, s: sc, ang, steep: Math.abs(Math.sin(ang)), score: Math.abs(q.dist - target) + Math.abs(Math.sin(ang)) * 1.8 }); // ưu tiên đoạn đường nằm ngang cho chữ dễ đọc
+      cands.push({ q, s: sc, ang, steep: Math.abs(Math.sin(ang)), score: Math.abs(q.dist - target) * 2.5 + Math.abs(Math.sin(ang)) * 0.9 }); // gần nhà là chính, đoạn nằm ngang là phụ (dễ đọc)
     }
     cands.sort((a, b) => a.score - b.score);
     const rectOf = (c, size) => {
       const pk = 1 / Math.max(0.4, c.s.w || 1); // gần đáy khung, phối cảnh làm chữ to ra trên màn hình
-      const w = (text.length * size * 0.8 + 24) * pk, h = size * 1.8 * pk; // chữ đậm 900 + giãn chữ
+      const w = (text.length * size * 0.8 + 24) * pk, h = size * 1.35 * pk; // chữ đậm 900 + giãn chữ
       const cs = Math.abs(Math.cos(c.ang)), sn = Math.abs(Math.sin(c.ang));
       const bw = w * cs + h * sn, bh = w * sn + h * cs;
       return { x: c.s.x - bw / 2, y: c.s.y - bh / 2, w: bw, h: bh };
