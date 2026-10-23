@@ -981,10 +981,10 @@ function text3D(ctx, text, size, opt) {
 // ---------- Chữ tên trục đường bóng: vàng kim / trắng bóng / vàng bóng, không viền, vệt sáng lướt qua ----------
 const LABEL_FACES = {
   vangkim: { stops: [[0, '#FFFBE6'], [0.3, '#FFE066'], [0.5, '#E9A90F'], [0.6, '#FFF0B0'], [0.82, '#F4B82A'], [1, '#A86E08']], side: '#6E4504' },
-  trang:   { stops: [[0, '#FFFFFF'], [0.45, '#FFFFFF'], [0.55, '#DCE3EA'], [1, '#B9C4CF']], side: '#2B323A' },
+  trang:   { stops: [[0, '#FFFFFF'], [0.45, '#FFFFFF'], [0.55, '#DCE3EA'], [1, '#B9C4CF']], side: '#2B323A', edge: 0.95 }, // chữ trắng: viền vệt kính đậm hơn mới thấy
   vang:    { stops: [[0, '#FFF6B0'], [0.45, '#FFE14D'], [0.55, '#FFC400'], [1, '#F0A800']], side: '#5A3F00' },
 };
-let labelCanvas = null;
+let labelCanvas = null, labelFace = null;
 // Vẽ khối chữ 3D lên canvas phụ rồi dán ra, để vệt sáng chỉ lướt trên mặt chữ (không loang ra bản đồ)
 function glossyText(ctx, text, size, faceKey, depth, ex, ey, sweep, k = 1) {
   const F = LABEL_FACES[faceKey] || LABEL_FACES.vangkim;
@@ -1019,16 +1019,44 @@ function glossyText(ctx, text, size, faceKey, depth, ex, ey, sweep, k = 1) {
   // mặt chữ bóng kiểu kim loại, không viền
   const gr = x.createLinearGradient(0, -size * 0.55, 0, size * 0.5);
   for (const [o, col] of F.stops) gr.addColorStop(o, col);
-  x.fillStyle = gr;
-  fillSpaced(x, text, 0, 0, sp);
-  if (sweep > 0 && sweep < 1) {
-    x.globalCompositeOperation = 'source-atop';
-    const sx = -tw / 2 - size + sweep * (tw + size * 2);
-    const sg = x.createLinearGradient(sx - size * 0.5, -size, sx + size * 0.5, size);
-    sg.addColorStop(0, 'rgba(255,255,255,0)'); sg.addColorStop(0.5, 'rgba(255,255,255,0.9)'); sg.addColorStop(1, 'rgba(255,255,255,0)');
-    x.fillStyle = sg;
-    x.fillRect(sx - size, -size, size * 2, size * 2);
-    x.globalCompositeOperation = 'source-over';
+  if (!(sweep > 0 && sweep < 1)) {
+    x.fillStyle = gr;
+    fillSpaced(x, text, 0, 0, sp);
+  } else {
+    // Vệt bóng kính chỉ nằm trên MẶT chữ: vẽ mặt chữ + vệt lên canvas riêng rồi dán đè lên khối
+    if (!labelFace) labelFace = makeCanvas(16, 16);
+    const fc = labelFace;
+    if (fc.width < W || fc.height < Hh) { fc.width = Math.max(fc.width, W); fc.height = Math.max(fc.height, Hh); }
+    const f = fc.getContext('2d');
+    f.setTransform(1, 0, 0, 1, 0, 0);
+    f.globalCompositeOperation = 'source-over';
+    f.clearRect(0, 0, W, Hh);
+    f.setTransform(k, 0, 0, k, (tw / 2 + pad) * k, (size / 2 + pad) * k);
+    f.font = `900 ${size}px ${NAME_FONT}`;
+    f.textAlign = 'left'; f.textBaseline = 'middle';
+    const fg = f.createLinearGradient(0, -size * 0.55, 0, size * 0.5);
+    for (const [o, col] of F.stops) fg.addColorStop(o, col);
+    f.fillStyle = fg;
+    fillSpaced(f, text, 0, 0, sp);
+    f.globalCompositeOperation = 'source-atop';
+    // Vệt bóng kính: viền mảnh xanh xám (khúc xạ) + dải sáng sắc + dải mảnh song song, nghiêng chéo
+    const sx = -tw / 2 - size * 1.2 + sweep * (tw + size * 2.4);
+    const sg = f.createLinearGradient(sx - size * 0.6, -size * 0.35, sx + size * 0.6, size * 0.35);
+    sg.addColorStop(0, 'rgba(255,255,255,0)');
+    sg.addColorStop(0.2, 'rgba(255,255,255,0)');
+    sg.addColorStop(0.24, 'rgba(255,255,255,0.85)'); // dải mảnh
+    sg.addColorStop(0.28, 'rgba(255,255,255,0)');
+    sg.addColorStop(0.35, 'rgba(120,150,175,0)');
+    sg.addColorStop(0.38, `rgba(100,130,160,${F.edge || 0.6})`); // viền khúc xạ (làm vệt nổi cả trên chữ trắng)
+    sg.addColorStop(0.41, 'rgba(255,255,255,1)');    // dải chính sắc nét
+    sg.addColorStop(0.61, 'rgba(255,255,255,1)');
+    sg.addColorStop(0.64, `rgba(100,130,160,${(F.edge || 0.6) * 0.9})`);
+    sg.addColorStop(0.67, 'rgba(120,150,175,0)');
+    sg.addColorStop(1, 'rgba(255,255,255,0)');
+    f.fillStyle = sg;
+    f.fillRect(sx - size * 1.2, -size, size * 2.4, size * 2);
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    x.drawImage(fc, 0, 0, W, Hh, 0, 0, W, Hh);
   }
   ctx.drawImage(c, 0, 0, W, Hh, -(tw / 2 + pad), -(size / 2 + pad), W / k, Hh / k);
 }
@@ -2366,8 +2394,8 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       const pop = easeOutBack(clamp01(rise * 1.3));
       const scl = (0.5 + 0.5 * pop) * (0.8 + 0.2 * roadLabelA);
       const age = t - (ph.t0 + 0.5 * d);
-      // Đúng 2 vệt sáng lướt qua: lúc chữ vừa hiện và ngay sau đó, rồi thôi
-      const sweep = age < 1.4 ? clamp01((age - 0.35) / 0.9) : age < 2.7 ? clamp01((age - 1.6) / 0.9) : 0;
+      // Đúng 1 vệt bóng kính lướt qua ngay sau khi chữ hiện, rồi thôi
+      const sweep = age < 1.3 ? clamp01((age - 0.45) / 0.75) : 0;
       const q = gLL(v, L.at.lat, L.at.lng);
       const s0 = g2s(P, q.x, q.y), sx = g2s(P, q.x + 1, q.y), sy = g2s(P, q.x, q.y + 1);
       if (s0.w <= 0.05) continue;
