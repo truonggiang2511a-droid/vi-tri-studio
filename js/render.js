@@ -787,11 +787,12 @@ function placeRoadLabels(tl, cam) {
       const ga = gLL(v, q.a[0], q.a[1]), gb = gLL(v, q.b[0], q.b[1]);
       const sa = g2s(P, ga.x, ga.y), sb = g2s(P, gb.x, gb.y);
       let ang = Math.atan2(sb.y - sa.y, sb.x - sa.x);
-      cands.push({ q, s: sc, ang, steep: Math.abs(Math.sin(ang)), score: Math.abs(q.dist - target) + Math.abs(Math.sin(ang)) * 0.8 });
+      cands.push({ q, s: sc, ang, steep: Math.abs(Math.sin(ang)), score: Math.abs(q.dist - target) + Math.abs(Math.sin(ang)) * 1.8 }); // ưu tiên đoạn đường nằm ngang cho chữ dễ đọc
     }
     cands.sort((a, b) => a.score - b.score);
     const rectOf = (c, size) => {
-      const w = text.length * size * 0.68 + 18, h = size * 1.7;
+      const pk = 1 / Math.max(0.4, c.s.w || 1); // gần đáy khung, phối cảnh làm chữ to ra trên màn hình
+      const w = (text.length * size * 0.8 + 24) * pk, h = size * 1.8 * pk; // chữ đậm 900 + giãn chữ
       const cs = Math.abs(Math.cos(c.ang)), sn = Math.abs(Math.sin(c.ang));
       const bw = w * cs + h * sn, bh = w * sn + h * cs;
       return { x: c.s.x - bw / 2, y: c.s.y - bh / 2, w: bw, h: bh };
@@ -972,8 +973,64 @@ function text3D(ctx, text, size, opt) {
   strokeSpaced(ctx, text, 0, 0, sp);
 }
 
+// ---------- Chữ tên trục đường bóng: vàng kim / trắng bóng / vàng bóng, không viền, vệt sáng lướt qua ----------
+const LABEL_FACES = {
+  vangkim: { stops: [[0, '#FFFBE6'], [0.3, '#FFE066'], [0.5, '#E9A90F'], [0.6, '#FFF0B0'], [0.82, '#F4B82A'], [1, '#A86E08']], side: '#6E4504' },
+  trang:   { stops: [[0, '#FFFFFF'], [0.45, '#FFFFFF'], [0.55, '#DCE3EA'], [1, '#B9C4CF']], side: '#2B323A' },
+  vang:    { stops: [[0, '#FFF6B0'], [0.45, '#FFE14D'], [0.55, '#FFC400'], [1, '#F0A800']], side: '#5A3F00' },
+};
+let labelCanvas = null;
+// Vẽ khối chữ 3D lên canvas phụ rồi dán ra, để vệt sáng chỉ lướt trên mặt chữ (không loang ra bản đồ)
+function glossyText(ctx, text, size, faceKey, depth, ex, ey, sweep, k = 1) {
+  const F = LABEL_FACES[faceKey] || LABEL_FACES.vangkim;
+  const sp = size * 0.06;
+  if (!labelCanvas) labelCanvas = makeCanvas(16, 16);
+  const c = labelCanvas;
+  let x = c.getContext('2d');
+  x.setTransform(1, 0, 0, 1, 0, 0);
+  x.font = `900 ${size}px ${NAME_FONT}`;
+  const tw = spacedWidth(x, text, sp);
+  const pad = size * 0.9 + depth * 1.5;
+  const W = Math.ceil((tw + pad * 2) * k), Hh = Math.ceil((size + pad * 2) * k);
+  if (c.width < W || c.height < Hh) { c.width = Math.max(c.width, W); c.height = Math.max(c.height, Hh); x = c.getContext('2d'); }
+  x.setTransform(1, 0, 0, 1, 0, 0);
+  x.globalCompositeOperation = 'source-over';
+  x.clearRect(0, 0, W, Hh);
+  x.setTransform(k, 0, 0, k, (tw / 2 + pad) * k, (size / 2 + pad) * k);
+  x.font = `900 ${size}px ${NAME_FONT}`;
+  x.textAlign = 'left'; x.textBaseline = 'middle';
+  // bóng đổ đậm dưới khối chữ (fillSpaced tự canh giữa tại x = 0)
+  x.save();
+  x.shadowColor = 'rgba(0,0,0,0.85)'; x.shadowBlur = size * 0.35; x.shadowOffsetX = ex * depth * 0.6; x.shadowOffsetY = ey * depth * 0.6 + size * 0.05;
+  x.fillStyle = 'rgba(0,0,0,0.6)';
+  fillSpaced(x, text, ex * depth, ey * depth, sp);
+  x.restore();
+  // thân khối nổi, tối dần về phía sau
+  const steps = Math.max(2, Math.round(depth / 0.8));
+  for (let i = steps; i >= 1; i--) {
+    x.fillStyle = shade(F.side, 0.55 + 0.45 * (1 - i / steps));
+    fillSpaced(x, text, ex * depth * i / steps, ey * depth * i / steps, sp);
+  }
+  // mặt chữ bóng kiểu kim loại, không viền
+  const gr = x.createLinearGradient(0, -size * 0.55, 0, size * 0.5);
+  for (const [o, col] of F.stops) gr.addColorStop(o, col);
+  x.fillStyle = gr;
+  fillSpaced(x, text, 0, 0, sp);
+  if (sweep > 0 && sweep < 1) {
+    x.globalCompositeOperation = 'source-atop';
+    const sx = -tw / 2 - size + sweep * (tw + size * 2);
+    const sg = x.createLinearGradient(sx - size * 0.5, -size, sx + size * 0.5, size);
+    sg.addColorStop(0, 'rgba(255,255,255,0)'); sg.addColorStop(0.5, 'rgba(255,255,255,0.9)'); sg.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = sg;
+    x.fillRect(sx - size, -size, size * 2, size * 2);
+    x.globalCompositeOperation = 'source-over';
+  }
+  ctx.drawImage(c, 0, 0, W, Hh, -(tw / 2 + pad), -(size / 2 + pad), W / k, Hh / k);
+}
+
 // Chữ in nằm trên mặt đất theo hướng trục đường (sau khi bẻ phối cảnh sẽ nằm nghiêng theo mặt đất)
-function groundText(g, v, L, color, alpha, rise) {
+// opt.face: kiểu chữ bóng; opt.scale: hiệu ứng vào/ra; opt.sweep: vệt sáng 0..1; opt.k: độ phân giải canvas đất
+function groundText(g, v, L, color, alpha, rise, opt = null) {
   if (alpha <= 0.01) return;
   const p = gLL(v, L.at.lat, L.at.lng);
   const a = gLL(v, L.a[0], L.a[1]), b = gLL(v, L.b[0], L.b[1]);
@@ -984,9 +1041,10 @@ function groundText(g, v, L, color, alpha, rise) {
   g.globalAlpha = alpha;
   g.translate(p.x, p.y);
   g.rotate(ang);
-  const s = 0.9 + 0.1 * rise;
+  const s = opt?.scale ?? (0.9 + 0.1 * rise);
   g.scale(s, s);
   const ex = Math.sin(ang), ey = Math.cos(ang);
+  if (opt?.face) { glossyText(g, L.text, L.size, opt.face, L.size * 0.3 * rise, ex, ey, opt.sweep || 0, (opt.k || 1) * s); g.restore(); return; }
   // Mặt chữ trắng (khác màu line), thân 3D màu đường tối, viền đen dày
   text3D(g, L.text, L.size, {
     faceTop: '#FFFFFF', faceBot: '#EDEFF2', side: shade(color, 0.42),
@@ -1942,7 +2000,14 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       const rise = clamp01((t - ph.t0 - 0.5 * d) / 0.7);
       if (rise <= 0) continue;
       const st = roadStyle(scene, tl.roads[L.road].level);
-      groundText(g, v, L, st.core, Math.min(roadLabelA, clamp01(rise * 1.5)), easeOut(rise));
+      // Hiệu ứng vào: bật phóng to (hơi vượt rồi về), khối nổi dâng lên, vệt sáng lướt qua ngay khi chữ hiện.
+      // Hiệu ứng ra: thu nhỏ và mờ dần khi qua cảnh khác. Sau đó vệt sáng lướt lại định kỳ.
+      const pop = easeOutBack(clamp01(rise * 1.3));
+      const scl = (0.5 + 0.5 * pop) * (0.8 + 0.2 * roadLabelA);
+      const age = t - (ph.t0 + 0.5 * d);
+      const sweep = age < 1.3 ? clamp01((age - 0.35) / 0.9) : ((age - 1.3) % 2.8) / 1.1;
+      groundText(g, v, L, st.core, Math.min(roadLabelA, clamp01(rise * 1.5)), easeOut(rise),
+        { face: scene.roadLabelFace || 'vangkim', scale: scl, sweep, k: gs });
     }
   }
 

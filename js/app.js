@@ -66,6 +66,7 @@ const state = {
   pageDesc: '',
   roadTheme: 'auto',
   routeTheme: 'vang',
+  roadLabelFace: 'vangkim', // chữ tên trục đường: vangkim | trang | vang
   sfxOn: true,
   sfxVol: 0.7,
   voiceId: 'nu-nam',
@@ -185,6 +186,7 @@ function buildScene() {
     showStreets: state.showStreets !== false,
     roadTheme: state.roadTheme,
     routeTheme: state.routeTheme,
+    roadLabelFace: state.roadLabelFace,
   };
 }
 function voiceFitDuration() {
@@ -1394,7 +1396,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'roadWidth', 'showStreets', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'roadWidth', 'showStreets', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -2163,6 +2165,8 @@ function init() {
   $('fitVoice').addEventListener('change', e => { state.fitVoice = e.target.checked; scheduleRebuild(); });
   renderSwatches('roadThemeRow', 'roadTheme', true);
   renderSwatches('routeThemeRow', 'routeTheme', false);
+  setSeg('labelFaceSeg', state.roadLabelFace || 'vangkim');
+  bindSeg('labelFaceSeg', v => { state.roadLabelFace = v; save(); scheduleRebuild(); });
   renderStyles();
   renderBases();
   setSeg('voiceSeg', state.voiceId);
