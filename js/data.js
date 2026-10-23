@@ -372,7 +372,9 @@ const SCHOOL_JUNK = /(^(học sinh|phụ huynh|cổng|căn tin|nhà xe|bãi xe)\
 const PARK_JUNK = /(cà phê|cafe|coffee|quán|nhà hàng|karaoke|bida|billiard)/i;
 // Trả về nhóm đúng (có thể đổi nhóm), hoặc null nếu nên bỏ. osm = điểm có thẻ phân loại rõ của OpenStreetMap
 function vetPoi(name, cat, osm) {
-  const n = String(name || '');
+  const n = String(name || '').normalize('NFC').trim();
+  // Tên chỉ là tên loại, không có tên riêng ("Công Viên", "Ủy Ban Nhân Dân", "Trạm Sạc") → không đọc được, bỏ
+  if (/^(công viên|trạm sạc|trạm sạc điện|ủy ban nhân dân|uỷ ban nhân dân|ubnd|chợ|siêu thị|trường|trường học|bệnh viện|trạm y tế|ngân hàng|bưu điện|công an|nhà văn hóa|nhà văn hoá)( \d+\w?)?$/i.test(n)) return null;
   if (/^(trạm sạc|trụ sạc)|sạc (điện|xe)/i.test(n)) return 'congcong';
   if (cat !== 'nganhang' && cat !== 'kcn' && BANK_NAME.test(n) && !GOV_OK.test(n.replace(/bưu điện/i, ''))) return /atm|vay|tín dụng/i.test(n) ? null : 'nganhang';
   switch (cat) {
