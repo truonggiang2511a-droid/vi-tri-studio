@@ -2264,6 +2264,14 @@ function init() {
   $('recRedo').addEventListener('click', () => { rec.idx = -1; rec.marks = []; renderRecLines(); recButtons('idle'); recStart(); });
   $('recUse').addEventListener('click', recUse);
   $('recDlg').addEventListener('close', recCleanup);
+  // Video hướng dẫn: chỉ tải khi khách bấm xem, đóng hộp thì dừng phát
+  $('guideBtn').addEventListener('click', () => {
+    const v = $('guideVideo');
+    if (!v.src) v.src = 'huong-dan.mp4';
+    $('guideDlg').showModal();
+    v.play().catch(() => {});
+  });
+  $('guideDlg').addEventListener('close', () => $('guideVideo').pause());
   document.addEventListener('keydown', e => {
     if (e.code === 'Space' && $('recDlg').open && rec.mr?.state === 'recording') { e.preventDefault(); recNext(); }
   });

@@ -735,3 +735,14 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .next-card span { font-size: 13px; opacity: .8; line-height: 1.4; }
 /* Banner đơn đang chờ thanh toán */
 .low-banner.order { background: color-mix(in srgb, #2fb67c 16%, var(--surface)); }
+
+/* Nút nhỏ mở video hướng dẫn ở bước 1 */
+.guide-link {
+  display: inline-flex; align-items: center; gap: 6px; margin: -6px 0 14px; padding: 6px 12px;
+  border: 1px solid var(--line, rgba(0,0,0,.12)); border-radius: 999px; background: var(--surface-2, #f3f5f4);
+  font: inherit; font-size: 13.5px; font-weight: 700; color: var(--ink); cursor: pointer;
+}
+.guide-link:active { transform: scale(.98); }
+.guide-dlg { width: min(400px, calc(100% - 24px)); }
+.guide-card { padding: 16px 14px 14px; }
+.guide-card video { width: 100%; max-height: calc(100dvh - 120px); aspect-ratio: 9 / 16; object-fit: contain; background: #000; border-radius: 12px; }

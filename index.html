@@ -110,6 +110,7 @@
     <article class="step on" id="step1" data-step="1">
       <header class="step-head"><h2>Căn nhà nằm ở đâu?</h2></header>
       <p class="step-guide">Dán link Google Maps hoặc toạ độ căn nhà, rồi bấm <strong>Quét tiện ích</strong>.</p>
+      <button id="guideBtn" class="guide-link" type="button">▶ Xem hướng dẫn sử dụng (1 phút)</button>
       <label class="field">
         <span class="field-label">Toạ độ hoặc link Google Maps</span>
         <div class="input-row">
@@ -465,6 +466,14 @@
     </div>
   </section>
 </main>
+
+<dialog id="guideDlg" class="dlg guide-dlg" aria-label="Video hướng dẫn sử dụng">
+  <div class="dlg-card guide-card">
+    <button class="dlg-x" type="button" data-close aria-label="Đóng">×</button>
+    <h3>Hướng dẫn sử dụng</h3>
+    <video id="guideVideo" playsinline controls preload="none" poster="huong-dan-poster.jpg"></video>
+  </div>
+</dialog>
 
 <dialog id="recDlg" class="dlg dlg-wide" aria-labelledby="recTitle">
   <div class="dlg-card rec-card">
