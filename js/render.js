@@ -979,11 +979,12 @@ function text3D(ctx, text, size, opt) {
 }
 
 // ---------- Chữ tên trục đường bóng: vàng kim / trắng bóng / vàng bóng, không viền, vệt sáng lướt qua ----------
+// Màu chữ phẳng: trắng hoặc vàng, gần như đặc màu cho rõ (chỉ chuyển nhẹ trên → dưới)
 const LABEL_FACES = {
-  vangkim: { stops: [[0, '#FFFBE6'], [0.3, '#FFE066'], [0.5, '#E9A90F'], [0.6, '#FFF0B0'], [0.82, '#F4B82A'], [1, '#A86E08']], side: '#6E4504' },
-  trang:   { stops: [[0, '#FFFFFF'], [0.45, '#FFFFFF'], [0.55, '#DCE3EA'], [1, '#B9C4CF']], side: '#2B323A', edge: 0.95 }, // chữ trắng: viền vệt kính đậm hơn mới thấy
-  vang:    { stops: [[0, '#FFF6B0'], [0.45, '#FFE14D'], [0.55, '#FFC400'], [1, '#F0A800']], side: '#5A3F00' },
+  trang: { stops: [[0, '#FFFFFF'], [1, '#EEF2F6']], side: '#2B323A', edge: 0.95 }, // chữ trắng: viền vệt kính đậm hơn mới thấy
+  vang:  { stops: [[0, '#FFE45C'], [1, '#FFC400']], side: '#5A3F00' },
 };
+LABEL_FACES.vangkim = LABEL_FACES.vang; // dữ liệu cũ đã chọn "Vàng kim" → vàng
 let labelCanvas = null, labelFace = null;
 // Vẽ khối chữ 3D lên canvas phụ rồi dán ra, để vệt sáng chỉ lướt trên mặt chữ (không loang ra bản đồ)
 function glossyText(ctx, text, size, faceKey, depth, ex, ey, sweep, k = 1) {
@@ -1004,18 +1005,17 @@ function glossyText(ctx, text, size, faceKey, depth, ex, ey, sweep, k = 1) {
   x.setTransform(k, 0, 0, k, (tw / 2 + pad) * k, (size / 2 + pad) * k);
   x.font = `900 ${size}px ${NAME_FONT}`;
   x.textAlign = 'left'; x.textBaseline = 'middle';
-  // bóng đổ đậm dưới khối chữ (fillSpaced tự canh giữa tại x = 0)
+  // Chữ phẳng (KHÔNG in khối — Giang chốt 23/10): chỉ bóng đổ đậm cho rõ, dễ nhìn trên mọi nền bản đồ.
+  // Bóng đổ = 1 lớp tối sát chữ lệch xuống + 1 quầng mờ rộng (fillSpaced tự canh giữa tại x = 0)
+  const off = size * 0.07;
   x.save();
-  x.shadowColor = 'rgba(0,0,0,0.85)'; x.shadowBlur = size * 0.35; x.shadowOffsetX = ex * depth * 0.6; x.shadowOffsetY = ey * depth * 0.6 + size * 0.05;
-  x.fillStyle = 'rgba(0,0,0,0.6)';
-  fillSpaced(x, text, ex * depth, ey * depth, sp);
+  x.shadowColor = 'rgba(0,0,0,0.75)'; x.shadowBlur = size * 0.45;
+  x.fillStyle = 'rgba(0,0,0,0.55)';
+  fillSpaced(x, text, ex * off, ey * off, sp);
   x.restore();
-  // thân khối nổi, tối dần về phía sau
-  const steps = Math.max(2, Math.round(depth / 0.8));
-  for (let i = steps; i >= 1; i--) {
-    x.fillStyle = shade(F.side, 0.55 + 0.45 * (1 - i / steps));
-    fillSpaced(x, text, ex * depth * i / steps, ey * depth * i / steps, sp);
-  }
+  x.fillStyle = 'rgba(0,0,0,0.85)';
+  fillSpaced(x, text, ex * off, ey * off, sp);
+  if (depth > 0) { /* giữ tham số cũ, không còn vẽ khối */ }
   // mặt chữ bóng kiểu kim loại, không viền
   const gr = x.createLinearGradient(0, -size * 0.55, 0, size * 0.5);
   for (const [o, col] of F.stops) gr.addColorStop(o, col);

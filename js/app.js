@@ -68,7 +68,7 @@ const state = {
   pageDesc: '',
   roadTheme: 'auto',
   routeTheme: 'vang',
-  roadLabelFace: 'trang', // chữ tên trục đường: trang (mặc định) | vangkim | vang
+  roadLabelFace: 'trang', // chữ tên trục đường: trang (mặc định) | vang — chữ phẳng đổ bóng
   labelV: 2,
   sfxOn: true,
   sfxVol: 0.7,
@@ -111,6 +111,7 @@ function load() {
       const o = fixSpeed(JSON.parse(raw));
       // 23/10/2026: mặc định chữ trục đường đổi từ Vàng kim sang Trắng bóng
       if (o.labelV !== 2) { if (!o.roadLabelFace || o.roadLabelFace === 'vangkim') o.roadLabelFace = 'trang'; o.labelV = 2; }
+      if (o.roadLabelFace === 'vangkim') o.roadLabelFace = 'vang'; // bỏ kiểu Vàng kim (23/10): còn Trắng / Vàng
       Object.assign(state, o);
     }
   } catch { /* bỏ qua */ }
@@ -1498,6 +1499,7 @@ async function openProject(id) {
     const r = await rpc('vt_project_get', { p_token: account.token, p_id: id });
     const d = r.data || {};
     Object.assign(state, { pois: [], roads: [], selected: [], selectedRoads: [], routes: {}, admin: null, scriptEdits: {} }, fixSpeed(d));
+    if (state.roadLabelFace === 'vangkim') state.roadLabelFace = 'vang';
     state.cloudId = r.id;
     state.projName = r.name;
     state.coordSet = true;
