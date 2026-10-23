@@ -1039,7 +1039,7 @@ function groundText(g, v, L, color, alpha, rise, opt = null) {
   if (ang < -Math.PI / 2) ang += Math.PI;
   g.save();
   g.globalAlpha = alpha;
-  g.translate(p.x, p.y);
+  if (!opt?.local) g.translate(p.x, p.y); // local: đã đặt sẵn gốc toạ độ tại chữ (vẽ trên màn hình)
   g.rotate(ang);
   const s = opt?.scale ?? (0.9 + 0.1 * rise);
   g.scale(s, s);
@@ -1990,26 +1990,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   });
   for (const hd of roadHeads) headGlow(g, hd.p, hd.c, 16);
 
-  // Chữ 3D in trên trục đường
   const roadLabelA = t < roadsEnd ? 1 : Math.max(0, 1 - (t - roadsEnd) / 0.5);
-  if (roadLabelA > 0) {
-    for (const L of tl.roadLabels) {
-      const ph = tl.roadPhases[L.road];
-      if (!ph || t < ph.t0) continue;
-      const d = ph.t1 - ph.t0;
-      const rise = clamp01((t - ph.t0 - 0.5 * d) / 0.7);
-      if (rise <= 0) continue;
-      const st = roadStyle(scene, tl.roads[L.road].level);
-      // Hiệu ứng vào: bật phóng to (hơi vượt rồi về), khối nổi dâng lên, vệt sáng lướt qua ngay khi chữ hiện.
-      // Hiệu ứng ra: thu nhỏ và mờ dần khi qua cảnh khác. Sau đó vệt sáng lướt lại định kỳ.
-      const pop = easeOutBack(clamp01(rise * 1.3));
-      const scl = (0.5 + 0.5 * pop) * (0.8 + 0.2 * roadLabelA);
-      const age = t - (ph.t0 + 0.5 * d);
-      const sweep = age < 1.3 ? clamp01((age - 0.35) / 0.9) : ((age - 1.3) % 2.8) / 1.1;
-      groundText(g, v, L, st.core, Math.min(roadLabelA, clamp01(rise * 1.5)), easeOut(rise),
-        { face: scene.roadLabelFace || 'vangkim', scale: scl, sweep, k: gs });
-    }
-  }
 
   // Ranh giới tỉnh/thành: chỉ hiện trong đoạn riêng, sau đó ẩn cho đỡ rối
   const B = tl.boundary;
@@ -2364,6 +2345,33 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   const S = (lat, lng) => { const q = gLL(v, lat, lng); return g2s(P, q.x, q.y); };
   const hs = g2s(P, hg.x, hg.y);
   const depthScale = w => Math.max(0.82, Math.min(1.2, 1 / w));
+
+  // Chữ 3D tên trục đường lớn: vẽ TRÊN MÀN HÌNH (không vẽ vào canvas mặt đất nữa — chữ ra ngoài vùng canvas
+  // mặt đất lúc máy lia sẽ bị cắt cụt). Dùng phép biến đổi phối cảnh cục bộ tại vị trí chữ nên vẫn trông in dẹt trên đường.
+  if (roadLabelA > 0) {
+    for (const L of tl.roadLabels) {
+      const ph = tl.roadPhases[L.road];
+      if (!ph || t < ph.t0) continue;
+      const d = ph.t1 - ph.t0;
+      const rise = clamp01((t - ph.t0 - 0.5 * d) / 0.7);
+      if (rise <= 0) continue;
+      const st = roadStyle(scene, tl.roads[L.road].level);
+      // Hiệu ứng vào: bật phóng to (hơi vượt rồi về), khối nổi dâng lên, vệt sáng lướt qua ngay khi chữ hiện.
+      // Hiệu ứng ra: thu nhỏ và mờ dần khi qua cảnh khác. Sau đó vệt sáng lướt lại định kỳ.
+      const pop = easeOutBack(clamp01(rise * 1.3));
+      const scl = (0.5 + 0.5 * pop) * (0.8 + 0.2 * roadLabelA);
+      const age = t - (ph.t0 + 0.5 * d);
+      const sweep = age < 1.3 ? clamp01((age - 0.35) / 0.9) : ((age - 1.3) % 2.8) / 1.1;
+      const q = gLL(v, L.at.lat, L.at.lng);
+      const s0 = g2s(P, q.x, q.y), sx = g2s(P, q.x + 1, q.y), sy = g2s(P, q.x, q.y + 1);
+      if (s0.w <= 0.05) continue;
+      ctx.save();
+      ctx.transform(sx.x - s0.x, sx.y - s0.y, sy.x - s0.x, sy.y - s0.y, s0.x, s0.y);
+      groundText(ctx, v, L, st.core, Math.min(roadLabelA, clamp01(rise * 1.5)), easeOut(rise),
+        { face: scene.roadLabelFace || 'vangkim', scale: scl, sweep, k: scale / s0.w, local: true });
+      ctx.restore();
+    }
+  }
 
   // Nhãn vòng bán kính
   if (ringP > 0.05 && ringA > 0.05) {
