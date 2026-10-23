@@ -279,39 +279,39 @@
       </div>
 
       <div class="subpane" data-pane="sound" hidden>
-        <div class="ai-card" id="aiCard" hidden>
-          <div class="ai-card-text">
-            <strong>✨ Kịch bản AI viết</strong>
-            <span>Chọn phong cách rồi bấm viết. Mỗi lần bấm ra một kịch bản mới, đúng thông tin căn. Không trừ lượt.</span>
+        <!-- Một module: chọn cách viết → chọn giọng → một nút tạo cả kịch bản + giọng đọc -->
+        <div class="vo-card" id="voCard">
+          <div class="vo-head"><strong>🎙️ Kịch bản &amp; giọng đọc</strong><span id="voState" class="vo-state">Chưa tạo</span></div>
+          <span class="field-label">① Cách viết kịch bản</span>
+          <div class="vo-src" id="scriptSrcSeg" role="radiogroup" aria-label="Cách viết kịch bản">
+            <button type="button" role="radio" data-v="ai" class="src-ai"><b>✨ AI viết kịch bản</b><small>Hay hơn, mỗi lần một kiểu · Khuyên dùng</small></button>
+            <button type="button" role="radio" data-v="mau" class="src-mau"><b>📝 Kịch bản mẫu</b><small>Câu có sẵn, gọn</small></button>
           </div>
-          <div class="seg seg-wrap ai-tones" id="aiToneSeg" role="radiogroup" aria-label="Phong cách kịch bản">
-            <button type="button" role="radio" data-v="hai-huoc">😄 Hài hước</button>
-            <button type="button" role="radio" data-v="ke-chuyen">💬 Kể chuyện</button>
-            <button type="button" role="radio" data-v="chuyen-gia">📈 Chuyên gia</button>
-            <button type="button" role="radio" data-v="tre-trung">⚡ Trẻ trung</button>
-            <button type="button" role="radio" data-v="sang-trong">💎 Sang trọng</button>
-            <button type="button" role="radio" data-v="chot-sale">🔥 Chốt sale</button>
+          <div id="aiToneWrap">
+            <span class="field-label">Phong cách AI</span>
+            <div class="seg seg-wrap ai-tones" id="aiToneSeg" role="radiogroup" aria-label="Phong cách kịch bản">
+              <button type="button" role="radio" data-v="hai-huoc">😄 Hài hước</button>
+              <button type="button" role="radio" data-v="ke-chuyen">💬 Kể chuyện</button>
+              <button type="button" role="radio" data-v="chuyen-gia">📈 Chuyên gia</button>
+              <button type="button" role="radio" data-v="tre-trung">⚡ Trẻ trung</button>
+              <button type="button" role="radio" data-v="sang-trong">💎 Sang trọng</button>
+              <button type="button" role="radio" data-v="chot-sale">🔥 Chốt sale</button>
+            </div>
           </div>
-          <button id="aiScriptBig" class="btn btn-primary" type="button">✨ Viết kịch bản bằng AI</button>
-        </div>
-        <p id="aiStatus" class="hint">Đang kiểm tra giọng đọc AI…</p>
-        <div class="field">
-          <span class="field-label">Giọng đọc</span>
+          <span class="field-label">② Giọng đọc</span>
           <div class="seg seg-wrap" id="voiceSeg" role="radiogroup" aria-label="Giọng đọc">
             <button type="button" role="radio" data-v="nu-nam">Nữ miền Nam</button>
             <button type="button" role="radio" data-v="nam-nam">Nam miền Nam</button>
             <button type="button" role="radio" data-v="nu-bac">Nữ miền Bắc</button>
             <button type="button" role="radio" data-v="nam-bac">Nam miền Bắc</button>
           </div>
+          <button id="ttsBtn" class="btn btn-primary btn-lg btn-block vo-go" type="button">🎙️ Tạo kịch bản &amp; giọng đọc</button>
+          <button id="voVoiceOnly" class="link-btn vo-only" type="button" hidden>Đã sửa lời? Chỉ đọc lại giọng (giữ nguyên kịch bản)</button>
+          <p id="ttsMsg" class="hint" aria-live="polite"></p>
+          <p id="aiStatus" class="hint small">Đang kiểm tra giọng đọc AI…</p>
         </div>
-        <div class="ai-actions">
-          <button id="ttsBtn" class="btn btn-quiet" type="button">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9zm12.5 3a4.5 4.5 0 0 0-2.5-4v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z" fill="currentColor"/></svg>
-            Tạo giọng đọc AI
-          </button>
-          <label class="check"><input autocomplete="off" id="aiVoiceOn" type="checkbox" checked> Dùng giọng AI</label>
-        </div>
-        <p id="ttsMsg" class="hint" aria-live="polite"></p>
+        <!-- giữ id cũ cho mã cũ, không hiển thị -->
+        <div hidden><div id="aiCard"></div><button id="aiScriptBig" type="button"></button></div>
         <div class="field own-voice">
           <span class="field-label">Tự đọc bằng giọng của anh/chị <em>video tự khớp từng câu</em></span>
           <div class="ai-actions">
@@ -321,7 +321,7 @@
             </button>
             <label class="btn btn-quiet file-btn">Tải file đã đọc<input autocomplete="off" id="ownVoiceFile" type="file" accept="audio/*,video/mp4"></label>
           </div>
-          <p id="ownVoiceMsg" class="hint" aria-live="polite">Đọc đúng lời đọc từng cảnh (sửa được ở mục "Sửa lời đọc"), nghỉ một nhịp giữa các câu. App sẽ cắt từng câu và cho mỗi cảnh chạy đúng theo lời anh/chị.</p>
+          <p id="ownVoiceMsg" class="hint" aria-live="polite">Đọc đúng lời đọc từng cảnh (xem &amp; sửa ở mục "✏️ Xem &amp; sửa từng câu"), nghỉ một nhịp giữa các câu. App sẽ cắt từng câu và cho mỗi cảnh chạy đúng theo lời anh/chị.</p>
         </div>
         <div class="field">
           <span class="field-label">Nhạc nền <em>không lo bản quyền</em></span>
@@ -329,8 +329,9 @@
           <label class="vol"><span>Âm lượng</span><input autocomplete="off" id="musicVol" type="range" min="0" max="1" step="0.05" value="0.8"></label>
         </div>
         <details class="more">
-          <summary>Sửa lời đọc, tốc độ, nhạc riêng</summary>
+          <summary>✏️ Xem &amp; sửa từng câu, tốc độ đọc, nhạc riêng</summary>
           <div class="more-body">
+            <label class="check"><input autocomplete="off" id="aiVoiceOn" type="checkbox" checked> Dùng giọng AI trong video (bỏ tick nếu tự thu âm)</label>
             <div class="field">
               <span class="field-label">Tốc độ đọc</span>
               <div class="seg" id="vspeedSeg" role="radiogroup" aria-label="Tốc độ đọc">

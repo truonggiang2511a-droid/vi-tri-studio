@@ -58,6 +58,8 @@ const state = {
   areaWard: '', areaProv: '', roadWidth: '',
   showStreets: true, // vẽ đường quanh nhà kiểu đường nhựa
   aiTone: 'hai-huoc', // phong cách kịch bản AI
+  scriptMode: 'ai', // 'ai' = AI viết (mặc định, nổi bật) | 'mau' = kịch bản mẫu
+  voSig: '', // lựa chọn (cách viết + phong cách) của lần tạo giọng gần nhất
   lotArea: '',       // diện tích hiển thị (trống = tự tính)
   stars: [],         // id tiện ích được khoanh vùng nổi bật
   pageVideo: '',     // link video đã đăng (gắn vào trang web căn nhà)
@@ -853,6 +855,7 @@ function renderScript() {
     if (v && v.ck === voiceKey(s.text)) { el.textContent = `có giọng · ${v.buffer.duration.toFixed(1).replace('.', ',')} giây`; el.className = 'vst ok'; }
     else { el.textContent = v ? 'đã sửa, cần tạo lại giọng' : ''; el.className = 'vst'; }
   }
+  updateVoCard();
 }
 
 async function checkAi() {
@@ -867,10 +870,10 @@ async function checkAi() {
   } catch { /* để mặc định */ }
   const prov = { fpt: 'FPT.AI', google: 'Google' }[ai.ttsProvider] || '';
   $('aiStatus').textContent = ai.tts
-    ? `Giọng AI đã sẵn sàng${prov ? ' (' + prov + ')' : ''}. Bấm Tạo giọng đọc AI, video tự giãn theo từng câu.`
+    ? `Giọng AI sẵn sàng${prov ? ' (' + prov + ')' : ''}. Video tự giãn theo từng câu đọc.`
     : 'Giọng AI chưa bật trên máy chủ (cần khoá FPT.AI hoặc Google TTS). Kịch bản vẫn sửa và chép được để tự ghi âm.';
-  $('aiScriptBtn').hidden = !ai.script;
-  $('aiCard').hidden = !ai.script;
+  $('aiScriptBtn').hidden = true; // đã gộp vào module Kịch bản & giọng đọc
+  updateVoCard();
 }
 
 function renderVoices(list) {
@@ -890,7 +893,7 @@ function altScript() {
   state.scriptAi = false;
   media.voiceSegs.clear();
   renderScript(); scheduleRebuild(); save();
-  $('ttsMsg').textContent = 'Đã đổi sang cách viết khác. Bấm Tạo giọng đọc AI để đọc kịch bản mới.';
+  $('ttsMsg').textContent = 'Đã đổi sang cách viết khác. Bấm nút tạo giọng để đọc kịch bản mới.';
 }
 
 async function aiRewrite() {
@@ -937,14 +940,67 @@ async function aiRewrite() {
     state.scriptEdits = { ...j.segments };
     state.scriptAi = true;
     renderScript(); scheduleRebuild(); save();
-    $('ttsMsg').textContent = 'AI đã viết xong. Sửa câu nào chưa ưng rồi bấm Tạo giọng đọc AI.';
-    $('aiCard').classList.add('done'); $('aiScriptBig').textContent = '🔄 Tạo lại kịch bản khác';
+    $('ttsMsg').textContent = 'AI đã viết xong kịch bản.';
     media.voiceSegs.clear(); // kịch bản mới thì giọng cũ không còn khớp
     return true;
   } catch (e) {
-    $('ttsMsg').textContent = 'AI viết kịch bản chưa dùng được (' + e.message + '). Kịch bản mẫu miễn phí vẫn dùng bình thường, bấm "Đổi cách viết" để ra phiên bản khác.';
+    $('ttsMsg').textContent = 'AI viết kịch bản chưa dùng được (' + e.message + '), tạm dùng kịch bản mẫu.';
   } finally { btn.disabled = false; $('aiScriptBig').disabled = false; }
   return false;
+}
+
+// ---------- Module Kịch bản & giọng đọc: một nút làm cả hai ----------
+const voMode = () => (state.scriptMode === 'mau' || !ai.script ? 'mau' : 'ai');
+const voChoice = () => voMode() === 'ai' ? 'ai|' + (state.aiTone || 'hai-huoc') : 'mau';
+function voStatus() {
+  const segs = scriptSegments().filter(s => speakable(s.text));
+  let ok = 0;
+  for (const sg of segs) { const v = media.voiceSegs.get(sg.key); if (v && v.ck === voiceKey(sg.text)) ok++; }
+  if (!ok) return 'none';
+  if (ok < segs.length) return 'stale'; // khách sửa lời hoặc đổi giọng/tốc độ
+  return state.voSig && state.voSig !== voChoice() ? 'changed' : 'ready';
+}
+let voBusy = false;
+function updateVoCard() {
+  const btn = $('ttsBtn');
+  if (!btn) return;
+  const mode = voMode(), st = voStatus();
+  setSeg('scriptSrcSeg', mode);
+  $('scriptSrcSeg').querySelector('[data-v="ai"]').disabled = !ai.script;
+  $('aiToneWrap').hidden = mode !== 'ai';
+  const pill = $('voState');
+  pill.textContent = { none: 'Chưa tạo', stale: 'Cần đọc lại', changed: 'Đã đổi lựa chọn', ready: '✓ Đã có giọng' }[st];
+  pill.classList.toggle('ok', st === 'ready');
+  if (voBusy) return;
+  btn.textContent = st === 'none' ? (mode === 'ai' ? '🎙️ Tạo kịch bản AI & giọng đọc' : '🎙️ Tạo giọng đọc (kịch bản mẫu)')
+    : st === 'stale' ? '🎙️ Đọc lại giọng cho câu đã sửa'
+    : st === 'changed' ? '🎙️ Tạo lại theo lựa chọn mới'
+    : (mode === 'ai' ? '🔄 Tạo lại: kịch bản AI mới + giọng' : '🔄 Tạo lại: cách viết khác + giọng');
+  btn.classList.toggle('btn-primary', st !== 'ready');
+  btn.classList.toggle('btn-quiet', st === 'ready');
+  const only = $('voVoiceOnly');
+  only.hidden = st !== 'stale';
+  only.textContent = 'Hoặc viết kịch bản mới hoàn toàn';
+}
+// fresh = viết kịch bản mới (bỏ kịch bản cũ). Không fresh: giữ lời đã có, chỉ đọc phần còn thiếu
+async function makeScriptAndVoice({ fresh } = {}) {
+  if (voBusy || ttsBusy) return;
+  const st = voStatus();
+  if (fresh == null) fresh = st === 'ready' || st === 'changed';
+  const mode = voMode();
+  const btn = $('ttsBtn');
+  voBusy = true; btn.disabled = true;
+  try {
+    if (mode === 'ai') {
+      if (fresh || !state.scriptAi) { btn.textContent = '✨ AI đang viết kịch bản…'; await aiRewrite(); }
+    } else if (state.scriptAi) {
+      state.scriptEdits = {}; state.scriptAi = false; media.voiceSegs.clear(); renderScript(); scheduleRebuild();
+    } else if (fresh) altScript();
+    btn.textContent = '🎙️ Đang tạo giọng đọc…';
+    voBusy = false; // để generateVoices tự khoá nút trong lúc đọc
+    await generateVoices();
+    if (voiceDurations()) { state.voSig = voChoice(); save(); }
+  } finally { voBusy = false; btn.disabled = false; updateVoCard(); }
 }
 
 let ttsBusy = false;
@@ -1274,7 +1330,7 @@ function updateQuick() {
     let label = 'Tiếp tục →', hide = false;
     if (step === 1) { label = state.pois.length ? 'Tiếp tục →' : 'Quét tiện ích'; hide = !state.pois.length; }
     else if (step === 2) label = state.pois.length ? 'Tiếp tục: Nội dung →' : 'Về bước 1';
-    else if (step === 3) label = voiceDurations() || !state.aiVoiceOn ? 'Tiếp tục: Xuất video →' : 'Tạo giọng đọc AI';
+    else if (step === 3) label = voiceDurations() || !state.aiVoiceOn ? 'Tiếp tục: Xuất video →' : '🎙️ Tạo kịch bản & giọng đọc';
     else label = 'Xuất video MP4'; // bước 4: nút chính luôn nằm ở thanh dưới, không bị che
     next.textContent = label;
     next.hidden = hide;
@@ -1296,9 +1352,8 @@ async function stepNext() {
       // Chỉ tạo giọng, không tự phát: khách tự bấm Xem thử để nghe
       setSub('sound');
       pause();
-      // Có AI viết kịch bản mà khách chưa sửa lời: để AI viết trước cho hay rồi mới đọc (lỗi thì dùng kịch bản mẫu)
-      if (ai.script && !state.scriptAi && !Object.keys(state.scriptEdits || {}).length) await aiRewrite();
-      await generateVoices();
+      // Cùng một việc với nút lớn trong module: viết kịch bản (AI hoặc mẫu theo lựa chọn) rồi đọc
+      await makeScriptAndVoice({ fresh: false });
       if (voiceDurations()) {
         rebuild();
         t = 0;
@@ -1314,7 +1369,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'roadWidth', 'showStreets', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'roadWidth', 'showStreets', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -2096,16 +2151,14 @@ function init() {
   $('sfxVol').addEventListener('input', e => { state.sfxVol = parseFloat(e.target.value); media.mixKey = ''; save(); });
   $('aiVoiceOn').addEventListener('change', e => { state.aiVoiceOn = e.target.checked; scheduleRebuild(); });
   $('aiScriptBtn').addEventListener('click', aiRewrite);
-  $('aiScriptBig').addEventListener('click', () => { setSub('sound'); aiRewrite(); });
   setSeg('aiToneSeg', state.aiTone || 'hai-huoc');
-  bindSeg('aiToneSeg', v => { state.aiTone = v; save(); $('aiScriptBig').textContent = state.scriptAi ? '🔄 Viết lại theo phong cách này' : '✨ Viết kịch bản bằng AI'; });
+  bindSeg('aiToneSeg', v => { state.aiTone = v; save(); updateVoCard(); });
+  bindSeg('scriptSrcSeg', v => { if (v === 'ai' && !ai.script) return; state.scriptMode = v; save(); updateVoCard(); });
+  $('voVoiceOnly').addEventListener('click', () => makeScriptAndVoice({ fresh: true }));
   $('altScriptBtn').addEventListener('click', altScript);
   $('phoneInput').value = state.phone || '';
   $('phoneInput').addEventListener('input', e => { state.phone = e.target.value; renderScript(); scheduleRebuild(); });
-  $('ttsBtn').addEventListener('click', async () => {
-    if (ai.script && !state.scriptAi && !Object.keys(state.scriptEdits || {}).length) await aiRewrite();
-    generateVoices();
-  });
+  $('ttsBtn').addEventListener('click', () => makeScriptAndVoice());
   $('scriptList').addEventListener('input', e => {
     const k = e.target.dataset.seg;
     if (!k) return;
