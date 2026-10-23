@@ -6,6 +6,7 @@ import {
   FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, STYLES, BASES,
 } from './render.js';
 import { sfxEvents } from './sfx.js';
+import { stretchBuffer } from './stretch.js';
 import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4, unlockAudioContext } from './export.js';
 import { initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount } from './account.js';
 import { splitVoice, joinForTts, splitAt } from './voicesplit.js';
@@ -212,8 +213,8 @@ function voiceDurations() {
   const out = {};
   let n = 0;
   for (const sg of scriptSegments()) {
-    const v = media.voiceSegs.get(sg.key);
-    if (v && v.ck === voiceKey(sg.text)) { out[sg.key] = v.buffer.duration; n++; }
+    const b = voiceBuf(sg);
+    if (b) { out[sg.key] = b.duration; n++; }
   }
   return n ? out : null;
 }
@@ -222,8 +223,7 @@ function captionTexts() {
   if (!state.subsOn || !state.aiVoiceOn) return null;
   const out = {};
   for (const sg of scriptSegments()) {
-    const v = media.voiceSegs.get(sg.key);
-    if (v && v.ck === voiceKey(sg.text)) out[sg.key] = sg.text;
+    if (voiceOk(sg)) out[sg.key] = sg.text;
   }
   return out;
 }
@@ -235,8 +235,8 @@ function voiceSegsFor(T) {
   if (!state.aiVoiceOn) return [];
   const byKey = {};
   for (const sg of scriptSegments()) {
-    const v = media.voiceSegs.get(sg.key);
-    if (v && v.ck === voiceKey(sg.text)) byKey[sg.key] = v.buffer;
+    const b = voiceBuf(sg);
+    if (b) byKey[sg.key] = b;
   }
   const out = [];
   for (const ph of T.phases) {
@@ -689,7 +689,20 @@ function speakable(text) {
     .replace(/\s+/g, ' ')
     .trim();
 }
-const voiceKey = text => speakable(text) + '|' + state.voiceId + '|' + state.voiceSpeed;
+// Khoá khớp giọng: lời + giọng (KHÔNG gồm tốc độ đọc — đổi tốc độ thì co giãn giọng sẵn có, không phải tạo lại)
+const voiceKey = text => speakable(text) + '|' + state.voiceId;
+const VOICE_RATE = { '-1': 0.9, 0: 1, 1: 1.1 }; // khớp speakingRate bên máy chủ (lib/tts.js)
+const voiceOk = sg => { const v = media.voiceSegs.get(sg.key); return !!(v && v.ck === voiceKey(sg.text)); };
+// Giọng của một câu theo tốc độ đọc hiện tại: đúng tốc độ lúc tạo thì dùng luôn, khác thì co giãn (giữ cao độ) và nhớ lại
+function voiceBuf(sg) {
+  const v = media.voiceSegs.get(sg.key);
+  if (!v || v.ck !== voiceKey(sg.text)) return null;
+  const sp = state.voiceSpeed || 0;
+  if (v.own || v.speed == null || v.speed === sp) return v.buffer;
+  v.st = v.st || {};
+  if (!v.st[sp]) v.st[sp] = stretchBuffer(v.buffer, (VOICE_RATE[v.speed] || 1) / (VOICE_RATE[sp] || 1));
+  return v.st[sp];
+}
 
 // Kịch bản mẫu miễn phí: viết sẵn theo dữ liệu đã quét, không bịa thông tin.
 // Mỗi căn có cách viết riêng (theo toạ độ), bấm "Đổi cách viết" để ra phiên bản khác.
@@ -868,7 +881,8 @@ function renderScript() {
     const el = box.querySelector(`[data-vst="${CSS.escape(s.key)}"]`);
     const v = media.voiceSegs.get(s.key);
     if (!el) continue;
-    if (v && v.ck === voiceKey(s.text)) { el.textContent = `có giọng · ${v.buffer.duration.toFixed(1).replace('.', ',')} giây`; el.className = 'vst ok'; }
+    const vb = voiceBuf(s);
+    if (vb) { el.textContent = `có giọng · ${vb.duration.toFixed(1).replace('.', ',')} giây`; el.className = 'vst ok'; }
     else { el.textContent = v ? 'đã sửa, cần tạo lại giọng' : ''; el.className = 'vst'; }
   }
   updateVoCard();
@@ -972,7 +986,7 @@ const needTone = () => voMode() === 'ai' && !state.aiTone;
 function voStatus() {
   const segs = scriptSegments().filter(s => speakable(s.text));
   let ok = 0;
-  for (const sg of segs) { const v = media.voiceSegs.get(sg.key); if (v && v.ck === voiceKey(sg.text)) ok++; }
+  for (const sg of segs) if (voiceOk(sg)) ok++;
   if (!ok) return 'none';
   if (ok < segs.length) return 'stale'; // khách sửa lời hoặc đổi giọng/tốc độ
   return state.voSig && state.voSig !== voChoice() ? 'changed' : 'ready';
@@ -1075,7 +1089,7 @@ async function generateVoices() {
   if (!ai.tts) { await checkAi(); if (!ai.tts) { toast('Giọng AI chưa bật trên máy chủ.', 3500); return; } }
   if (ai.gated && !account.profile && !(await requireLogin('Đăng nhập để tạo giọng đọc AI. Tài khoản mới có lượt dùng thử miễn phí.'))) return;
   const segs = scriptSegments().filter(s => speakable(s.text));
-  const todo = segs.filter(s => { const cur = media.voiceSegs.get(s.key); return !(cur && cur.ck === voiceKey(s.text)); });
+  const todo = segs.filter(s => !voiceOk(s));
   const msg = $('ttsMsg');
   if (!todo.length) { msg.textContent = 'Giọng đọc đã khớp với kịch bản hiện tại.'; return; }
   // Tạo giọng ở căn mới tính 1 lượt (xuất video căn này trong thời hạn xuất lại không mất thêm)
@@ -1116,7 +1130,7 @@ async function generateVoices() {
       });
       const whole = await new OfflineAudioContext(1, 48000, 48000).decodeAudioData(ab);
       const pieces = splitVoice(whole, parts);
-      grp.forEach((s, i) => media.voiceSegs.set(s.key, { ck: voiceKey(s.text), buffer: pieces[i] }));
+      grp.forEach((s, i) => media.voiceSegs.set(s.key, { ck: voiceKey(s.text), buffer: pieces[i], speed: state.voiceSpeed || 0 }));
       made += grp.length;
       renderScript();
     }
@@ -2189,7 +2203,20 @@ function init() {
   $('sfxVol').value = state.sfxVol;
   $('aiVoiceOn').checked = state.aiVoiceOn;
   bindSeg('voiceSeg', v => { state.voiceId = v; renderScript(); save(); });
-  bindSeg('vspeedSeg', v => { state.voiceSpeed = Number(v); renderScript(); save(); });
+  // Đổi tốc độ đọc: giọng đã tạo tự co giãn theo (không mất giọng, không tốn lượt)
+  bindSeg('vspeedSeg', async v => {
+    state.voiceSpeed = Number(v);
+    save();
+    // co giãn từng câu, nhường máy giữa các câu để giao diện không bị đứng trên điện thoại
+    const segs = scriptSegments().filter(sg => voiceOk(sg));
+    if (segs.length) {
+      $('ttsMsg').textContent = 'Đang chỉnh tốc độ giọng đọc…';
+      for (const sg of segs) { voiceBuf(sg); await new Promise(r => setTimeout(r, 0)); }
+      $('ttsMsg').textContent = 'Đã đổi tốc độ đọc, giữ nguyên giọng đã tạo (không tốn lượt).';
+    }
+    media.mixKey = '';
+    renderScript(); scheduleRebuild();
+  });
   $('sfxOn').addEventListener('change', e => { state.sfxOn = e.target.checked; media.mixKey = ''; save(); });
   $('sfxVol').addEventListener('input', e => { state.sfxVol = parseFloat(e.target.value); media.mixKey = ''; save(); });
   $('aiVoiceOn').addEventListener('change', e => { state.aiVoiceOn = e.target.checked; scheduleRebuild(); });
