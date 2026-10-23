@@ -807,12 +807,32 @@ export async function loadAdminArea(center, signal) {
 }
 
 // ---------- Quét toàn bộ ----------
+// Cao tốc gần nhất kể cả ngoài bán kính quét (tới 25 km): lên cao tốc là điểm cộng lớn, luôn nên có trong video
+export async function findExpressway(center, signal) {
+  const tpl = await tileTemplate(signal);
+  const z = 11, R = 15; // quá 15 km thì không còn là điểm cộng
+  const dLat = R / 111.32, dLng = R / (111.32 * Math.cos(center.lat * Math.PI / 180));
+  const a = project(center.lat + dLat, center.lng - dLng, z), b = project(center.lat - dLat, center.lng + dLng, z);
+  const jobs = [];
+  for (let x = Math.floor(a.x / 256); x <= Math.floor(b.x / 256); x++) for (let y = Math.floor(a.y / 256); y <= Math.floor(b.y / 256); y++) jobs.push([x, y]);
+  const raw = [];
+  await Promise.all(jobs.map(async ([x, y]) => {
+    const buf = await fetchTile(tpl, z, x, y, signal);
+    if (buf) raw.push(...decodeTile(buf, z, x, y).roads.filter(r => r.level === 3));
+  }));
+  if (!raw.length) return null;
+  const list = buildRoads(raw, center, R);
+  const best = list.filter(r => r.level === 3).sort((p, q) => p.nearKm - q.nearKm)[0];
+  return best ? { ...best, far: true } : null;
+}
+
 export async function scanArea(center, radiusKm, signal, onProgress) {
   const streetJob = loadStreets(center, signal).catch(e => { if (signal?.aborted) throw e; return null; });
   const areaJob = loadAdminArea(center, signal).catch(e => { if (signal?.aborted) throw e; return null; });
   const kcnJob = findIndustrial(center, radiusKm, signal).catch(e => { if (signal?.aborted) throw e; return []; });
   const ovtJob = loadOverture(center, radiusKm, signal).catch(e => { if (signal?.aborted) throw e; return []; });
   const vmJob = loadVietmap(center, radiusKm, signal).catch(e => { if (signal?.aborted) throw e; return []; });
+  const ctJob = findExpressway(center, signal).catch(e => { if (signal?.aborted) throw e; return null; });
   const raw = await loadArea(center, radiusKm, signal, (d, n) => onProgress?.(`Đang tải dữ liệu bản đồ ${d}/${n}`));
   lastRaw = raw.pois.filter(p => p.name);
   onProgress?.('Đang tìm địa phận và khu công nghiệp…');
@@ -829,7 +849,13 @@ export async function scanArea(center, radiusKm, signal, onProgress) {
     pois.push(z);
   }
   pois.sort((a, b) => a.km - b.km);
-  return { pois, roads: buildRoads(raw.roads, center, radiusKm), admin, streets: await streetJob, area: await areaJob };
+  const roads = buildRoads(raw.roads, center, radiusKm);
+  // Trong bán kính chưa có cao tốc: tìm cao tốc gần nhất tới 25 km rồi thêm vào cuối danh sách
+  if (!roads.some(r => r.level === 3)) {
+    const ct = await ctJob;
+    if (ct && !roads.some(r => r.label.toLowerCase() === ct.label.toLowerCase())) roads.push(ct);
+  }
+  return { pois, roads, admin, streets: await streetJob, area: await areaJob };
 }
 
 // ---------- Khu công nghiệp ----------
@@ -992,6 +1018,21 @@ export function guessCategory(x) {
 }
 
 // Chọn sẵn tiện ích tiêu biểu: gần nhất mỗi nhóm, ưu tiên bệnh viện hơn phòng khám
+// Chọn sẵn trục đường cho video/kịch bản: các trục lớn gần nhà (tới 2 km), đường dân sinh sát nhà, và cao tốc gần nhất.
+// Trước đây chỉ lấy 3 tuyến đầu danh sách nên trục lớn cách nhà 1–2 km hay bị bỏ khỏi kịch bản.
+export function autoPickRoads(roads, max = 4) {
+  const byNear = [...roads].sort((a, b) => a.nearKm - b.nearKm);
+  const pick = [];
+  const add = r => { if (r && !pick.includes(r) && pick.length < max) pick.push(r); };
+  for (const r of byNear) if (r.level >= 1 && r.level < 3 && r.nearKm <= 2 && pick.length < 3) add(r);
+  if (pick.length < 3) for (const r of byNear) if (r.level === 0 && r.nearKm <= 0.3 && pick.length < 3) add(r);
+  if (pick.length < 2) for (const r of byNear) if (r.level >= 1 && pick.length < 2) add(r);
+  const ct = byNear.find(r => r.level === 3);
+  if (ct && !pick.includes(ct)) { if (pick.length >= max) pick.pop(); add(ct); }
+  if (!pick.length) for (const r of byNear.slice(0, 2)) add(r);
+  return roads.filter(r => pick.includes(r)).map(r => r.id); // giữ thứ tự danh sách gốc
+}
+
 export function autoPick(pois, max = 6) {
   const picked = [];
   const byCat = {};

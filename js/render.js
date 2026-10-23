@@ -500,16 +500,27 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   const padStd = { left: safe.x + 16, right: safe.x + 16, top: safe.top + 40, bottom: safe.bottom + 20 };
   const camOverview = fitCam(ringPts, LW, LH, padStd, PITCH.overview, 8.5, 15.5);
   const roadPts = [H];
+  // Trục đường xa (cao tốc tìm thêm ngoài bán kính, hoặc cách nhà > 2,5 km) có khung máy riêng,
+  // để các trục gần nhà vẫn được quay gần, không bị lùi xa theo cao tốc
+  const isFar = r => r.far || r.nearKm > Math.max(2.5, R * 0.8);
   for (const r of roads) {
+    if (isFar(r)) continue;
     roadPts.push(r.P);
     const near = r.samples.filter(q => q.dist <= 1.3);
     const stepN = Math.max(1, Math.floor(near.length / 10));
     for (let i = 0; i < near.length; i += stepN) roadPts.push(near[i]);
   }
+  const roadPad = { left: safe.x + 30, right: safe.x + 30, top: safe.top + 90, bottom: safe.bottom + 40 };
   const camRoads = roads.length
-    ? fitCam(roadPts, LW, LH,
-      { left: safe.x + 30, right: safe.x + 30, top: safe.top + 90, bottom: safe.bottom + 40 }, PITCH.roads, Math.max(11.5, camOverview.zoom), 14.8)
+    ? fitCam(roadPts, LW, LH, roadPad, PITCH.roads, Math.max(11.5, camOverview.zoom), 14.8)
     : null;
+  for (const r of roads) {
+    if (!isFar(r)) continue;
+    const near = r.samples.filter(q => q.dist <= 1.5);
+    const pts = [H, r.P];
+    for (let i = 0; i < near.length; i += Math.max(1, Math.floor(near.length / 10))) pts.push(near[i]);
+    r.cam = fitCam(pts, LW, LH, roadPad, PITCH.roads, 8, 14.8);
+  }
   const cardH = 104;
   const camBoundary = boundary
     ? fitCam([H, boundary.P, boundary.across, boundary.own], LW, LH,
@@ -556,7 +567,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   const hasStreets = !!(scene.streets && scene.streets.lines && scene.streets.lines.length);
   raw.push({ type: 'house', d: lot ? 7.4 : 6.0, to: camHouse, move: camProv ? 0.5 : 0.6, drift: 0.02, orbit: true, vkey: 'house' });
   raw.push({ type: 'overview', d: lot ? 4.2 : 3.6, to: camOverview, move: lot ? 0.9 : 0.8, drift: 0.02, vkey: 'overview' });
-  roads.forEach((r, i) => raw.push({ type: 'road', d: 3.1, to: camRoads, move: i === 0 ? 0.6 : 1, drift: i === 0 ? 0 : 0.02, road: i, vkey: 'road:' + r.id }));
+  roads.forEach((r, i) => raw.push({ type: 'road', d: r.cam ? 3.6 : 3.1, to: r.cam || camRoads, move: i === 0 || r.cam ? 0.6 : 1, drift: i === 0 ? 0 : 0.02, road: i, vkey: 'road:' + r.id }));
   if (boundary) raw.push({ type: 'boundary', d: 7.6, to: camBoundary, move: 0.42, drift: 0.015, vkey: 'boundary' });
   // Chế độ "Quét vòng tròn": một khung cố định thấy cả vòng bán kính và mọi tiện ích, line lần lượt chạy ra rồi giữ lại
   // 2 kiểu hiện tiện ích:
@@ -642,7 +653,8 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   };
   tl.hookEnd = hook ? tl.intro.t0 + tl.intro.hold : 0;
   tl.roadsEnd = tl.roadPhases.length ? tl.roadPhases[tl.roadPhases.length - 1].t1 : tl.overview.t1;
-  tl.roadLabels = camRoads ? placeRoadLabels(tl, camRoads) : [];
+  tl.roadLabels = camRoads ? placeRoadLabels(tl, camRoads, gi => !tl.roads[gi].cam) : [];
+  tl.roads.forEach((r, gi) => { if (r.cam) tl.roadLabels.push(...placeRoadLabels(tl, r.cam, g => g === gi)); });
   return tl;
 }
 
@@ -762,7 +774,7 @@ function roadFontSize(text) {
 
 // Chọn chỗ đặt chữ 3D cho từng trục đường: trên đường, trong khung, không đè nhau, không đè căn nhà.
 // Khung chữ tính theo góc xoay thật; không tìm được chỗ đẹp thì nới dần điều kiện để tuyến nào cũng có tên.
-function placeRoadLabels(tl, cam) {
+function placeRoadLabels(tl, cam, only = () => true) {
   const { LW, LH, safe } = tl;
   const P = proj(cam.pitch, LW, LH);
   const v = viewOf(cam);
@@ -778,6 +790,7 @@ function placeRoadLabels(tl, cam) {
   const hit = (r, list) => list.some(p => r.x < p.x + p.w + 6 && r.x + r.w + 6 > p.x && r.y < p.y + p.h + 6 && r.y + r.h + 6 > p.y);
   const out = [];
   tl.roads.forEach((g, gi) => {
+    if (!only(gi)) return;
     let text = labelText(g);
     if (text.length > 22 && text.startsWith('CAO TỐC ')) text = 'CT ' + text.slice(8);
     // Ưu tiên đặt chữ GẦN căn nhà (đoạn đường ngay chỗ gần nhà nhất), tránh ghim nhà và nhãn khoảng cách đã có

@@ -1,6 +1,6 @@
 // Điều khiển giao diện: nhập toạ độ → quét → chọn → xem trước → xuất video.
 import { parseCoords, haversineKm, formatKm } from './geo.js';
-import { CATEGORIES, scanArea, autoPick, routeTo, searchPlaces, guessCategory } from './data.js';
+import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, guessCategory } from './data.js';
 import { ICON_PATHS } from './icons.js';
 import {
   FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, STYLES, BASES,
@@ -548,7 +548,7 @@ async function scan() {
     state.adminArea = res.area || null;
     updateAreaPlaceholders();
     state.selected = [...autoPick(res.pois), ...manual.map(p => p.id)].slice(0, MAX_POIS);
-    state.selectedRoads = state.roads.slice(0, 3).map(x => x.id);
+    state.selectedRoads = autoPickRoads(state.roads);
     state.routes = {};
     state.admin = res.admin;
     // Tự điền tên xã/phường, tỉnh/thành nhận diện theo vị trí vào ô (khách sửa được); căn mới thì luôn điền lại
