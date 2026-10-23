@@ -9,16 +9,28 @@ export function sfxEvents(tl) {
   for (let i = 0; i < ph.length; i++) {
     const p = ph[i], d = p.t1 - p.t0;
     switch (p.type) {
-      case 'intro':
-        add(0.25, 'whoosh', 0.45, 1.6);
-        add(Math.max(0.5, p.t1 - 1.8), 'riser', 0.32, 1.8);
+      case 'intro': {
+        const i0 = p.t0 + (p.hold || 0);
+        if (p.hold) add(i0, 'whoosh', 0.75, 1.5); // hết cảnh móc giá → bay vào bản đồ
+        else add(0.25, 'whoosh', 0.7, 1.6);
+        // Ghim bất động sản rơi xuống (cùng thời điểm với hình trong render.js): tiếng rơi + chạm đất + "pop"
+        if (tl.provPh || tl.scene.adminArea) {
+          const drop = i0 + (p.t1 - i0) * 0.3;
+          add(drop, 'fall', 0.5);
+          add(drop + 0.27, 'thud', 1);
+          add(drop + 0.3, 'pop', 0.5);
+        }
+        break;
+      }
+      case 'province':
+        add(p.t0, 'whoosh', 0.75, 1.7); // lùi ra xa thấy cả tỉnh
         break;
       case 'house':
-        add(p.t0 + 0.27, 'thud', 0.9);
-        add(p.t0 + 0.5, 'pop', 0.45);
+        add(p.t0, 'whoosh', 0.7, 1.5); // bay vào cận cảnh căn nhà
+        if (!(tl.provPh || tl.scene.adminArea)) { add(p.t0, 'fall', 0.5); add(p.t0 + 0.27, 'thud', 1); add(p.t0 + 0.3, 'pop', 0.5); }
         break;
       case 'overview':
-        add(p.t0, 'whoosh', 0.5, 1.4);
+        add(p.t0, 'whoosh', 0.7, 1.5);
         add(p.t0 + 0.3 * d, 'shimmer', 0.3, 0.6 * d);
         break;
       case 'road':
@@ -26,8 +38,14 @@ export function sfxEvents(tl) {
         add(p.t0 + 0.12 * d, 'shimmer', 0.42, 0.68 * d);
         add(p.t0 + 0.5 * d, 'pop', 0.5);
         break;
+      case 'radar':
+        add(p.t0, 'whoosh', 0.65, 1.4);
+        break;
+      case 'photos':
+        add(p.t0, 'whoosh', 0.6, 1.2);
+        break;
       case 'boundary':
-        add(p.t0, 'whoosh', 0.5, 1.4);
+        add(p.t0, 'whoosh', 0.65, 1.4);
         add(p.t0 + 0.16 * d, 'shimmer', 0.42, 0.44 * d);
         add(p.t0 + 0.48 * d, 'thud', 0.55);
         add(p.t0 + 0.56 * d, 'shimmer', 0.25, 0.24 * d);
@@ -41,13 +59,13 @@ export function sfxEvents(tl) {
         add(p.t0 + 0.6 * d, 'pop', 0.3);
         break;
       case 'summary': {
-        add(p.t0, 'whoosh', 0.42, 1.2);
+        add(p.t0, 'whoosh', 0.65, 1.4);
         const rows = Math.min(6, tl.pois.length + (tl.boundary ? 1 : 0));
         for (let r = 0; r < rows; r++) add(p.t0 + 0.3 * d + 0.9 * (r * 0.12) / 2.2 + 0.25, 'tick', 0.22);
         break;
       }
       case 'outro':
-        add(p.t0, 'whoosh', 0.42, 1.2);
+        add(p.t0, 'whoosh', 0.65, 1.3);
         if (tl.scene.brand) add(p.t0 + 0.8, 'ding', 0.45);
         break;
     }
@@ -104,6 +122,23 @@ const SYNTH = {
     const e = env(ctx, t, g, dur * 0.45, dur);
     const p = panner(ctx, -0.5, 0.5, t, dur);
     s.connect(f).connect(e).connect(p).connect(out);
+    // lớp gió trầm (thân tiếng gió lùa) cho dày tiếng, nghe rõ cả khi có nhạc nền
+    const s2 = noiseSrc(ctx, t, dur);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.Q.value = 0.8;
+    lp.frequency.setValueAtTime(260, t);
+    lp.frequency.exponentialRampToValueAtTime(1100, t + dur * 0.5);
+    lp.frequency.exponentialRampToValueAtTime(220, t + dur);
+    s2.connect(lp).connect(env(ctx, t, g * 0.9, dur * 0.5, dur)).connect(panner(ctx, 0.4, -0.4, t, dur)).connect(out);
+  },
+  // ghim rơi xuống: tiếng huýt trượt từ cao xuống thấp
+  fall(ctx, out, t, g) {
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(1500, t);
+    o.frequency.exponentialRampToValueAtTime(320, t + 0.27);
+    o.connect(env(ctx, t, g * 0.4, 0.03, 0.3)).connect(out);
+    o.start(t); o.stop(t + 0.32);
   },
   riser(ctx, out, t, g, dur = 1.8) {
     const s = noiseSrc(ctx, t, dur);
