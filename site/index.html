@@ -179,11 +179,11 @@
 
     <article class="step" id="step3" data-step="3">
       <header class="step-head"><h2>Nội dung video</h2><span id="durLabel" class="count"></span></header>
-      <p class="step-guide">Nhập giá, diện tích → chọn phong cách → tạo giọng đọc. Bấm <strong>▶ Xem</strong> ở dưới để xem thử bất cứ lúc nào.</p>
+      <p class="step-guide">Làm lần lượt 3 mục: <strong>① Thông tin căn</strong> → <strong>② Phong cách video</strong> → <strong>③ Kịch bản, giọng &amp; nhạc</strong>. Bấm <strong>▶ Xem</strong> ở dưới để xem thử bất cứ lúc nào.</p>
       <div class="subtabs" id="subtabs" role="tablist">
-        <button type="button" role="tab" data-sub="info" aria-selected="true">Thông tin căn</button>
-        <button type="button" role="tab" data-sub="look" aria-selected="false">Phong cách</button>
-        <button type="button" role="tab" data-sub="sound" aria-selected="false">Giọng &amp; nhạc</button>
+        <button type="button" role="tab" data-sub="info" aria-selected="true">① Thông tin</button>
+        <button type="button" role="tab" data-sub="look" aria-selected="false">② Phong cách</button>
+        <button type="button" role="tab" data-sub="sound" aria-selected="false">③ Giọng, nhạc</button>
       </div>
 
       <div class="subpane" data-pane="info">
@@ -224,11 +224,14 @@
             <label class="field"><span class="field-label">Tên kênh / sàn cuối video</span><input autocomplete="off" id="brandInput" class="input" type="text" maxlength="40" placeholder="Nhà Đất Bình Chánh"></label>
           </div>
         </details>
+        <button class="btn btn-dark btn-block pane-next" type="button" data-next="look">Xong thông tin → Chọn phong cách video</button>
       </div>
 
       <div class="subpane" data-pane="look" hidden>
+        <div class="pane-guide"><strong>🎨 Chọn giao diện cho video</strong><span>Đã chọn sẵn kiểu đẹp nhất, anh/chị có thể giữ nguyên. Đổi mục nào thì khung xem trước ở trên đổi theo ngay — bấm <b>▶ Xem</b> để xem thử.</span></div>
         <div class="field">
           <span class="field-label">Khung hình</span>
+          <span class="hint small pane-tip">Dọc 9:16 cho TikTok, Reels, Shorts, Zalo · Ngang 16:9 cho YouTube, Facebook · Vuông 1:1 cho bài đăng Facebook.</span>
           <div class="seg" id="fmtSeg" role="radiogroup" aria-label="Khung hình">
             <button type="button" role="radio" data-v="v">Dọc 9:16</button>
             <button type="button" role="radio" data-v="h">Ngang 16:9</button>
@@ -236,11 +239,13 @@
           </div>
         </div>
         <div class="field">
-          <span class="field-label">Phong cách</span>
+          <span class="field-label">Phong cách chữ &amp; khung thông tin</span>
+          <span class="hint small pane-tip">Kiểu chữ, màu thẻ giá và tên tiện ích hiện trong video.</span>
           <div class="style-grid" id="styleRow" role="radiogroup" aria-label="Phong cách video"></div>
         </div>
         <div class="field">
           <span class="field-label">Cách hiện tiện ích</span>
+          <span class="hint small pane-tip">Bay tới từng nơi: rõ đường đi và số phút, video dài hơn · Quét vòng tròn: nhanh gọn, thấy hết tiện ích quanh nhà.</span>
           <div class="seg" id="flowSeg" role="radiogroup" aria-label="Cách hiện tiện ích">
             <button type="button" role="radio" data-v="lanluot">Bay tới từng tiện ích (có đường đi)</button>
             <button type="button" role="radio" data-v="radar">Quét vòng tròn quanh nhà</button>
@@ -248,6 +253,7 @@
         </div>
         <div class="field">
           <span class="field-label">Nền bản đồ</span>
+          <span class="hint small pane-tip">Màu và kiểu bản đồ phía sau. Vệ tinh nhìn thật, nền sáng/tối dễ đọc chữ.</span>
           <div class="style-grid" id="baseRow" role="radiogroup" aria-label="Nền bản đồ"></div>
         </div>
         <div class="field">
@@ -276,6 +282,7 @@
             <label class="check"><input autocomplete="off" id="subsOn" type="checkbox" checked> Phụ đề chạy chữ theo giọng đọc</label>
           </div>
         </details>
+        <button class="btn btn-dark btn-block pane-next" type="button" data-next="sound">Xong phong cách → Tạo kịch bản &amp; giọng đọc</button>
       </div>
 
       <div class="subpane" data-pane="sound" hidden>
@@ -288,7 +295,7 @@
             <button type="button" role="radio" data-v="mau" class="src-mau"><b>📝 Kịch bản mẫu</b><small>Câu có sẵn, gọn</small></button>
           </div>
           <div id="aiToneWrap">
-            <span class="field-label">Phong cách AI</span>
+            <span class="field-label">Chọn phong cách kịch bản <em id="toneNeed">bấm chọn 1 kiểu</em></span>
             <div class="seg seg-wrap ai-tones" id="aiToneSeg" role="radiogroup" aria-label="Phong cách kịch bản">
               <button type="button" role="radio" data-v="hai-huoc">😄 Hài hước</button>
               <button type="button" role="radio" data-v="ke-chuyen">💬 Kể chuyện</button>
@@ -323,8 +330,8 @@
           </div>
           <p id="ownVoiceMsg" class="hint" aria-live="polite">Đọc đúng lời đọc từng cảnh (xem &amp; sửa ở mục "✏️ Xem &amp; sửa từng câu"), nghỉ một nhịp giữa các câu. App sẽ cắt từng câu và cho mỗi cảnh chạy đúng theo lời anh/chị.</p>
         </div>
-        <div class="field">
-          <span class="field-label">Nhạc nền <em>không lo bản quyền</em></span>
+        <div class="field music-box">
+          <span class="field-label">🎵 Nhạc nền <em>không lo bản quyền</em></span>
           <select id="musicLib" class="input" autocomplete="off" aria-label="Nhạc nền có sẵn"></select>
           <label class="vol"><span>Âm lượng</span><input autocomplete="off" id="musicVol" type="range" min="0" max="1" step="0.05" value="0.8"></label>
         </div>

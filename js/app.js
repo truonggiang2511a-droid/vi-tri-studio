@@ -57,7 +57,7 @@ const state = {
   adminArea: null,   // ranh xã/phường + tỉnh {ward, province} (KHÁC state.area = diện tích khách nhập)
   areaWard: '', areaProv: '', roadWidth: '',
   showStreets: true, // vẽ đường quanh nhà kiểu đường nhựa
-  aiTone: 'hai-huoc', // phong cách kịch bản AI
+  aiTone: '', // phong cách kịch bản AI — để trống, khách phải tự chọn trước khi tạo
   scriptMode: 'ai', // 'ai' = AI viết (mặc định, nổi bật) | 'mau' = kịch bản mẫu
   voSig: '', // lựa chọn (cách viết + phong cách) của lần tạo giọng gần nhất
   lotArea: '',       // diện tích hiển thị (trống = tự tính)
@@ -930,7 +930,7 @@ async function aiRewrite() {
     if (ai.gated && !account.profile && !(await requireLogin('Đăng nhập để AI viết kịch bản.'))) { $('ttsMsg').textContent = ''; return; }
     const res = await fetch('/api/script', {
       method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ facts, segments, tone: state.aiTone || 'hai-huoc', lat: state.house?.lat, lng: state.house?.lng }),
+      body: JSON.stringify({ facts, segments, tone: state.aiTone || 'ke-chuyen', lat: state.house?.lat, lng: state.house?.lng }),
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -951,7 +951,8 @@ async function aiRewrite() {
 
 // ---------- Module Kịch bản & giọng đọc: một nút làm cả hai ----------
 const voMode = () => (state.scriptMode === 'mau' || !ai.script ? 'mau' : 'ai');
-const voChoice = () => voMode() === 'ai' ? 'ai|' + (state.aiTone || 'hai-huoc') : 'mau';
+const voChoice = () => voMode() === 'ai' ? 'ai|' + (state.aiTone || '') : 'mau';
+const needTone = () => voMode() === 'ai' && !state.aiTone;
 function voStatus() {
   const segs = scriptSegments().filter(s => speakable(s.text));
   let ok = 0;
@@ -961,6 +962,14 @@ function voStatus() {
   return state.voSig && state.voSig !== voChoice() ? 'changed' : 'ready';
 }
 let voBusy = false;
+// Chưa chọn phong cách: không tạo, đưa khách tới chỗ chọn và nháy sáng
+function askTone() {
+  setSub('sound');
+  const seg = $('aiToneSeg');
+  seg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  seg.classList.remove('need'); void seg.offsetWidth; seg.classList.add('need');
+  toast('Chọn 1 phong cách kịch bản trước (Hài hước, Kể chuyện…), rồi bấm tạo.', 3500);
+}
 function updateVoCard() {
   const btn = $('ttsBtn');
   if (!btn) return;
@@ -968,11 +977,13 @@ function updateVoCard() {
   setSeg('scriptSrcSeg', mode);
   $('scriptSrcSeg').querySelector('[data-v="ai"]').disabled = !ai.script;
   $('aiToneWrap').hidden = mode !== 'ai';
+  $('toneNeed').hidden = !needTone();
   const pill = $('voState');
   pill.textContent = { none: 'Chưa tạo', stale: 'Cần đọc lại', changed: 'Đã đổi lựa chọn', ready: '✓ Đã có giọng' }[st];
   pill.classList.toggle('ok', st === 'ready');
   if (voBusy) return;
-  btn.textContent = st === 'none' ? (mode === 'ai' ? '🎙️ Tạo kịch bản AI & giọng đọc' : '🎙️ Tạo giọng đọc (kịch bản mẫu)')
+  btn.textContent = needTone() && st !== 'stale' ? '👆 Chọn phong cách ở trên trước'
+    : st === 'none' ? (mode === 'ai' ? '🎙️ Tạo kịch bản AI & giọng đọc' : '🎙️ Tạo giọng đọc (kịch bản mẫu)')
     : st === 'stale' ? '🎙️ Đọc lại giọng cho câu đã sửa'
     : st === 'changed' ? '🎙️ Tạo lại theo lựa chọn mới'
     : (mode === 'ai' ? '🔄 Tạo lại: kịch bản AI mới + giọng' : '🔄 Tạo lại: cách viết khác + giọng');
@@ -986,6 +997,7 @@ function updateVoCard() {
 async function makeScriptAndVoice({ fresh } = {}) {
   if (voBusy || ttsBusy) return;
   const st = voStatus();
+  if (needTone() && st !== 'stale') { askTone(); return false; }
   if (fresh == null) fresh = st === 'ready' || st === 'changed';
   const mode = voMode();
   const btn = $('ttsBtn');
@@ -1311,9 +1323,13 @@ function showStep(n, { scroll = true } = {}) {
   }
   updateQuick();
 }
-function setSub(name) {
+let curSub = 'info';
+function setSub(name, { scroll = false } = {}) {
+  curSub = name;
   for (const b of $('subtabs').querySelectorAll('button')) b.setAttribute('aria-selected', String(b.dataset.sub === name));
   for (const p of document.querySelectorAll('.subpane')) p.hidden = p.dataset.pane !== name;
+  if (scroll) $('subtabs').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (typeof updateQuick === 'function' && step === 3) updateQuick();
 }
 function updateQuick() {
   // Thanh bước: đánh dấu bước xong, bước hiện tại
@@ -1330,7 +1346,10 @@ function updateQuick() {
     let label = 'Tiếp tục →', hide = false;
     if (step === 1) { label = state.pois.length ? 'Tiếp tục →' : 'Quét tiện ích'; hide = !state.pois.length; }
     else if (step === 2) label = state.pois.length ? 'Tiếp tục: Nội dung →' : 'Về bước 1';
-    else if (step === 3) label = voiceDurations() || !state.aiVoiceOn ? 'Tiếp tục: Xuất video →' : '🎙️ Tạo kịch bản & giọng đọc';
+    else if (step === 3) label = voiceDurations() || !state.aiVoiceOn ? 'Tiếp tục: Xuất video →'
+      : curSub === 'info' ? 'Tiếp: Phong cách →'
+      : curSub === 'look' ? 'Tiếp: Giọng & nhạc →'
+      : needTone() ? '👆 Chọn phong cách' : '🎙️ Tạo giọng đọc';
     else label = 'Xuất video MP4'; // bước 4: nút chính luôn nằm ở thanh dưới, không bị che
     next.textContent = label;
     next.hidden = hide;
@@ -1348,7 +1367,13 @@ async function stepNext() {
   if (step === 1) { if (state.pois.length) showStep(2); else await scan(); return; }
   if (step === 2) { showStep(state.pois.length ? 3 : 1); return; }
   if (step === 3) {
+    if (!voiceDurations() && state.aiVoiceOn && curSub !== 'sound') {
+      // Đi lần lượt: Thông tin → Phong cách → Kịch bản & giọng
+      setSub(curSub === 'info' ? 'look' : 'sound', { scroll: true });
+      return;
+    }
     if (!voiceDurations() && state.aiVoiceOn) {
+      if (needTone()) { askTone(); return; }
       // Chỉ tạo giọng, không tự phát: khách tự bấm Xem thử để nghe
       setSub('sound');
       pause();
@@ -2151,8 +2176,9 @@ function init() {
   $('sfxVol').addEventListener('input', e => { state.sfxVol = parseFloat(e.target.value); media.mixKey = ''; save(); });
   $('aiVoiceOn').addEventListener('change', e => { state.aiVoiceOn = e.target.checked; scheduleRebuild(); });
   $('aiScriptBtn').addEventListener('click', aiRewrite);
-  setSeg('aiToneSeg', state.aiTone || 'hai-huoc');
-  bindSeg('aiToneSeg', v => { state.aiTone = v; save(); updateVoCard(); });
+  if (!state.voSig) state.aiTone = ''; // căn chưa tạo giọng: khách chọn lại phong cách
+  setSeg('aiToneSeg', state.aiTone || '');
+  bindSeg('aiToneSeg', v => { state.aiTone = v; $('aiToneSeg').classList.remove('need'); save(); updateVoCard(); updateQuick(); });
   bindSeg('scriptSrcSeg', v => { if (v === 'ai' && !ai.script) return; state.scriptMode = v; save(); updateVoCard(); });
   $('voVoiceOnly').addEventListener('click', () => makeScriptAndVoice({ fresh: true }));
   $('altScriptBtn').addEventListener('click', altScript);
@@ -2232,6 +2258,7 @@ function init() {
     t = 0; updateTimeUi(); play();
   });
   $('subtabs').addEventListener('click', e => { const b = e.target.closest('[data-sub]'); if (b) setSub(b.dataset.sub); });
+  for (const b of document.querySelectorAll('.pane-next')) b.addEventListener('click', () => setSub(b.dataset.next, { scroll: true }));
   document.querySelector('[data-nav="studio"]').addEventListener('click', () => showStep(step));
   // Điện thoại: khung xem trước giữ MỘT cỡ cố định (trước đây tự thu nhỏ khi cuộn làm cả trang giật lên xuống)
   // Căn đã lưu
