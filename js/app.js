@@ -2371,7 +2371,7 @@ function init() {
 
   $('exportBtn').addEventListener('click', doExport);
   // Các bước
-  $('quickDemo').addEventListener('click', () => { state.coordSet = true; applyCoords($('coordInput').value || state.coordText); updateQuick(); scan(); });
+  // Link cũ "Thử với căn ví dụ" đã thay bằng khung "Thử ngay" (#sampleBox, trySample)
   $('stepper').addEventListener('click', e => { const b = e.target.closest('[data-go]'); if (b) showStep(+b.dataset.go); });
   $('panel').addEventListener('click', e => { const b = e.target.closest('.empty-state [data-go]'); if (b) showStep(+b.dataset.go); });
   $('stepNext').addEventListener('click', stepNext);
