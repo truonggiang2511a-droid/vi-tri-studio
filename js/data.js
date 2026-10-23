@@ -412,6 +412,8 @@ function buildPois(raw, center, radiusKm, extra = []) {
     if (!cat) continue;
     cat = cat === 'kcn' || cat === 'giaothong' || cat === 'khudothi' ? cat : vetPoi(p.name, cat, true);
     if (!cat) continue;
+    // Khu thể thao OSM chỉ có tên riêng ("Hàng Dương", "Ngọc Lan") thường là sân nhỏ/quán: chỉ giữ khi tên nói rõ là gì
+    if (cat === 'congvien' && p.sub === 'sports_centre' && !/(sân|thể thao|thể dục|tdtt|hồ bơi|bể bơi|nhà thi đấu|trung tâm|câu lạc bộ|clb|công viên|stadium|sport)/i.test(p.name)) continue;
     if (/^(nhà lồng|dãy|lô|sạp|kiosk|cổng|bãi xe|nhà xe)\b/i.test(p.name)) continue;
     if (cat === 'congvien' && p.sub === 'garden' && !/công viên|vườn hoa/i.test(p.name)) continue;
     const km = haversineKm(center, p);
