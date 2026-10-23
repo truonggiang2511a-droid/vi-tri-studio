@@ -76,11 +76,8 @@ export function sfxEvents(tl) {
   if (ov) sweeps.push([ov.t0 + 0.3 * (ov.t1 - ov.t0), ov.t1 + 0.3]);
   if (rp) sweeps.push([rp.t0, rp.t1 + 0.6]);
   if (sm) sweeps.push([sm.t0 + 0.2, Math.min(sm.t1, sm.t0 + 3.2)]);
-  for (const [s0, s1] of sweeps) {
-    if (s1 - s0 < 0.4) continue;
-    add(s0, 'radarHum', 0.5, s1 - s0);
-    for (let k = 0, tt = s0 + 0.05; tt < s1 - 0.3 && k < 8; k++, tt += 1.25) add(tt, 'sonar', k === 0 ? 0.75 : 0.5);
-  }
+  // 23/10: Giang thấy tiếng radar (ping sonar + ù) chói tai → bỏ, không phát gì khi radar quét. Giữ hàm âm để dùng lại nếu cần.
+  void sweeps;
   return ev.sort((a, b) => a.t - b.t);
 }
 
