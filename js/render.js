@@ -17,7 +17,7 @@ export const FORMATS = {
 };
 // Hệ số nhịp: số càng LỚN video càng NHANH (thời lượng mỗi cảnh chia cho hệ số).
 // 10/2026: trước đây nhãn bị ngược (nhanh = 0.66 lại chậm nhất). Nhanh giờ nhanh hơn mức mặc định cũ một chút.
-export const SPEEDS = { nhanh: 1.12, vua: 0.9, cham: 0.75 };
+export const SPEEDS = { nhanh: 1.25, vua: 0.95, cham: 0.75 }; // 23/10: Giang muốn Nhanh nhanh hơn nữa (gần nhịp bản đầu)
 export const CAT_COLORS = {
   truong: '#3D8BFF', yte: '#FF4D5E', cho: '#FF9F1C', hanhchinh: '#A78BFA',
   congvien: '#2FBF71', kcn: '#8FA3B8', giaothong: '#1FB8CC', nganhang: '#E9B949',
@@ -611,7 +611,9 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
       const dur = vd[p.vkey];
       if (!dur) continue;
       const lead = p.type === 'intro' ? 0.5 : 0.3;
-      p.d = Math.max(p.d, (dur + lead + 0.45) * sp);
+      // Khoảng nghỉ sau mỗi câu theo nhịp: Nhanh nối câu sát hơn (trước đây cố định 0,45 s nên chọn Nhanh vẫn thấy chậm)
+      const gap = sp >= 1.1 ? 0.15 : sp >= 0.9 ? 0.3 : 0.45;
+      p.d = Math.max(p.d, (dur + lead + gap) * sp);
     }
     total = raw.reduce((s, p) => s + p.d, 0) / sp;
   }
