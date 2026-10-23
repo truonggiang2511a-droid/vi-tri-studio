@@ -869,6 +869,7 @@ async function checkAi() {
     ? `Giọng AI đã sẵn sàng${prov ? ' (' + prov + ')' : ''}. Bấm Tạo giọng đọc AI, video tự giãn theo từng câu.`
     : 'Giọng AI chưa bật trên máy chủ (cần khoá FPT.AI hoặc Google TTS). Kịch bản vẫn sửa và chép được để tự ghi âm.';
   $('aiScriptBtn').hidden = !ai.script;
+  $('aiCard').hidden = !ai.script;
 }
 
 function renderVoices(list) {
@@ -885,6 +886,7 @@ function renderVoices(list) {
 function altScript() {
   state.scriptSeed = (state.scriptSeed || 0) + 1;
   state.scriptEdits = {};
+  state.scriptAi = false;
   media.voiceSegs.clear();
   renderScript(); scheduleRebuild(); save();
   $('ttsMsg').textContent = 'Đã đổi sang cách viết khác. Bấm Tạo giọng đọc AI để đọc kịch bản mới.';
@@ -892,9 +894,9 @@ function altScript() {
 
 async function aiRewrite() {
   const segs = scriptSegments();
-  if (!ai.script) { altScript(); return; }
+  if (!ai.script) { altScript(); return false; }
   const btn = $('aiScriptBtn');
-  btn.disabled = true;
+  btn.disabled = true; $('aiScriptBig').disabled = true;
   $('ttsMsg').textContent = 'AI đang viết kịch bản…';
   try {
     const facts = {
@@ -919,11 +921,15 @@ async function aiRewrite() {
       throw new Error(j.error || 'HTTP ' + res.status);
     }
     state.scriptEdits = { ...j.segments };
+    state.scriptAi = true;
     renderScript(); scheduleRebuild(); save();
     $('ttsMsg').textContent = 'AI đã viết xong. Sửa câu nào chưa ưng rồi bấm Tạo giọng đọc AI.';
+    $('aiCard').classList.add('done'); $('aiScriptBig').textContent = '✨ Viết lại phiên bản khác';
+    return true;
   } catch (e) {
     $('ttsMsg').textContent = 'AI viết kịch bản chưa dùng được (' + e.message + '). Kịch bản mẫu miễn phí vẫn dùng bình thường, bấm "Đổi cách viết" để ra phiên bản khác.';
-  } finally { btn.disabled = false; }
+  } finally { btn.disabled = false; $('aiScriptBig').disabled = false; }
+  return false;
 }
 
 let ttsBusy = false;
@@ -1224,6 +1230,7 @@ function stepDone(n) {
   return exportedOnce;
 }
 function showStep(n, { scroll = true } = {}) {
+  if (n === 3 && !ai.script) checkAi(); // khoá AI vừa thêm trên máy chủ thì thẻ AI tự hiện
   step = Math.max(1, Math.min(4, n));
   for (const a of document.querySelectorAll('.steps > .step')) a.classList.toggle('on', +a.dataset.step === step);
   if (scroll) {
@@ -1274,6 +1281,8 @@ async function stepNext() {
       // Chỉ tạo giọng, không tự phát: khách tự bấm Xem thử để nghe
       setSub('sound');
       pause();
+      // Có AI viết kịch bản mà khách chưa sửa lời: để AI viết trước cho hay rồi mới đọc (lỗi thì dùng kịch bản mẫu)
+      if (ai.script && !state.scriptAi && !Object.keys(state.scriptEdits || {}).length) await aiRewrite();
       await generateVoices();
       if (voiceDurations()) {
         rebuild();
@@ -1290,7 +1299,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'roadWidth', 'showStreets', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'roadWidth', 'showStreets', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -2072,10 +2081,14 @@ function init() {
   $('sfxVol').addEventListener('input', e => { state.sfxVol = parseFloat(e.target.value); media.mixKey = ''; save(); });
   $('aiVoiceOn').addEventListener('change', e => { state.aiVoiceOn = e.target.checked; scheduleRebuild(); });
   $('aiScriptBtn').addEventListener('click', aiRewrite);
+  $('aiScriptBig').addEventListener('click', () => { setSub('sound'); aiRewrite(); });
   $('altScriptBtn').addEventListener('click', altScript);
   $('phoneInput').value = state.phone || '';
   $('phoneInput').addEventListener('input', e => { state.phone = e.target.value; renderScript(); scheduleRebuild(); });
-  $('ttsBtn').addEventListener('click', generateVoices);
+  $('ttsBtn').addEventListener('click', async () => {
+    if (ai.script && !state.scriptAi && !Object.keys(state.scriptEdits || {}).length) await aiRewrite();
+    generateVoices();
+  });
   $('scriptList').addEventListener('input', e => {
     const k = e.target.dataset.seg;
     if (!k) return;

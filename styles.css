@@ -671,3 +671,13 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
   .step-nav #stepNext { flex: 1; }
 }
 @media (min-width: 980px) { .nav-play { display: none; } }
+
+/* Thẻ kịch bản AI nổi bật */
+.ai-card { display: grid; gap: 10px; padding: 14px; margin: 4px 0 14px; border-radius: 14px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, transparent), color-mix(in srgb, #7c5cff 16%, transparent));
+  border: 1.5px solid color-mix(in srgb, var(--accent) 60%, transparent); }
+.ai-card-text { display: grid; gap: 4px; }
+.ai-card-text strong { font-size: 16px; }
+.ai-card-text span { font-size: 13.5px; line-height: 1.45; opacity: .85; }
+.ai-card .btn { width: 100%; }
+.ai-card.done { border-style: dashed; }
