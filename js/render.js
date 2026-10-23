@@ -561,7 +561,10 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     camProv = fitCam([...ringPtsOf(AREA.province.rings), H], LW, LH,
       { left: safe.x + 20, right: safe.x + 20, top: safe.top + 120, bottom: safe.bottom + 110 }, 14, 6, 12.5);
   }
-  raw.push({ type: 'intro', d: (AREA ? 4.6 : 5.0) + HOLD, hold: HOLD, to: camMid, move: 0.62, drift: 0.02, vkey: 'intro' });
+  // Bay vào ÊM như bản cũ (Giang chốt 23/10 tối): hạ từ trên cao xuống trọn 5 giây, không nảy;
+  // xong mới giữ ~1 s cho xã/phường sáng lên. (Bản trước bay chỉ ~2,8 s nên trông giật.)
+  const INTRO_FLY = 5.0, INTRO_REST = AREA ? 1.0 : 0.4;
+  raw.push({ type: 'intro', d: INTRO_FLY + INTRO_REST + HOLD, hold: HOLD, to: camMid, move: INTRO_FLY / (INTRO_FLY + INTRO_REST), drift: 0.02, vkey: 'intro' });
   if (camProv) raw.push({ type: 'province', d: 4.4, to: camProv, move: 0.75, drift: 0.015, vkey: 'province' });
   // Có lô đất / đường quanh nhà: giữ cảnh cận lâu hơn cho khách nhìn kỹ rồi mới lùi ra bán kính
   const hasStreets = !!(scene.streets && scene.streets.lines && scene.streets.lines.length);
@@ -2113,7 +2116,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     const iEnd = it.t1;
     const pvEnd = PV ? PV.t1 : iEnd;
     // xã/phường: sáng từ giữa cảnh trung, giữ suốt cảnh tỉnh (mờ bớt), tắt khi bay về cận cảnh
-    const wardA = fadeWin(t, i0 + 0.35 * (iEnd - i0), ho.t0 + 0.4 * (ho.t1 - ho.t0), 0.8, 1.0);
+    const wardA = fadeWin(t, i0 + 0.68 * (iEnd - i0), ho.t0 + 0.4 * (ho.t1 - ho.t0), 0.8, 1.0);
     const provA = PV ? fadeWin(t, PV.t0 + 0.1, ho.t0 + 0.5, 0.9, 1.0) : 0;
     const ringPath = rings => {
       const pth = new Path2D();
@@ -2541,7 +2544,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
 
   // Ghim căn nhà
   // Ghim thả xuống ngay ở trung cảnh (khi xã/phường sáng lên) và giữ suốt cảnh tỉnh/thành
-  const it0 = tl.intro, dropAt = tl.provPh || scene.adminArea ? it0.t0 + it0.hold + (it0.t1 - it0.t0 - it0.hold) * 0.3 : ho.t0;
+  const it0 = tl.intro, dropAt = tl.provPh || scene.adminArea ? it0.t0 + it0.hold + (it0.t1 - it0.t0 - it0.hold) * 0.72 : ho.t0; // ghim rơi lúc máy gần tới nơi (bay êm trước)
   const dropT = t >= dropAt ? (t - dropAt) / 0.75 : 0;
   // Ở cảnh tỉnh/thành (rất xa) ghim to hơn một chút để vẫn thấy rõ vị trí bất động sản
   const pv = tl.provPh, pinBoost = pv ? 1 + 0.35 * fadeWin(t, pv.t0, ho.t0 + 0.6, 0.6, 0.8) : 1;

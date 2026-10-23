@@ -15,7 +15,7 @@ export function sfxEvents(tl) {
         else add(0.25, 'whoosh', 0.7, 1.6);
         // Ghim bất động sản rơi xuống (cùng thời điểm với hình trong render.js): tiếng rơi + chạm đất + "pop"
         if (tl.provPh || tl.scene.adminArea) {
-          const drop = i0 + (p.t1 - i0) * 0.3;
+          const drop = i0 + (p.t1 - i0) * 0.72; // khớp dropAt trong render.js
           add(drop, 'fall', 0.5);
           add(drop + 0.27, 'thud', 1);
           add(drop + 0.3, 'pop', 0.5);
