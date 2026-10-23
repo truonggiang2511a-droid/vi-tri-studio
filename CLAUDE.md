@@ -155,5 +155,6 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 - 2026-10: `build.sh` xoá và tạo lại `site/` → máy chủ thử chạy *trong* `site/` bị chết; chạy `python3 -m http.server --directory site`. Đừng `pkill -f` theo mẫu có trong chính lệnh đang chạy (tự giết shell).
 - 2026-10: Tên từ Vietmap có thể ở dạng Unicode tổ hợp (NFD) → regex không khớp ("Bến Xe Buýt" lọt lưới) → chuẩn hoá NFC.
 - 2026-10: Sửa mất tiếng lần 1 (chỉ AAC gốc, không thì quay thời gian thực) CHƯA đủ trên điện thoại → lần 2 dùng AAC WebAssembly cho mọi máy. Bài học: đừng phụ thuộc bộ mã hoá âm thanh của trình duyệt; kiểm thử trên môi trường thiếu bộ mã hoá.
+- 2026-10: Tên tỉnh canh giữa cứng tại ghim → ghim sát mép thì mất chữ ("TỈNH TÂY…"). Chữ trên mặt đất phải tính bề rộng TRÊN MÀN HÌNH (chia cho `w` phối cảnh) và kẹp trong khung an toàn.
 - 2026-10: Line trục đường đứt quãng do OSM thiếu cầu/nút giao giữa các đoạn → nối đầu mút cùng hướng.
 - 2026-10: Đề xuất "Kết nối CRM" của Meta chỉ dành cho quảng cáo biểu mẫu tức thì, không áp dụng cho quảng cáo về web.

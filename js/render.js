@@ -2041,10 +2041,17 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       g.globalAlpha = alpha;
       g.font = `900 100px ${NAME_FONT}`;
       const w100 = g.measureText(text).width / 100;
-      const size = Math.max(16, Math.min(maxSize, (LW * 0.84) / Math.max(w100, 0.1)));
+      const y = hg.y + dy;
+      // Chữ nằm trên mặt đất: ra màn hình bị thu theo phối cảnh (w). Tính cỡ và vị trí để TOÀN BỘ chữ nằm trong khung,
+      // ghim sát mép thì chữ tự dịch vào trong (không canh giữa cứng tại ghim)
+      const sp = g2s(P, hg.x, y);
+      const minX = safe.x + 10, maxX = LW - safe.x - 10;
+      let size = Math.max(14, Math.min(maxSize, ((maxX - minX) * 0.96 * sp.w) / Math.max(w100, 0.1)));
+      const halfS = (w100 * size * 1.08) / 2 / sp.w; // nửa bề rộng trên màn hình (cộng phần bóng đổ)
+      const sx = Math.max(minX + halfS, Math.min(maxX - halfS, sp.x));
+      const x = (sx - LW / 2) * sp.w;
       g.font = `900 ${size}px ${NAME_FONT}`;
       g.textAlign = 'center'; g.textBaseline = 'middle';
-      const x = hg.x, y = hg.y + dy;
       // bóng đậm: nhiều lớp lệch xuống dưới-phải + viền tối
       g.fillStyle = 'rgba(0,0,0,0.85)';
       for (let k = 1; k <= 5; k++) g.fillText(text, x + k * size * 0.018, y + k * size * 0.03);
