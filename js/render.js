@@ -15,7 +15,9 @@ export const FORMATS = {
   h: { LW: 960, LH: 540, label: 'Ngang 16:9', safe: { top: 54, bottom: 58, x: 40 } },
   s: { LW: 540, LH: 540, label: 'Vuông 1:1', safe: { top: 60, bottom: 60, x: 24 } },
 };
-export const SPEEDS = { cham: 1, vua: 0.82, nhanh: 0.66 };
+// Hệ số nhịp: số càng LỚN video càng NHANH (thời lượng mỗi cảnh chia cho hệ số).
+// 10/2026: trước đây nhãn bị ngược (nhanh = 0.66 lại chậm nhất). Nhanh giờ nhanh hơn mức mặc định cũ một chút.
+export const SPEEDS = { nhanh: 1.12, vua: 0.9, cham: 0.75 };
 export const CAT_COLORS = {
   truong: '#3D8BFF', yte: '#FF4D5E', cho: '#FF9F1C', hanhchinh: '#A78BFA',
   congvien: '#2FBF71', kcn: '#8FA3B8', giaothong: '#1FB8CC', nganhang: '#E9B949',

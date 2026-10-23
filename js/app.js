@@ -45,7 +45,8 @@ const state = {
   projName: '',
   scriptSeed: 0,
   fmt: 'v',
-  speed: 'cham',
+  speed: 'nhanh', // nhịp máy lia mặc định: nhanh
+  speedV: 2, // 2 = nhãn nhịp đã sửa đúng (trước đó Nhanh/Chậm bị ngược)
   quality: '1080',
   musicVol: 0.8,
   fitVoice: true,
@@ -94,10 +95,17 @@ function save() {
     try { localStorage.setItem(STORE, JSON.stringify({ ...data, roads: [], routes: {} })); } catch { /* bỏ qua */ }
   }
 }
+// Dữ liệu lưu trước 10/2026: nhãn nhịp bị ngược → đổi Chậm↔Nhanh để video giữ đúng tốc độ khách đã thấy
+function fixSpeed(o) {
+  if (!o || o.speedV === 2) return o;
+  if (o.speed === 'cham') o.speed = 'nhanh'; else if (o.speed === 'nhanh') o.speed = 'cham';
+  o.speedV = 2;
+  return o;
+}
 function load() {
   try {
     const raw = localStorage.getItem(STORE);
-    if (raw) Object.assign(state, JSON.parse(raw));
+    if (raw) Object.assign(state, fixSpeed(JSON.parse(raw)));
   } catch { /* bỏ qua */ }
 }
 
@@ -1397,7 +1405,7 @@ async function stepNext() {
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
   'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'roadWidth', 'showStreets', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
-  'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt'];
+  'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
   : typeof v === 'number' && !Number.isInteger(v) ? Math.round(v * 1e5) / 1e5 : v;
@@ -1469,7 +1477,7 @@ async function openProject(id) {
   try {
     const r = await rpc('vt_project_get', { p_token: account.token, p_id: id });
     const d = r.data || {};
-    Object.assign(state, { pois: [], roads: [], selected: [], selectedRoads: [], routes: {}, admin: null, scriptEdits: {} }, d);
+    Object.assign(state, { pois: [], roads: [], selected: [], selectedRoads: [], routes: {}, admin: null, scriptEdits: {} }, fixSpeed(d));
     state.cloudId = r.id;
     state.projName = r.name;
     state.coordSet = true;
