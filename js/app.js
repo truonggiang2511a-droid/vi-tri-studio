@@ -490,7 +490,7 @@ function applyCoords(text, { silent = false } = {}) {
 }
 
 function resetHouseScoped() {
-  Object.assign(state, { areaWard: '', areaProv: '', roadWidth: '', sub: '', lotText: '', lotArea: '',
+  Object.assign(state, { areaWard: '', areaProv: '', areaFor: '', roadWidth: '', sub: '', lotText: '', lotArea: '',
     scriptEdits: {}, scriptAi: false, voSig: '', adminArea: null, admin: null });
   media.voiceSegs.clear();
   media.mixKey = '';
@@ -536,6 +536,11 @@ async function scan() {
   setStatus('Đang tìm tiện ích và đường lớn quanh căn nhà…');
   try {
     const res = await scanArea(state.house, state.radiusKm, scanCtrl.signal, msg => setStatus(msg));
+    // Quét cho một căn KHÁC căn đã điền tên xã/tỉnh trước đó (khoá theo toạ độ ~100 m): xoá dữ liệu căn cũ
+    // (phòng khi đổi vị trí theo đường nào đó mà setHouse không bắt được, hoặc trình duyệt còn dữ liệu cũ)
+    const houseKey = `${state.house.lat.toFixed(3)},${state.house.lng.toFixed(3)}`;
+    const newHouse = state.areaFor !== houseKey;
+    if (newHouse) resetHouseScoped();
     const manual = state.pois.filter(p => p.manual);
     state.pois = [...res.pois, ...manual];
     state.roads = res.roads;
@@ -546,6 +551,12 @@ async function scan() {
     state.selectedRoads = state.roads.slice(0, 3).map(x => x.id);
     state.routes = {};
     state.admin = res.admin;
+    // Tự điền tên xã/phường, tỉnh/thành nhận diện theo vị trí vào ô (khách sửa được); căn mới thì luôn điền lại
+    const autoWard = res.area?.ward?.name || res.admin?.commune || '';
+    const autoProv = res.area?.province?.name || res.admin?.province || '';
+    if (newHouse || !state.areaWard) { state.areaWard = autoWard; $('areaWardInput').value = autoWard; }
+    if (newHouse || !state.areaProv) { state.areaProv = autoProv; $('areaProvInput').value = autoProv; }
+    state.areaFor = houseKey;
     if (!state.sub && res.admin?.commune) {
       state.sub = res.admin.commune + (res.admin.provinceShort ? ' · ' + res.admin.provinceShort : '');
       $('subInput').value = state.sub;
@@ -1439,7 +1450,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'roadWidth', 'showStreets', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
