@@ -1090,6 +1090,14 @@ function groundText(g, v, L, color, alpha, rise, opt = null) {
   g.scale(s, s);
   const ex = Math.sin(ang), ey = Math.cos(ang);
   if (opt?.face) { glossyText(g, L.text, L.size, opt.face, L.size * 0.3 * rise, ex, ey, opt.sweep || 0, (opt.k || 1) * s); g.restore(); return; }
+  // Kiểu gốc (Giang thích, 23/10 tối): mặt chữ chuyển trắng → màu line của chính trục đường, thân 3D màu line tối
+  if (opt?.lineColor) {
+    text3D(g, L.text, L.size, {
+      faceTop: '#FFFFFF', faceBot: color, side: shade(color, 0.38),
+      depth: L.size * 0.3 * rise, ex, ey, sp: L.size * 0.07, glow: 'rgba(0,0,0,0.55)', stroke: 'rgba(40,20,0,0.7)',
+    });
+    g.restore(); return;
+  }
   // Mặt chữ trắng (hoặc vàng), thân 3D màu đường tối, viền đen dày
   text3D(g, L.text, L.size, {
     faceTop: opt?.yellow ? '#FFF3A6' : '#FFFFFF', faceBot: opt?.yellow ? '#FFCF1F' : '#EDEFF2', side: shade(color, 0.42),
@@ -2425,7 +2433,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       ctx.save();
       ctx.transform(sx.x - s0.x, sx.y - s0.y, sy.x - s0.x, sy.y - s0.y, s0.x, s0.y);
       groundText(ctx, v, L, st.core, Math.min(roadLabelA, clamp01(rise * 1.5)), easeOut(rise),
-        { local: true, yellow: scene.roadLabelFace === 'vang' || scene.roadLabelFace === 'vangkim' });
+        { local: true, yellow: scene.roadLabelFace === 'vang' || scene.roadLabelFace === 'vangkim', lineColor: !scene.roadLabelFace || scene.roadLabelFace === 'line' });
       ctx.restore();
     }
   }
