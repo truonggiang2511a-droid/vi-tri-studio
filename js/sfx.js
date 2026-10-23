@@ -31,7 +31,6 @@ export function sfxEvents(tl) {
         break;
       case 'overview':
         add(p.t0, 'whoosh', 0.7, 1.5);
-        add(p.t0 + 0.3 * d, 'shimmer', 0.3, 0.6 * d);
         break;
       case 'road':
         if (p.road === 0) add(p.t0, 'whoosh', 0.42, 1.2);
@@ -69,6 +68,18 @@ export function sfxEvents(tl) {
         if (tl.scene.brand) add(p.t0 + 0.8, 'ding', 0.45);
         break;
     }
+  }
+  // Radar quét bán kính: tiếng "ping" sonar mỗi vòng quét + tiếng ù radar quay vòng.
+  // Thời điểm khớp với tia quét trong render.js (bắt đầu ở hướng 12 giờ, 1,25 giây một vòng)
+  const ov = ph.find(x => x.type === 'overview'), rp = ph.find(x => x.type === 'radar'), sm = ph.find(x => x.type === 'summary');
+  const sweeps = [];
+  if (ov) sweeps.push([ov.t0 + 0.3 * (ov.t1 - ov.t0), ov.t1 + 0.3]);
+  if (rp) sweeps.push([rp.t0, rp.t1 + 0.6]);
+  if (sm) sweeps.push([sm.t0 + 0.2, Math.min(sm.t1, sm.t0 + 3.2)]);
+  for (const [s0, s1] of sweeps) {
+    if (s1 - s0 < 0.4) continue;
+    add(s0, 'radarHum', 0.5, s1 - s0);
+    for (let k = 0, tt = s0 + 0.05; tt < s1 - 0.3 && k < 8; k++, tt += 1.25) add(tt, 'sonar', k === 0 ? 0.75 : 0.5);
   }
   return ev.sort((a, b) => a.t - b.t);
 }
@@ -130,6 +141,55 @@ const SYNTH = {
     lp.frequency.exponentialRampToValueAtTime(1100, t + dur * 0.5);
     lp.frequency.exponentialRampToValueAtTime(220, t + dur);
     s2.connect(lp).connect(env(ctx, t, g * 0.9, dur * 0.5, dur)).connect(panner(ctx, 0.4, -0.4, t, dur)).connect(out);
+  },
+  // "ping" sonar: tiếng chuông kim loại trong + vang lặp lại nhỏ dần (như màn hình radar)
+  sonar(ctx, out, t, g) {
+    const delay = ctx.createDelay(1);
+    delay.delayTime.value = 0.23;
+    const fb = ctx.createGain(); fb.gain.value = 0.38;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2600;
+    delay.connect(lp).connect(fb).connect(delay);
+    const wet = ctx.createGain(); wet.gain.value = 0.55;
+    lp.connect(wet).connect(out);
+    [[1046.5, 1, 1.1], [2093, 0.22, 0.5], [1568, 0.12, 0.7]].forEach(([f, a, dec]) => {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(f * 1.02, t);
+      o.frequency.exponentialRampToValueAtTime(f, t + 0.08);
+      const e = env(ctx, t, g * a * 0.55, 0.004, dec);
+      o.connect(e); e.connect(out); e.connect(delay);
+      o.start(t); o.stop(t + dec + 0.05);
+    });
+  },
+  // tiếng ù radar: nền trầm có nhịp đập theo vòng quét, kêu "vù" lướt từ trái sang phải
+  radarHum(ctx, out, t, g, dur = 3) {
+    dur = Math.max(0.5, Math.min(12, dur));
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 600; lp.Q.value = 4;
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.8; // 1 vòng quét = 1,25 s
+    const lfoG = ctx.createGain(); lfoG.gain.value = 380;
+    lfo.connect(lfoG).connect(lp.frequency);
+    const mix = ctx.createGain();
+    mix.gain.setValueAtTime(0.0001, t);
+    mix.gain.exponentialRampToValueAtTime(g * 0.22, t + 0.35);
+    mix.gain.setValueAtTime(g * 0.22, t + Math.max(0.36, dur - 0.4));
+    mix.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    for (const [f, type, a] of [[55, 'sawtooth', 0.6], [110.5, 'triangle', 0.4]]) {
+      const o = ctx.createOscillator(); o.type = type; o.frequency.value = f;
+      const og = ctx.createGain(); og.gain.value = a;
+      o.connect(og).connect(lp);
+      o.start(t); o.stop(t + dur + 0.05);
+    }
+    // tiếng gió quét theo tia radar
+    const s = noiseSrc(ctx, t, dur);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 3; bp.frequency.value = 1800;
+    const nG = ctx.createGain(); nG.gain.value = 0.35;
+    const lfo2 = ctx.createGain(); lfo2.gain.value = 0.3;
+    lfo.connect(lfo2).connect(nG.gain);
+    s.connect(bp).connect(nG).connect(lp);
+    const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createGain();
+    if (pan.pan) { const pl = ctx.createGain(); pl.gain.value = 0.7; lfo.connect(pl).connect(pan.pan); }
+    lp.connect(mix).connect(pan).connect(out);
+    lfo.start(t); lfo.stop(t + dur + 0.05);
   },
   // ghim rơi xuống: tiếng huýt trượt từ cao xuống thấp
   fall(ctx, out, t, g) {
