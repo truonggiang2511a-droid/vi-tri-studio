@@ -10,7 +10,11 @@ const TOKEN_KEY = 'vitri.session.v1';
 const REF_KEY = 'vitri.ref.v1';
 
 // Mã giới thiệu trên link (?ref=abc123): nhớ lại để gửi kèm khi đăng ký, rồi bỏ khỏi thanh địa chỉ
-export function captureRef() {
+export // Tài khoản test nội bộ của Giang (no_limits): không hiện nhắc đơn chờ thanh toán. Khách vẫn như cũ.
+const TEST_LOGINS = ['giang.test@vitristudio.com'];
+const isTestAcct = p => !!p && (p.test === true || TEST_LOGINS.includes(String(p.login || '').toLowerCase()));
+
+function captureRef() {
   try {
     const u = new URL(location.href);
     const r = (u.searchParams.get('ref') || '').trim().toLowerCase();
@@ -188,7 +192,7 @@ function renderBadge() {
     const soon = p?.unlimited && new Date(p.unlimited_until) - Date.now() < 3 * 86400000;
     const few = p && !p.unlimited && p.credits <= 2;
     // Đơn đã tạo mà chưa chuyển khoản (khoảng 2/3 đơn bị bỏ ngang ở bước này): nhắc ngay đầu trang, mở lại mã QR một chạm
-    const pend = p && S.order && S.order.status === 'pending' ? S.order : null;
+    const pend = p && !isTestAcct(p) && S.order && S.order.status === 'pending' ? S.order : null;
     low.hidden = !(soon || few || pend);
     low.classList.toggle('order', !!pend);
     low.classList.toggle('promo', !pend && !!(few && promoOn()));
@@ -473,7 +477,7 @@ export async function openPricing(reason = '') {
       <span class="pkg-desc">${esc(p.description)}</span>
     </button>`;
   }).join('') || '<p class="hint">Chưa có gói nào đang bán.</p>';
-  if (S.order && S.order.status === 'pending') {
+  if (S.order && S.order.status === 'pending' && !isTestAcct(S.profile)) {
     const box = list.querySelector('.promo-box');
     (box || list).insertAdjacentHTML(box ? 'afterend' : 'afterbegin', `<button type="button" class="pending-order" data-resume="1">Đơn <strong class="mono">${esc(S.order.code)}</strong> đang chờ thanh toán (${money(S.order.amount)}). Mở lại mã QR</button>`);
   }
