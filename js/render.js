@@ -2357,11 +2357,12 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       if (rise <= 0) continue;
       const st = roadStyle(scene, tl.roads[L.road].level);
       // Hiệu ứng vào: bật phóng to (hơi vượt rồi về), khối nổi dâng lên, vệt sáng lướt qua ngay khi chữ hiện.
-      // Hiệu ứng ra: thu nhỏ và mờ dần khi qua cảnh khác. Sau đó vệt sáng lướt lại định kỳ.
+      // Hiệu ứng ra: thu nhỏ và mờ dần khi qua cảnh khác.
       const pop = easeOutBack(clamp01(rise * 1.3));
       const scl = (0.5 + 0.5 * pop) * (0.8 + 0.2 * roadLabelA);
       const age = t - (ph.t0 + 0.5 * d);
-      const sweep = age < 1.3 ? clamp01((age - 0.35) / 0.9) : ((age - 1.3) % 2.8) / 1.1;
+      // Đúng 2 vệt sáng lướt qua: lúc chữ vừa hiện và ngay sau đó, rồi thôi
+      const sweep = age < 1.4 ? clamp01((age - 0.35) / 0.9) : age < 2.7 ? clamp01((age - 1.6) / 0.9) : 0;
       const q = gLL(v, L.at.lat, L.at.lng);
       const s0 = g2s(P, q.x, q.y), sx = g2s(P, q.x + 1, q.y), sy = g2s(P, q.x, q.y + 1);
       if (s0.w <= 0.05) continue;
