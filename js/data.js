@@ -36,7 +36,19 @@ function withTimeout(ms, signal) {
   signal?.addEventListener('abort', onAbort, { once: true });
   return { signal: ctrl.signal, done: () => { clearTimeout(timer); signal?.removeEventListener('abort', onAbort); } };
 }
-const tidy = s => (s || '').replace(/\s+/g, ' ').trim();
+const tidy = s => (s || '').normalize('NFC').replace(/\s+/g, ' ').trim();
+// Tên bị lặp bản không dấu phía sau ("Công An Tỉnh Đắk Lắk Cong An Tinh Dak Lak") → giữ bản có dấu.
+// Tên viết thường chữ đầu ("lê Lợi") → viết hoa chữ đầu.
+function cleanName(s) {
+  let n = tidy(s);
+  const w = n.split(' ');
+  if (w.length >= 4 && w.length % 2 === 0) {
+    const h = w.length / 2;
+    const plain = x => x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+    if (plain(w.slice(0, h).join(' ')) === plain(w.slice(h).join(' '))) n = w.slice(0, h).join(' ');
+  }
+  return n.replace(/^\p{Ll}/u, c => c.toUpperCase());
+}
 
 // Toạ độ phẳng cục bộ (km) quanh một điểm gốc, để đo khoảng cách nhanh
 function localFrame(c) {
@@ -161,7 +173,9 @@ function clipLine(pts, lo, hi) {
   return out;
 }
 
-const ROAD_CLASSES = { motorway: 3, trunk: 2, primary: 1 };
+// Cấp đường: 3 cao tốc · 2 quốc lộ · 1 tỉnh lộ/đường chính · 0 đường dân sinh (tertiary, đường nhỏ có tên).
+// Đường dân sinh chỉ vào danh sách khi gần nhà (điểm xếp hạng bị phạt), để vùng quê/ven đô vẫn có trục đường để chỉ.
+const ROAD_CLASSES = { motorway: 3, trunk: 2, primary: 1, secondary: 1, tertiary: 0, minor: 0 };
 
 function decodeTile(buf, z, x, y) {
   const t = new VectorTile(new Pbf(buf));
@@ -180,7 +194,7 @@ function decodeTile(buf, z, x, y) {
       const g = f.loadGeometry()[0]?.[0];
       if (!g || g.x < 0 || g.y < 0 || g.x >= poi.extent || g.y >= poi.extent) continue;
       const [lat, lng] = conv(g, poi.extent);
-      res.pois.push({ cls: pr.class, sub: pr.subclass, name: tidy(pr['name:vi'] || pr.name), lat, lng });
+      res.pois.push({ cls: pr.class, sub: pr.subclass, name: cleanName(pr['name:vi'] || pr.name), lat, lng });
     }
   }
   // Sân bay nằm ở lớp riêng; khu đô thị có tên ở lớp địa danh (place)
@@ -215,10 +229,11 @@ function decodeTile(buf, z, x, y) {
       const f = tn.feature(i);
       const pr = f.properties;
       const level = ROAD_CLASSES[pr.class];
-      if (!level || f.type !== 2) continue;
+      if (level == null || f.type !== 2) continue;
+      if (pr.class === 'minor' && !pr.name) continue; // đường nhỏ không tên: bỏ
       for (const line of f.loadGeometry()) {
         for (const piece of clipLine(line, 0, tn.extent)) {
-          res.roads.push({ level, name: tidy(pr['name:vi'] || pr.name), ref: tidy(pr.ref), pts: piece.map(p => conv(p, tn.extent)) });
+          res.roads.push({ level, cls: pr.class, name: cleanName(pr['name:vi'] || pr.name), ref: tidy(pr.ref), pts: piece.map(p => conv(p, tn.extent)) });
         }
       }
     }
@@ -276,7 +291,7 @@ async function loadVietmap(center, radiusKm, signal) {
     if (!res.ok) return [];
     const j = await res.json();
     return (j.items || []).filter(x => x.cat && Number.isFinite(x.lat) && Number.isFinite(x.lng))
-      .map(x => ({ name: tidy(x.name), cat: x.cat, kind: x.kind || x.cat, lat: x.lat, lng: x.lng, src: 'vm', address: x.address || '' }));
+      .map(x => ({ name: cleanName(x.name), cat: x.cat, kind: x.kind || x.cat, lat: x.lat, lng: x.lng, src: 'vm', address: x.address || '' }));
   } catch (e) {
     if (signal?.aborted) throw e;
     return [];
@@ -305,13 +320,13 @@ async function loadOverture(center, radiusKm, signal) {
   for (const arr of await Promise.all(jobs)) {
     for (const [lat, lng, name, c, k] of arr) {
       const cat = OVT_CAT[c];
-      if (cat) out.push({ name, cat, kind: OVT_KIND[k] || cat, lat, lng, src: 'ovt' });
+      if (cat) out.push({ name: cleanName(name), cat, kind: OVT_KIND[k] || cat, lat, lng, src: 'ovt' });
     }
   }
   return out;
 }
 // Khoá so trùng tên: bỏ dấu, bỏ ký tự đặc biệt, viết đầy đủ các chữ tắt hay gặp
-const DKEY_ABBR = [[/\bthcs\b/g, 'trung hoc co so'], [/\bthpt\b/g, 'trung hoc pho thong'], [/\bmn\b/g, 'mam non'], [/\bth\b/g, 'tieu hoc'], [/\bbv\b/g, 'benh vien'], [/\bubnd\b/g, 'uy ban nhan dan'], [/\bkcn\b/g, 'khu cong nghiep'], [/\bccn\b/g, 'cum cong nghiep']];
+const DKEY_ABBR = [[/^truong\s+/, ''], [/\bmau giao\b/g, 'mam non'], [/\bttyt\b/g, 'trung tam y te'], [/\bthcs\b/g, 'trung hoc co so'], [/\bthpt\b/g, 'trung hoc pho thong'], [/\bmn\b/g, 'mam non'], [/\bth\b/g, 'tieu hoc'], [/\bbv\b/g, 'benh vien'], [/\bubnd\b/g, 'uy ban nhan dan'], [/\bkcn\b/g, 'khu cong nghiep'], [/\bccn\b/g, 'cum cong nghiep']];
 function dkey(s) {
   let k = String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, ' ').trim();
   for (const [re, v] of DKEY_ABBR) k = k.replace(re, v);
@@ -345,6 +360,32 @@ function classifyPoi(p) {
   return null;
 }
 
+// Lọc tiện ích sai (khách báo "quét sai tiện ích"): dữ liệu cộng đồng hay gắn nhầm nhóm theo tên,
+// vd. "Bệnh viện máy ảnh" thành bệnh viện, "Techcombank Bưu điện" thành hành chính, cửa hàng "Siêu thị điện thoại" thành chợ.
+const SHOP_JUNK = /(máy ảnh|điện thoại|đtdđ|di động|laptop|máy tính|vi tính|xe máy|ô tô|\boto\b|thú y|thú cưng|pet\b|cây cảnh|đồng hồ|điện lạnh|điện tử|\bsim\b|phụ kiện|mắt kính|kính mắt|in ấn|photo)/i;
+const CHO_JUNK = /(lạc xoong|gia dụng|văn hóa phẩm|văn hoá phẩm|siêu thị văn hó|siêu thị văn ho|nội thất|thời trang|giày|dép|mỹ phẩm|sữa|mẹ và bé|thuốc|vật liệu|vật tư|đồ chơi|nhà hàng|\bquán\b|lẩu|nướng|hải sản|quần áo|tóc|nail|spa\b|điện máy|sách|xe đạp|sơn\b|gạch|sắt thép|bia|rượu|trái cây|hoa tươi|online|sỉ\b|kho\b)/i;
+const YTE_OK = /(bệnh viện|phòng khám|trạm y tế|trung tâm y tế|ttyt|nha khoa|bệnh xá|đa khoa|hospital|clinic|y tế|nhi đồng|phụ sản|sản nhi|chẩn đoán|xét nghiệm|medic)/i;
+const GOV_OK = /(ủy ban|uỷ ban|ubnd|công an|bưu điện|bưu cục|kho bạc|tòa án|toà án|viện kiểm sát|tỉnh ủy|tỉnh uỷ|huyện ủy|huyện uỷ|thành ủy|thành uỷ|quận ủy|đảng ủy|đảng uỷ|chi cục|cục thuế|bảo hiểm xã hội|hành chính|mặt trận|hội đồng nhân dân|văn phòng đăng ký|sở\s|phòng giáo dục|post)/i;
+const BANK_NAME = /(ngân hàng|\bbank\b|bank\b|agribank|vietcombank|vietinbank|techcombank|sacombank|bidv|acb\b|mb\b|vpbank|tpbank|hdbank|shb\b|ocb\b|eximbank|seabank|vib\b|abbank|lpbank|kienlongbank|namabank|pvcombank|baovietbank|scb\b|msb\b|bac a bank|bắc á)/i;
+const BANK_JUNK = /(vay vốn|vay tiền|dịch vụ ngân hàng|cầm đồ|tín dụng|đáo hạn|hỗ trợ vay|tư vấn|bảo hiểm nhân thọ)/i;
+const SCHOOL_JUNK = /(^(học sinh|phụ huynh|cổng|căn tin|nhà xe|bãi xe)\b|gia sư|ngoại ngữ|luyện thi|dạy kèm|học thêm|tiếng anh|english|lái xe|tin học|năng khiếu múa|đàn|vẽ)/i;
+const PARK_JUNK = /(cà phê|cafe|coffee|quán|nhà hàng|karaoke|bida|billiard)/i;
+// Trả về nhóm đúng (có thể đổi nhóm), hoặc null nếu nên bỏ. osm = điểm có thẻ phân loại rõ của OpenStreetMap
+function vetPoi(name, cat, osm) {
+  const n = String(name || '');
+  if (/^(trạm sạc|trụ sạc)|sạc (điện|xe)/i.test(n)) return 'congcong';
+  if (cat !== 'nganhang' && cat !== 'kcn' && BANK_NAME.test(n) && !GOV_OK.test(n.replace(/bưu điện/i, ''))) return /atm|vay|tín dụng/i.test(n) ? null : 'nganhang';
+  switch (cat) {
+    case 'yte': if (SHOP_JUNK.test(n) || (!osm && !YTE_OK.test(n))) return null; break;
+    case 'cho': if (CHO_JUNK.test(n) || SHOP_JUNK.test(n)) return null; break;
+    case 'hanhchinh': if (!osm && !GOV_OK.test(n)) return null; break;
+    case 'nganhang': if (BANK_JUNK.test(n) || (!osm && !BANK_NAME.test(n))) return null; break;
+    case 'truong': if (SCHOOL_JUNK.test(n)) return null; break;
+    case 'congvien': if (PARK_JUNK.test(n)) return null; break;
+  }
+  return cat;
+}
+
 // Loại cụ thể theo tên (để chọn biểu tượng + câu đọc): sân bay, nhà ga, biển, trạm sạc
 function kindFix(name, cat, kind) {
   const n = String(name || '');
@@ -359,10 +400,15 @@ function buildPois(raw, center, radiusKm, extra = []) {
   for (const p of extra) {
     const km = haversineKm(center, p);
     if (km > (p.kind === 'airport' ? Math.max(30, radiusKm) : radiusKm * 1.02)) continue;
-    out.push({ id: (p.src === 'vm' ? 'v' : 'o') + Math.round(p.lat * 1e5) + '_' + Math.round(p.lng * 1e5), name: p.name, cat: p.cat, kind: kindFix(p.name, p.cat, p.kind), lat: p.lat, lng: p.lng, km, src: p.src || 'ovt' });
+    const cat = p.cat === 'kcn' || p.cat === 'giaothong' || p.cat === 'khudothi' ? p.cat : vetPoi(p.name, p.cat, false);
+    if (!cat) continue;
+    const kind = cat === p.cat ? p.kind : cat === 'congcong' ? 'charging_station' : cat;
+    out.push({ id: (p.src === 'vm' ? 'v' : 'o') + Math.round(p.lat * 1e5) + '_' + Math.round(p.lng * 1e5), name: p.name, cat, kind: kindFix(p.name, cat, kind), lat: p.lat, lng: p.lng, km, src: p.src || 'ovt' });
   }
   for (const p of raw) {
-    const cat = classifyPoi(p);
+    let cat = classifyPoi(p);
+    if (!cat) continue;
+    cat = cat === 'kcn' || cat === 'giaothong' || cat === 'khudothi' ? cat : vetPoi(p.name, cat, true);
     if (!cat) continue;
     if (/^(nhà lồng|dãy|lô|sạp|kiosk|cổng|bãi xe|nhà xe)\b/i.test(p.name)) continue;
     if (cat === 'congvien' && p.sub === 'garden' && !/công viên|vườn hoa/i.test(p.name)) continue;
@@ -382,6 +428,8 @@ function buildPois(raw, center, radiusKm, extra = []) {
       const same = fk === fp || (fk.length > 6 && fp.length > 6 && (fk.includes(fp) || fp.includes(fk)));
       // Sân bay, nhà ga là khu rộng: cùng loại trong bán kính vài trăm mét là một điểm dù tên khác
       if (k.cat === p.cat && k.kind === p.kind && ['airport', 'station'].includes(p.kind) && haversineKm(k, p) < (p.kind === 'airport' ? 2.5 : 0.4)) return true;
+      // Cùng tên y hệt, cùng nhóm cơ quan/trường/y tế: một nơi dù hai nguồn đặt lệch vị trí tới 800 m
+      if (fk === fp && k.cat === p.cat && ['hanhchinh', 'truong', 'yte'].includes(p.cat) && fp.split(' ').length >= 3) return haversineKm(k, p) < 0.8;
       return same && haversineKm(k, p) < (k.cat === p.cat ? 0.3 : 0.12);
     });
     if (dup) {
@@ -564,7 +612,8 @@ function buildRoads(raw, center, radiusKm) {
     else if (r.name && !seg) key = nameToRef[normName(r.name)] ? 'r:' + nameToRef[normName(r.name)] : 'n:' + normName(r.name);
     if (!key) { loose.push(r); continue; }
     let g = groups.get(key);
-    if (!g) { g = { key, level: r.level, refs: {}, names: {}, pieces: [] }; groups.set(key, g); }
+    if (!g) { g = { key, level: r.level, minor: true, refs: {}, names: {}, pieces: [] }; groups.set(key, g); }
+    if (r.cls !== 'minor') g.minor = false;
     g.level = Math.max(g.level, r.level);
     if (r.ref) g.refs[r.ref.split(';')[0]] = (g.refs[r.ref.split(';')[0]] || 0) + 1;
     if (r.name && !seg) g.names[r.name] = (g.names[r.name] || 0) + r.pts.length;
@@ -618,10 +667,12 @@ function buildRoads(raw, center, radiusKm) {
     const near = nearestOnWays(center, ways);
     const lenKm = ways.reduce((s, w) => s + polyLenKm(w), 0);
     if (lenKm < 0.4) continue;
+    // Đường dân sinh: phải gần nhà và đủ dài mới đáng gọi là trục đường (đường nhỏ chỉ có tên: gần hơn, dài hơn)
+    if (g.level === 0 && (near.d > (g.minor ? 0.5 : 1.5) || lenKm < (g.minor ? 0.8 : 0.6))) continue;
     list.push({
       id: 'r' + g.key.replace(/[^a-z0-9]/gi, '').slice(0, 24) + Math.round(near.d * 1000),
       key: g.key, label, alt, ref, name, level: g.level, ways, nearKm: near.d, lenKm,
-      score: near.d / (1 + 0.6 * (g.level - 1)),
+      score: g.level === 0 ? near.d * 3 + 0.4 : near.d / (1 + 0.6 * (g.level - 1)),
     });
   }
   // Cùng nhãn (vd. hai nhóm cùng là Quốc lộ 1A) thì gộp
@@ -952,7 +1003,8 @@ export function autoPick(pois, max = 6) {
     if (!arr?.length || picked.length >= max) continue;
     if (c === 'giaothong' || c === 'nganhang' || c === 'congcong') continue;
     let best = arr[0];
-    if (c === 'yte') best = arr.find(p => p.kind === 'hospital') || arr[0];
+    if (c === 'yte') best = arr.find(p => p.kind === 'hospital' && /bệnh viện|hospital/i.test(p.name)) || arr.find(p => /trạm y tế|trung tâm y tế|đa khoa/i.test(p.name)) || arr[0];
+    if (c === 'hanhchinh') best = arr.find(p => /ủy ban|uỷ ban|ubnd|công an/i.test(p.name) && p.km <= Math.max(1.2, arr[0].km * 2)) || arr[0];
     if (c === 'cho') best = arr.find(p => p.kind === 'marketplace' && p.km <= Math.max(1.5, arr[0].km * 1.5)) || arr[0];
     picked.push(best.id);
   }
