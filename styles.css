@@ -681,3 +681,6 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .ai-card-text span { font-size: 13.5px; line-height: 1.45; opacity: .85; }
 .ai-card .btn { width: 100%; }
 .ai-card.done { border-style: dashed; }
+
+.ai-tones { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.ai-tones button { font-size: 13px; padding: 8px 4px; }

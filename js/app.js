@@ -57,6 +57,7 @@ const state = {
   adminArea: null,   // ranh xã/phường + tỉnh {ward, province} (KHÁC state.area = diện tích khách nhập)
   areaWard: '', areaProv: '', roadWidth: '',
   showStreets: true, // vẽ đường quanh nhà kiểu đường nhựa
+  aiTone: 'hai-huoc', // phong cách kịch bản AI
   lotArea: '',       // diện tích hiển thị (trống = tự tính)
   stars: [],         // id tiện ích được khoanh vùng nổi bật
   pageVideo: '',     // link video đã đăng (gắn vào trang web căn nhà)
@@ -909,11 +910,24 @@ async function aiRewrite() {
       ranh_gioi: state.useBoundary && state.admin?.boundary ? { tinh: state.admin.boundary.short, chim_bay_km: +state.admin.boundary.km.toFixed(2), duong_di_km: state.routes.__ranh ? +state.routes.__ranh.km.toFixed(2) : null, phut_o_to: state.routes.__ranh?.min ? Math.round(state.routes.__ranh.min) : null } : null,
       tien_ich: selectedPois().map(p => ({ ten: p.name, nhom: CATEGORIES[p.cat].label, cach_km: +(p.route ? p.route.km : p.km).toFixed(2) })),
     };
-    const segments = Object.fromEntries(segs.map(s => [s.key, `${s.label} — mẫu: ${s.def}`]));
+    // KHÔNG gửi câu mẫu (AI sẽ chép lại y chang) — chỉ gửi hình đang hiện + dữ liệu của từng cảnh
+    const SCENE = { intro: 'Mở đầu: trung cảnh ghim bất động sản, xã/phường sáng lên', province: 'Cả tỉnh/thành phố hiện lên', house: 'Cận cảnh bất động sản, máy lượn quanh',
+      overview: 'Toàn cảnh vòng bán kính quanh nhà', boundary: 'Ranh giới sang tỉnh/thành bên cạnh', summary: 'Tổng kết tất cả tiện ích', photos: 'Ảnh thực tế của bất động sản', outro: 'Kết video, kêu gọi đi xem nhà' };
+    const roadById = Object.fromEntries(selectedRoads().map(r => [r.id, r]));
+    const poiById = Object.fromEntries(selectedPois().map(p => [p.id, p]));
+    const segments = Object.fromEntries(segs.map(sg => {
+      const [kind, id] = sg.key.split(':');
+      if (kind === 'road' && roadById[id]) { const r = roadById[id]; return [sg.key, { canh: 'Trục đường lớn', ten: r.label, ten_khac: r.alt || '', cach: kmSpeak(r.nearKm) }]; }
+      if (kind === 'poi' && poiById[id]) {
+        const p = poiById[id], km = p.route ? p.route.km : p.km;
+        return [sg.key, { canh: 'Tiện ích', ten: p.name, nhom: CATEGORIES[p.cat]?.label || '', cach: kmSpeak(km), phut_xe_may: Math.max(1, Math.round(p.route?.min || km * 60 / 22)) }];
+      }
+      return [sg.key, { canh: SCENE[kind] || sg.label }];
+    }));
     if (ai.gated && !account.profile && !(await requireLogin('Đăng nhập để AI viết kịch bản.'))) { $('ttsMsg').textContent = ''; return; }
     const res = await fetch('/api/script', {
       method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ facts, segments, lat: state.house?.lat, lng: state.house?.lng }),
+      body: JSON.stringify({ facts, segments, tone: state.aiTone || 'hai-huoc', lat: state.house?.lat, lng: state.house?.lng }),
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -924,7 +938,8 @@ async function aiRewrite() {
     state.scriptAi = true;
     renderScript(); scheduleRebuild(); save();
     $('ttsMsg').textContent = 'AI đã viết xong. Sửa câu nào chưa ưng rồi bấm Tạo giọng đọc AI.';
-    $('aiCard').classList.add('done'); $('aiScriptBig').textContent = '✨ Viết lại phiên bản khác';
+    $('aiCard').classList.add('done'); $('aiScriptBig').textContent = '🔄 Tạo lại kịch bản khác';
+    media.voiceSegs.clear(); // kịch bản mới thì giọng cũ không còn khớp
     return true;
   } catch (e) {
     $('ttsMsg').textContent = 'AI viết kịch bản chưa dùng được (' + e.message + '). Kịch bản mẫu miễn phí vẫn dùng bình thường, bấm "Đổi cách viết" để ra phiên bản khác.';
@@ -1299,7 +1314,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'scriptAi', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'roadWidth', 'showStreets', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'roadWidth', 'showStreets', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -2082,6 +2097,8 @@ function init() {
   $('aiVoiceOn').addEventListener('change', e => { state.aiVoiceOn = e.target.checked; scheduleRebuild(); });
   $('aiScriptBtn').addEventListener('click', aiRewrite);
   $('aiScriptBig').addEventListener('click', () => { setSub('sound'); aiRewrite(); });
+  setSeg('aiToneSeg', state.aiTone || 'hai-huoc');
+  bindSeg('aiToneSeg', v => { state.aiTone = v; save(); $('aiScriptBig').textContent = state.scriptAi ? '🔄 Viết lại theo phong cách này' : '✨ Viết kịch bản bằng AI'; });
   $('altScriptBtn').addEventListener('click', altScript);
   $('phoneInput').value = state.phone || '';
   $('phoneInput').addEventListener('input', e => { state.phone = e.target.value; renderScript(); scheduleRebuild(); });

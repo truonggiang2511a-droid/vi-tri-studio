@@ -282,7 +282,15 @@
         <div class="ai-card" id="aiCard" hidden>
           <div class="ai-card-text">
             <strong>✨ Kịch bản AI viết</strong>
-            <span>AI viết lại lời đọc cuốn hút, đúng thông tin căn (giá, diện tích, thổ cư, tiện ích). Không trừ lượt.</span>
+            <span>Chọn phong cách rồi bấm viết. Mỗi lần bấm ra một kịch bản mới, đúng thông tin căn. Không trừ lượt.</span>
+          </div>
+          <div class="seg seg-wrap ai-tones" id="aiToneSeg" role="radiogroup" aria-label="Phong cách kịch bản">
+            <button type="button" role="radio" data-v="hai-huoc">😄 Hài hước</button>
+            <button type="button" role="radio" data-v="ke-chuyen">💬 Kể chuyện</button>
+            <button type="button" role="radio" data-v="chuyen-gia">📈 Chuyên gia</button>
+            <button type="button" role="radio" data-v="tre-trung">⚡ Trẻ trung</button>
+            <button type="button" role="radio" data-v="sang-trong">💎 Sang trọng</button>
+            <button type="button" role="radio" data-v="chot-sale">🔥 Chốt sale</button>
           </div>
           <button id="aiScriptBig" class="btn btn-primary" type="button">✨ Viết kịch bản bằng AI</button>
         </div>
