@@ -432,8 +432,8 @@ function toggleEdit(on, mode = 'pin') {
 }
 
 function updateAreaPlaceholders() {
-  $('areaWardInput').placeholder = state.adminArea?.ward?.name || state.admin?.commune || 'Tự lấy theo vị trí';
-  $('areaProvInput').placeholder = state.adminArea?.province?.name || state.admin?.province || 'Tự lấy theo vị trí';
+  $('areaWardInput').placeholder = state.adminArea?.ward?.name || state.admin?.commune || 'Tự nhận diện khi quét';
+  $('areaProvInput').placeholder = state.adminArea?.province?.name || state.admin?.province || 'Tự nhận diện khi quét';
 }
 function updateLotMsg() {
   const n = state.lot.length;
@@ -489,6 +489,16 @@ function applyCoords(text, { silent = false } = {}) {
   return true;
 }
 
+function resetHouseScoped() {
+  Object.assign(state, { areaWard: '', areaProv: '', roadWidth: '', sub: '', lotText: '', lotArea: '',
+    scriptEdits: {}, scriptAi: false, voSig: '', adminArea: null, admin: null });
+  media.voiceSegs.clear();
+  media.mixKey = '';
+  for (const [id, v] of [['areaWardInput', ''], ['areaProvInput', ''], ['roadWidthInput', ''], ['subInput', ''], ['lotText', ''], ['lotArea', '']]) { const el = $(id); if (el) el.value = v; }
+  updateAreaPlaceholders();
+  renderScript();
+  save();
+}
 function setHouse(h) {
   const prev = state.house;
   state.house = h;
@@ -496,6 +506,10 @@ function setHouse(h) {
   const moved = prev ? haversineKm(prev, h) : Infinity;
   // Đổi sang căn khác thì bỏ ranh lô đất cũ
   if (moved > 0.3 && state.lot?.length) state.lot = [];
+  // Căn MỚI (dời xa hơn 300 m): xoá mọi thứ thuộc về căn cũ — tên xã/tỉnh khách sửa tay, dòng phụ, chữ trên lô,
+  // bề rộng đường, kịch bản và giọng đã tạo. Tránh lỗi đọc nhầm tên xã/tỉnh của căn làm trước đó.
+  // Xã/tỉnh của căn mới tự nhận diện khi quét (ranh hành chính theo toạ độ).
+  if (moved > 0.3 && prev) resetHouseScoped();
   if (moved > 0.5) {
     if (state.pois.length) toast('Đã đổi vị trí. Bấm Quét tiện ích để tìm lại quanh căn nhà mới.');
     state.pois = []; state.roads = []; state.streets = null; state.adminArea = null; state.selected = []; state.selectedRoads = []; state.routes = {}; state.admin = null;
