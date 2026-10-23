@@ -715,3 +715,23 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .vo-card { grid-template-columns: minmax(0, 1fr); }
 .vo-src { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
 .vo-card .field-label { flex-wrap: wrap; white-space: normal; }
+
+/* Thử với căn mẫu (khách mới) */
+.sample-box { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; margin: 4px 0 12px; border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface)); border: 1px dashed color-mix(in srgb, var(--accent) 60%, transparent); }
+.sample-box div { display: grid; gap: 2px; font-size: 13.5px; line-height: 1.4; }
+.sample-box strong { font-size: 14.5px; }
+.sample-box .btn { white-space: nowrap; }
+/* Lời mời mua sau khi xem thử */
+.buy-nudge { display: grid; gap: 8px; margin: 10px 0 0; padding: 12px 14px; border-radius: 14px; background: var(--surface); color: var(--ink); border: 1.5px solid var(--accent);
+  box-shadow: 0 6px 18px rgba(0,0,0,.12); font-size: 14px; line-height: 1.45; }
+.buy-nudge strong { font-size: 15.5px; }
+.buy-nudge .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.buy-nudge .x { justify-self: end; margin-top: -4px; }
+/* Gợi ý bước tiếp sau khi xuất video */
+.next-cards { display: grid; gap: 8px; margin-top: 10px; }
+.next-card { display: grid; gap: 3px; text-align: left; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; font: inherit; cursor: pointer; }
+.next-card strong { font-size: 14.5px; }
+.next-card span { font-size: 13px; opacity: .8; line-height: 1.4; }
+/* Banner đơn đang chờ thanh toán */
+.low-banner.order { background: color-mix(in srgb, #2fb67c 16%, var(--surface)); }

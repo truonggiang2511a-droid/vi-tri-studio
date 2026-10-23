@@ -94,6 +94,7 @@
         </div>
         <button id="lotDone" class="btn btn-primary" type="button">Xong</button>
       </div>
+      <div id="buyNudge" class="buy-nudge" role="status" hidden></div>
     </div>
   </section>
 
@@ -117,6 +118,10 @@
         </div>
       </label>
       <p id="coordMsg" class="hint" aria-live="polite"></p>
+      <div id="sampleBox" class="sample-box" hidden>
+        <div><strong>Chưa có toạ độ căn nhà?</strong><span>Bấm thử với một căn mẫu, xem video ra sao trong 30 giây.</span></div>
+        <button id="sampleBtn" class="btn btn-dark" type="button">▶ Thử ngay</button>
+      </div>
       <div class="field">
         <span class="field-label">Loại bất động sản</span>
         <div class="seg" id="typeSeg" role="radiogroup" aria-label="Loại bất động sản">
@@ -407,6 +412,10 @@
           <button id="shareBtn" class="btn btn-quiet" type="button" hidden>Chia sẻ / Lưu vào Ảnh</button>
         </div>
         <p id="resultMeta" class="hint"></p>
+        <div class="next-cards">
+          <button type="button" class="next-card" id="nextPage"><strong>🏠 Tạo trang web cho căn này</strong><span>Khách xem video, bấm Gọi/Zalo, để lại số. App báo khách mới cho anh/chị.</span></button>
+          <button type="button" class="next-card" data-act="invite"><strong>🎁 Mời bạn môi giới dùng thử</strong><span>Bạn đăng ký qua link của anh/chị: cả hai cùng được tặng lượt.</span></button>
+        </div>
         <div id="resultInstall" class="result-install" data-install>
           <div><strong>Cài app lên màn hình chính</strong><span>Lần sau mở thẳng, không phải tìm link.</span></div>
           <span class="btn btn-quiet">Cài app</span>

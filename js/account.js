@@ -186,12 +186,19 @@ function renderBadge() {
   const low = $('lowBanner');
   if (low) {
     const soon = p?.unlimited && new Date(p.unlimited_until) - Date.now() < 3 * 86400000;
-    const few = p && !p.unlimited && p.credits <= 1;
-    low.hidden = !(soon || few);
-    low.classList.toggle('promo', !!(few && promoOn()));
-    if (few && promoOn()) low.innerHTML = `${p.credits <= 0 ? 'Anh/chị đã dùng hết lượt dùng thử.' : 'Còn <strong>1 lượt</strong> cuối.'} <strong>Ưu đãi lần mua đầu: giảm ${S.promo.percent}%</strong> mọi gói, còn <span data-promo-left="min">${leftText(S.promo.until)}</span>. <button type="button" class="link-btn" data-act="buy">Mua với giá ưu đãi</button>`;
+    const few = p && !p.unlimited && p.credits <= 2;
+    // Đơn đã tạo mà chưa chuyển khoản (khoảng 2/3 đơn bị bỏ ngang ở bước này): nhắc ngay đầu trang, mở lại mã QR một chạm
+    const pend = p && S.order && S.order.status === 'pending' ? S.order : null;
+    low.hidden = !(soon || few || pend);
+    low.classList.toggle('order', !!pend);
+    low.classList.toggle('promo', !pend && !!(few && promoOn()));
+    if (pend) {
+      const z = S.info?.bank?.zalo;
+      low.innerHTML = `Đơn <strong class="mono">${esc(pend.code)}</strong> (${money(pend.amount)}) đang chờ thanh toán. <button type="button" class="link-btn" data-act="resume">Mở lại mã QR</button> · chuyển khoản xong tự cộng lượt trong khoảng 1 phút.${z ? ` <a class="link-btn" href="${esc(z)}" target="_blank" rel="noopener">Cần hỗ trợ? Nhắn Zalo</a>` : ''}`;
+    } else
+    if (few && promoOn()) low.innerHTML = `${p.credits <= 0 ? 'Anh/chị đã dùng hết lượt dùng thử.' : p.credits === 1 ? 'Còn <strong>1 lượt</strong> cuối.' : 'Còn <strong>2 lượt</strong>.'} <strong>Ưu đãi lần mua đầu: giảm ${S.promo.percent}%</strong> mọi gói, còn <span data-promo-left="min">${leftText(S.promo.until)}</span>. <button type="button" class="link-btn" data-act="buy">Mua với giá ưu đãi</button>`;
     else if (soon) low.innerHTML = `Gói không giới hạn hết hạn ${fmtDate(p.unlimited_until, false)}. <button type="button" class="link-btn" data-act="buy">Gia hạn</button>`;
-    else if (few) low.innerHTML = `${p.credits <= 0 ? 'Anh/chị đã hết lượt.' : 'Còn <strong>1 lượt</strong> cuối.'} <button type="button" class="link-btn" data-act="buy">Mua thêm</button> hoặc <button type="button" class="link-btn" data-act="invite">mời bạn bè để được tặng lượt</button>`;
+    else if (few) low.innerHTML = `${p.credits <= 0 ? 'Anh/chị đã hết lượt.' : p.credits === 1 ? 'Còn <strong>1 lượt</strong> cuối.' : 'Còn <strong>2 lượt</strong>.'} <button type="button" class="link-btn" data-act="buy">Mua thêm</button> hoặc <button type="button" class="link-btn" data-act="invite">mời bạn bè để được tặng lượt</button>`;
   }
   const note = $('creditNote');
   if (note) {
@@ -662,6 +669,7 @@ export async function initAccount(opts = {}) {
     if (b.dataset.act === 'register') requireLogin('', 'register');
     else if (b.dataset.act === 'buy') openPricing();
     else if (b.dataset.act === 'invite') openInvite();
+    else if (b.dataset.act === 'resume' && S.order) { const id = S.order.package_id; openPricing().then(() => { if (id && $('payDlg').open) pickPackage(id); }); }
   });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && S.token) refreshAccount(); });
   emit();

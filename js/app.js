@@ -339,6 +339,7 @@ function frame(now) {
     t += Math.min(dt, 0.1);
     if (t >= tl.duration) { t = tl.duration; pause(); }
     updateTimeUi();
+    maybeNudge();
   }
   lastFrame = now;
   if (playing || dirty) {
@@ -524,6 +525,50 @@ function setHouse(h) {
   scheduleRebuild();
 }
 
+// ---------- Thử ngay với căn mẫu (khách mới) ----------
+const SAMPLE = { coord: '10.7285, 106.6185', price: '3,2 tỷ', area: '5x20m', beds: '3', legal: 'Sổ hồng riêng', floors: '1 trệt 2 lầu' };
+async function trySample() {
+  $('coordInput').value = SAMPLE.coord;
+  if (!applyCoords(SAMPLE.coord)) return;
+  for (const [k, id] of [['price', 'priceInput'], ['area', 'areaInput'], ['beds', 'bedsInput'], ['legal', 'legalInput'], ['floors', 'floorsInput']]) {
+    if (!state[k]) { state[k] = SAMPLE[k]; const el = $(id); if (el) el.value = SAMPLE[k]; }
+  }
+  save();
+  await scan();
+  if (state.pois.length) {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    rebuild(); t = 0; updateTimeUi();
+    setTimeout(() => play(), 600);
+    toast('Đây là video của căn mẫu. Dán toạ độ căn của anh/chị để làm video thật.', 4500);
+  }
+}
+
+// ---------- Mời mua đúng lúc: xem thử tới khoảng 60% video thì hiện lời mời (không chặn xem) ----------
+let nudgeDone = false;
+function maybeNudge() {
+  if (nudgeDone || !tl || t < tl.duration * 0.6) return;
+  nudgeDone = true;
+  try { if (sessionStorage.getItem('vitri.nudge')) return; sessionStorage.setItem('vitri.nudge', '1'); } catch { /* bỏ qua */ }
+  const p = account.profile, info = account.info || {};
+  const box = $('buyNudge');
+  if (!box) return;
+  const pk = (info.packages || []).filter(x => x.credits > 0);
+  const promo = account.promo && new Date(account.promo.until) > Date.now() ? account.promo.percent : 0;
+  const per = pk.length ? Math.min(...pk.map(x => x.price * (100 - promo) / 100 / x.credits)) : 0;
+  const perTxt = per ? Math.round(per / 100) * 100 : 0;
+  if (!p) {
+    box.innerHTML = `<strong>Video này ổn chứ? Làm cho căn của anh/chị luôn nhé</strong>
+      <span>Đăng ký miễn phí, nhận <b>${info.trial_credits ?? 1} video</b> dùng thử, không cần thẻ.</span>
+      <div class="row"><button type="button" class="btn btn-primary" data-act="register">Đăng ký miễn phí</button><button type="button" class="link-btn x" data-nx="1">Để sau</button></div>`;
+  } else if (!p.unlimited && p.credits <= 0) {
+    box.innerHTML = `<strong>Xuất video này chỉ từ ${perTxt ? perTxt.toLocaleString('vi-VN') + 'đ' : 'vài nghìn đồng'}/video</strong>
+      <span>Bản nét 1080p, có giọng đọc và nhạc, đăng ngay TikTok, Zalo, Facebook.${promo ? ` <b>Đang giảm ${promo}% lần mua đầu.</b>` : ''}</span>
+      <div class="row"><button type="button" class="btn btn-primary" data-act="buy">Xem bảng giá</button><button type="button" class="link-btn x" data-nx="1">Để sau</button></div>`;
+  } else return;
+  box.hidden = false;
+  box.onclick = e => { if (e.target.closest('[data-nx], [data-act]')) box.hidden = true; };
+}
+
 // ---------- Quét ----------
 let scanCtrl = null;
 async function scan() {
@@ -653,6 +698,8 @@ function renderAdmin() {
 function renderLists() {
   renderAdmin();
   const has = state.pois.length || state.roads.length;
+  // Khách mới chưa quét căn nào: mời thử ngay với căn mẫu (36% tài khoản chưa xuất video nào)
+  const sb = $('sampleBox'); if (sb) sb.hidden = !!has;
   $('results').hidden = !has;
   $('resultsEmpty').hidden = !!has;
   updateCount();
@@ -2042,6 +2089,12 @@ function init() {
     scheduleRebuild();
   });
   $('scanBtn').addEventListener('click', scan);
+  $('sampleBtn').addEventListener('click', trySample);
+  $('nextPage').addEventListener('click', () => {
+    const c = document.querySelector('.page-card');
+    c?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setTimeout(() => $('pageVideo')?.focus({ preventScroll: true }), 500);
+  });
 
   $('adminBox').addEventListener('change', e => {
     if (e.target.id !== 'useBoundary') return;

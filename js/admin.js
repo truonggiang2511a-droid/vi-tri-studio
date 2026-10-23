@@ -90,6 +90,14 @@ async function loadStats() {
 
 // ---------- Đơn hàng ----------
 const ST = { pending: 'Chờ thanh toán', paid: 'Đã thanh toán', cancelled: 'Đã huỷ' };
+// Đơn bỏ ngang (đã tạo, chưa chuyển khoản): nút gọi / nhắn Zalo / email để Giang chăm sóc chốt đơn
+function contactBtns(login, code, amount) {
+  const phone = /^0\d{9}$/.test(login || '') ? login : '';
+  const msg = encodeURIComponent(`Chào anh/chị, em là Vị Trí Studio. Em thấy đơn ${code} (${money(amount)}) chưa thanh toán xong, anh/chị cần em hỗ trợ chuyển khoản không ạ?`);
+  return phone
+    ? `<a class="btn btn-quiet" href="tel:${phone}">Gọi</a><a class="btn btn-quiet" href="https://zalo.me/${phone}" target="_blank" rel="noopener">Zalo</a>`
+    : login && login.includes('@') ? `<a class="btn btn-quiet" href="mailto:${esc(login)}?subject=${encodeURIComponent('Hỗ trợ thanh toán đơn ' + code)}&body=${msg}">Email</a>` : '';
+}
 async function loadOrders() {
   const tb = $('orderRows');
   tb.innerHTML = '<tr><td colspan="7" class="muted">Đang tải…</td></tr>';
@@ -102,7 +110,7 @@ async function loadOrders() {
       <td class="num">${money(o.amount)}${o.paid_amount && o.paid_amount !== o.amount ? `<span class="sub">nhận ${money(o.paid_amount)}</span>` : ''}</td>
       <td><span class="badge ${o.status}">${ST[o.status] || o.status}</span>${o.paid_via ? `<span class="sub">${esc(o.paid_via)}${o.paid_at ? ' · ' + fmt(o.paid_at) : ''}</span>` : ''}</td>
       <td class="num">${fmt(o.created_at)}</td>
-      <td><div class="acts">${o.status !== 'paid' ? `<button class="btn btn-primary" data-paid="${esc(o.code)}" type="button">Đã nhận tiền</button>` : ''}${o.status === 'pending' ? `<button class="btn btn-quiet" data-cancel="${esc(o.code)}" type="button">Huỷ</button>` : ''}</div></td>
+      <td><div class="acts">${o.status === 'pending' ? contactBtns(o.login, o.code, o.amount) : ''}${o.status !== 'paid' ? `<button class="btn btn-primary" data-paid="${esc(o.code)}" type="button">Đã nhận tiền</button>` : ''}${o.status === 'pending' ? `<button class="btn btn-quiet" data-cancel="${esc(o.code)}" type="button">Huỷ</button>` : ''}</div></td>
     </tr>`).join('') || '<tr><td colspan="7" class="muted">Không có đơn nào.</td></tr>';
   } catch (e) { tb.innerHTML = `<tr><td colspan="7" class="hint err">${esc(e.message)}</td></tr>`; }
 }
