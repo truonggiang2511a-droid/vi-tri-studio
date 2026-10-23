@@ -2048,6 +2048,23 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     if (sm && t >= sm.t0) { bA = 0.45 * clamp01((t - sm.t0) / 0.8); bRR = B.rrMax; }
     if (t >= ou.t0) bA = Math.max(0, 0.45 - (t - ou.t0) / 0.6);
   }
+  // Làm sáng CẢ VÙNG tỉnh/thành bên kia ranh (vd. qua ranh là TP.HCM thì TP.HCM sáng lên), cùng màu chữ tên tỉnh bên kia
+  if (B && bp && B.rings && B.rings.length && t >= bp.t0) {
+    const d = bp.t1 - bp.t0;
+    let aA = fadeWin(t, bp.t0 + 0.3 * d, bp.t1 + 0.4, 0.9, 0.6);
+    if (sm && t >= sm.t0 && t < ou.t0) aA = Math.max(aA, 0.35 * clamp01((t - sm.t0) / 0.8));
+    if (aA > 0.01) {
+      const pth = new Path2D();
+      for (const r of B.rings) r.forEach((p, i) => { const q = gLL(v, p[0], p[1]); i ? pth.lineTo(q.x, q.y) : pth.moveTo(q.x, q.y); });
+      const pulse = 0.85 + 0.15 * Math.sin(t * 3);
+      g.save();
+      g.lineJoin = 'round';
+      g.globalAlpha = aA * 0.24 * pulse; g.fillStyle = CYAN; g.fill(pth, 'evenodd');
+      g.globalAlpha = aA * 0.35; g.strokeStyle = CYAN; g.lineWidth = 12; g.stroke(pth);
+      g.globalAlpha = aA; g.strokeStyle = '#E6FDFF'; g.lineWidth = 2.6; g.shadowColor = CYAN; g.shadowBlur = 14; g.stroke(pth);
+      g.restore();
+    }
+  }
   if (bA > 0.01 && bRR > 0) {
     const heads = [];
     const paths = B.lines.map(l => revealPath(v, l, bRR, heads));

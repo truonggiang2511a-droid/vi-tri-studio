@@ -729,6 +729,9 @@ async function buildAdmin(rawBounds, center, radiusKm, signal) {
         }
         const name = other || 'Tỉnh lân cận';
         boundary = { name, short: other ? shortProvince(other) : 'TỈNH LÂN CẬN', P: { lat: P.lat, lng: P.lng }, km: P.d, ways };
+        // Ranh cả tỉnh/thành bên kia (để làm sáng cả vùng bên kia ở cảnh qua ranh). Lỗi thì bỏ qua, vẫn vẽ đường ranh như cũ
+        const across = await loadAdminArea({ lat: alat, lng: alng }, signal).catch(e => { if (signal?.aborted) throw e; return null; });
+        if (across?.province?.rings?.length) { boundary.rings = across.province.rings; boundary.areaName = across.province.name || name; }
       }
     }
   }
