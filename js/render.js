@@ -627,7 +627,11 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   // Bay vào ÊM như bản cũ (Giang chốt 23/10 tối): hạ từ trên cao xuống trọn 5 giây, không nảy;
   // xong mới giữ ~1 s cho xã/phường sáng lên. (Bản trước bay chỉ ~2,8 s nên trông giật.)
   const INTRO_FLY = 5.0, INTRO_REST = AREA ? 1.0 : 0.4;
-  raw.push({ type: 'intro', d: INTRO_FLY + INTRO_REST, hold: 0, hookLen: HOOK_LEN, to: camMid, move: INTRO_FLY / (INTRO_FLY + INTRO_REST), drift: 0.02, vkey: 'intro' });
+  // 24/10 tối (Giang): có video thực tế thì MỞ ĐẦU bằng đoạn đầu (mặt tiền) chiếu TRỌN đoạn (2,6–12 s, không co theo nhịp),
+  // thẻ giá hiện đè lên, câu mở đầu đọc khớp trên video; xong mới bay vào bản đồ (cảnh bay không còn lời đọc riêng).
+  const frontClip = (scene.clips || []).filter(c => c && c.el && c.dur > 0.3)[0] || null;
+  if (frontClip) raw.push({ type: 'front', d: Math.max(2.6, Math.min(12, frontClip.dur)) * sp, hold: 0, hookLen: HOOK_LEN, to: camRegion, move: 1, vkey: 'intro' });
+  raw.push({ type: 'intro', d: INTRO_FLY + INTRO_REST, hold: 0, hookLen: frontClip ? 0 : HOOK_LEN, to: camMid, move: INTRO_FLY / (INTRO_FLY + INTRO_REST), drift: 0.02, vkey: frontClip ? 'introMap' : 'intro' });
   if (camProv) raw.push({ type: 'province', d: 4.4, to: camProv, move: 0.75, drift: 0.015, vkey: 'province' });
   // Có lô đất / đường quanh nhà: giữ cảnh cận lâu hơn cho khách nhìn kỹ rồi mới lùi ra bán kính
   const hasStreets = !!(scene.streets && scene.streets.lines && scene.streets.lines.length);
@@ -640,7 +644,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   let clipNext = clips.length ? 1 : 0;
   const pushClips = slot => {
     while (clipNext < clips.length && CLIP_SLOTS[clipNext] === slot) {
-      raw.push({ type: 'clip', d: CLIP_D, clip: clipNext, to: raw[raw.length - 1].to, move: 1, vkey: 'clip' + clipNext });
+      raw.push({ type: 'clip', d: CLIP_D, clip: clipNext, to: raw[raw.length - 1].to, move: 1, vkey: clipNext === 1 ? 'reel' : 'clip' + clipNext });
       clipNext++;
     }
   };
@@ -808,11 +812,12 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     clips, clipWins: phases.filter(p => p.type === 'clip').map(p => ({ clip: p.clip, t0: p.t0, t1: p.t1 })),
     pois, roads, boundary, captions, hook, lot, lotArea: lot ? lotAreaM2(lot) : 0,
   };
-  tl.hookEnd = hook ? tl.intro.t0 + tl.intro.hookLen : 0;
+  tl.hookPh = first('front') || tl.intro;
+  tl.hookEnd = hook ? tl.hookPh.t0 + tl.hookPh.hookLen : 0;
   // Có video thực tế: đoạn đầu làm nền chuyển động cho thẻ giá mở đầu (ưu tiên hơn ảnh tĩnh)
-  if (clips.length && hook) tl.clipWins.unshift({ clip: 0, t0: tl.intro.t0, t1: tl.hookEnd + 0.4, hook: true });
-  // Không có thẻ giá: đoạn đầu (mặt tiền) chiếu toàn khung 2,6 s đầu, máy bay vào bản đồ ở phía dưới rồi lộ ra
-  else if (clips.length) tl.clipWins.unshift({ clip: 0, t0: tl.intro.t0, t1: tl.intro.t0 + 2.6, open: true });
+  // Đoạn mặt tiền chiếu toàn khung suốt cảnh mở đầu `front` (thẻ giá nếu có đè lên 2,2 s đầu)
+  const fp = first('front');
+  if (fp && clips.length) tl.clipWins.unshift({ clip: 0, t0: fp.t0, t1: fp.t1, open: true });
   tl.roadsEnd = tl.roadPhases.length ? tl.roadPhases[tl.roadPhases.length - 1].t1 : tl.overview.t1;
   tl.roadLabels = camRoads ? placeRoadLabels(tl, camRoads, gi => !tl.roads[gi].cam) : [];
   tl.roads.forEach((r, gi) => { if (r.cam) tl.roadLabels.push(...placeRoadLabels(tl, r.cam, g => g === gi)); });
@@ -2199,6 +2204,7 @@ export function clipTime(c, w, t) {
     start = w.hook ? Math.min(c.dur - D - 0.3, c.dur * 0.62) : Math.min(c.dur - D - 0.2, Math.max(0.4, (c.dur - D) * 0.45));
     start = Math.max(0, start);
   } else { start = 0; rate = Math.max(0.5, Math.min(1, (c.dur - 0.1) / D)); }
+  if (w.open) { start = 0; rate = Math.max(0.5, Math.min(1, (c.dur - 0.1) / D)); } // mặt tiền mở đầu: chiếu từ đầu đoạn
   return { time: Math.max(0, Math.min(c.dur - 0.05, start + lt * rate)), rate };
 }
 const clipReady = el => el && (el.readyState === undefined || el.readyState >= 2) && (el.videoWidth || el.width);
@@ -2343,12 +2349,12 @@ function drawHook(ctx, tl, t) {
   const H = tl.hook;
   if (!H || t >= tl.hookEnd + 0.4) return;
   const { LW, LH, safe } = tl;
-  const t0 = tl.intro.t0;
+  const t0 = (tl.hookPh || tl.intro).t0;
   const lt = t - t0;
   const A = t < tl.hookEnd - 0.45 ? clamp01(lt / 0.25 + 0.6) : clamp01((tl.hookEnd + 0.4 - t) / 0.85);
   if (A <= 0) return;
   // Nền: ảnh đẹp nhất của căn (ảnh đầu tiên), không có ảnh thì làm tối bản đồ
-  const hw = tl.clipWins && tl.clipWins.find(x => x.hook);
+  const hw = tl.clipWins && tl.clipWins.find(x => x.hook || x.open);
   const hookClip = hw && tl.clips[hw.clip] && clipReady(tl.clips[hw.clip].el) ? tl.clips[hw.clip].el : null;
   if (hookClip || (tl.photos && tl.photos.length)) {
     photoLayer(ctx, tl, hookClip || tl.photos[0], 0, 0, LW, LH, clamp01(lt / (tl.hookEnd - t0 + 0.4)), 1, A);
@@ -2443,7 +2449,7 @@ function drawBars(ctx, tl, t) {
   if (!ST.bars) return;
   const { LW, LH } = tl;
   const T = tl.duration;
-  const endA = tl.hookEnd || tl.intro.t0 + 1.2;
+  const endA = tl.hookEnd || (tl.hookPh || tl.intro).t0 + 1.2;
   const a = Math.max(t < endA ? 1 : clamp01(1 - (t - endA) / 0.8), clamp01((t - tl.outro.t0 - 0.2) / 0.8) * (t < T ? 1 : 0));
   if (a <= 0) return;
   const h = Math.round(LH * (tl.fmt === 'h' ? 0.085 : 0.06) * easeOut(a));

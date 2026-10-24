@@ -12,8 +12,8 @@ export function sfxEvents(tl) {
       case 'intro': {
         const i0 = p.t0 + (p.hold || 0);
         // Mở màn có lực (24/10): tiếng nổ trầm ngay giây đầu cùng lúc thẻ giá bật lên, rồi whoosh bay vào bản đồ
-        if (p.hookLen) { add(0.02, 'impact', 0.95); add(0.05, 'pop', 0.45); }
-        add(p.hookLen ? 0.12 : 0.25, 'whoosh', 0.7, 1.6);
+        if (p.hookLen) { add(p.t0 + 0.02, 'impact', 0.95); add(p.t0 + 0.05, 'pop', 0.45); }
+        add(p.t0 + (p.hookLen ? 0.12 : 0.25), 'whoosh', 0.7, 1.6);
         if (p.hookLen) add(p.t0 + p.hookLen - 0.3, 'whoosh', 0.5, 1.2); // thẻ giá rút đi
         // Ghim bất động sản rơi xuống (cùng thời điểm với hình trong render.js): tiếng rơi + chạm đất + "pop"
         if (tl.provPh || tl.scene.adminArea) {
@@ -68,6 +68,10 @@ export function sfxEvents(tl) {
         }
         break;
       }
+      case 'front': // video mặt tiền mở đầu: nổ trầm + pop khi thẻ giá bật, whoosh khi chuyển vào bản đồ
+        if (p.hookLen) { add(p.t0 + 0.02, 'impact', 0.95); add(p.t0 + 0.05, 'pop', 0.45); add(p.t0 + p.hookLen - 0.3, 'whoosh', 0.5, 1.2); }
+        add(p.t1 - 0.35, 'whoosh', 0.6, 1.3);
+        break;
       case 'clip': // video thực tế lồng vào giữa: lướt vào, lướt ra (khớp drawClips trong render.js)
         add(p.t0, 'whoosh', 0.55, 1.1);
         add(p.t1 - 0.25, 'whoosh', 0.35, 0.9);
@@ -107,9 +111,6 @@ export function sfxEvents(tl) {
   if (sm) sweeps.push([sm.t0 + 0.2, Math.min(sm.t1, sm.t0 + 3.2)]);
   // 23/10: Giang thấy tiếng radar (ping sonar + ù) chói tai → bỏ, không phát gì khi radar quét. Giữ hàm âm để dùng lại nếu cần.
   void sweeps;
-  // Đoạn video mặt tiền mở đầu (không có thẻ giá): whoosh khi chuyển sang bản đồ
-  const ow = (tl.clipWins || []).find(w => w.open);
-  if (ow) add(ow.t1 - 0.35, 'whoosh', 0.55, 1.1);
   return ev.sort((a, b) => a.t - b.t);
 }
 

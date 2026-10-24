@@ -1406,7 +1406,12 @@ function scriptSegments() {
     : phone ? `Gọi ngay số ${phone} để đi xem nhà trực tiếp!`
     : brand ? `Liên hệ ${brand} để đi xem nhà ngay hôm nay!`
     : 'Liên hệ ngay để đi xem nhà trực tiếp nhé!';
-  if (media.photos.length) add('photos', 'Ảnh thực tế', pick([`Cùng xem hình ảnh thực tế của ${twl}.`, `Đây là hình ảnh thực tế của ${twl}.`], 5));
+  // 24/10 tối (Giang): video/ảnh thực tế nằm cuối, sau khi bản đồ vẽ xong → câu mời xem
+  const endClips = Math.max(0, media.clips.length - 1);
+  if (endClips) add('reel', 'Mời xem video thực tế', `Và sau đây, xin mời quý vị cùng xem video${media.photos.length ? ' và hình ảnh' : ''} thực tế của ${twl}.`);
+  if (media.photos.length) add('photos', 'Ảnh thực tế', endClips
+    ? pick([`Thêm vài hình ảnh thực tế của ${twl}.`, `Và đây là hình ảnh thực tế của ${twl}.`], 5)
+    : `Và sau đây, xin mời quý vị cùng xem hình ảnh thực tế của ${twl}.`);
   add('outro', 'Kết', `${scarce} ${cta}`);
   return segs;
 }
@@ -1522,7 +1527,9 @@ async function aiRewrite() {
     };
     // KHÔNG gửi câu mẫu (AI sẽ chép lại y chang) — chỉ gửi hình đang hiện + dữ liệu của từng cảnh
     const SCENE = { intro: 'Mở đầu: trung cảnh ghim bất động sản, xã/phường sáng lên', province: 'Cả tỉnh/thành phố hiện lên', house: 'Cận cảnh bất động sản, máy lượn quanh',
-      overview: 'Toàn cảnh vòng bán kính quanh nhà', region: 'Kết nối vùng: đường đi + số phút lái xe tới trung tâm, sân bay, cảng, ga', infra: 'Hạ tầng đang thi công gần nhà (nét đứt)', iso: 'Vùng lái xe 5, 10, 15 phút quanh nhà sáng lên lần lượt', boundary: 'Ranh giới sang tỉnh/thành bên cạnh', summary: 'Tổng kết tất cả tiện ích', photos: 'Ảnh thực tế của bất động sản', outro: 'Kết video, kêu gọi đi xem nhà' };
+      reel: 'Bản đồ đã xong, chuyển sang video thực tế căn nhà: 1 câu mời người xem cùng xem video (và hình ảnh) thực tế', overview: 'Toàn cảnh vòng bán kính quanh nhà', region: 'Kết nối vùng: đường đi + số phút lái xe tới trung tâm, sân bay, cảng, ga', infra: 'Hạ tầng đang thi công gần nhà (nét đứt)', iso: 'Vùng lái xe 5, 10, 15 phút quanh nhà sáng lên lần lượt', boundary: 'Ranh giới sang tỉnh/thành bên cạnh', summary: 'Tổng kết tất cả tiện ích', photos: 'Ảnh thực tế của bất động sản', outro: 'Kết video, kêu gọi đi xem nhà' };
+    if (media.clips.length) SCENE.intro = 'Mở đầu: video thực tế mặt tiền căn nhà chiếu toàn khung (chưa vào bản đồ). Câu móc + giới thiệu căn';
+    if (media.photos.length) SCENE.photos = media.clips.length > 1 ? 'Thêm ảnh thực tế của căn nhà' : 'Bản đồ đã xong, chuyển sang ảnh thực tế: 1 câu mời người xem cùng xem hình ảnh thực tế';
     const roadById = Object.fromEntries(selectedRoads().map(r => [r.id, r]));
     const poiById = Object.fromEntries(selectedPois().map(p => [p.id, p]));
     const segments = Object.fromEntries(segs.map(sg => {
