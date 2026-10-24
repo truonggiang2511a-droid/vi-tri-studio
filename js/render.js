@@ -648,7 +648,19 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
       for (let j = 0; j < L.xs.length; j += Math.max(1, Math.floor(L.xs.length / 16))) pts.push(unproject(L.xs[j], L.ys[j], 0));
     }
     const camHub = fitCam(pts, LW, LH, { left: safe.x + 64, right: safe.x + 64, top: safe.top + 120, bottom: safe.bottom + 96 }, PITCH.hub, 6, 13.4);
-    if (camHub) raw.push({ type: 'region', d: 2.2 + 1.2 * anchors.length, to: camHub, move: 0.3, drift: 0.01, vkey: 'region', n: anchors.length });
+    // 24/10 tối (Giang: góc máy xa, đứng yên lâu): mỗi điểm mốc một cú máy riêng — bay vòng cung từ khung trước, bám theo
+    // đầu line đang chạy, hạ góc nghiêng 44° và đáp CẬN điểm mốc, rồi trôi/lia nhẹ; cuối cùng lùi ra toàn cảnh vùng.
+    if (camHub) {
+      const shots = [], W_HUB = 1, W_REC = 1.15, tw = anchors.length * W_HUB + W_REC;
+      anchors.forEach((a, i) => {
+        const L = a.line, near = [a];
+        for (let j = 0; j < L.xs.length; j++) if (L.cum[j] >= 0.7 * L.len) near.push(unproject(L.xs[j], L.ys[j], 0));
+        const cam = fitCam(near, LW, LH, { left: safe.x + 80, right: safe.x + 80, top: safe.top + 170, bottom: safe.bottom + 150 }, 44, 9.5, 14.6) || camHub;
+        shots.push({ s: (i * W_HUB) / tw, e: ((i + 1) * W_HUB) / tw, cam, move: 0.62, anchor: i, line: L, side: i % 2 ? 1 : -1 });
+      });
+      shots.push({ s: (anchors.length * W_HUB) / tw, e: 1, cam: { ...camHub, pitch: 26 }, move: 0.55, recap: true, side: 1 });
+      raw.push({ type: 'region', d: 2.3 * anchors.length + 2.6, to: shots[shots.length - 1].cam, shots, vkey: 'region', n: anchors.length });
+    }
   }
   const infra = (RG?.infra || []).map(r => {
     const lines = prepReveal(r.ways, r.P);
@@ -662,7 +674,26 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
       for (let i = 0; i < near.length; i += Math.max(1, Math.floor(near.length / 12))) pts.push(near[i]);
     }
     const camInfra = fitCam(pts, LW, LH, { left: safe.x + 50, right: safe.x + 50, top: safe.top + 130, bottom: safe.bottom + 120 }, PITCH.roads, 8, 14.6);
-    if (camInfra) raw.push({ type: 'infra', d: 3.0 + 1.4 * infra.length, to: camInfra, move: 0.42, drift: 0.012, vkey: 'infra', n: infra.length });
+    // Mỗi tuyến: đáp cận điểm gần nhà nhất (nghiêng 46°), rồi LIA DỌC TUYẾN ~2 km theo hướng line đang chạy; cuối: toàn cảnh
+    if (camInfra) {
+      const shots = [], W_A = 0.55, W_B = 0.6, W_REC = 0.9, tw = infra.length * (W_A + W_B) + W_REC;
+      let acc = 0;
+      infra.forEach((r, i) => {
+        const near = r.samples.filter(q => q.dist <= r.nearKm + 0.9);
+        const camA = fitCam([r.P, ...near.filter((_, j) => j % 3 === 0)], LW, LH, { left: safe.x + 70, right: safe.x + 70, top: safe.top + 170, bottom: safe.bottom + 150 }, 46, 11, 14.8) || camInfra;
+        const tgt = r.nearKm + Math.min(2.4, Math.max(0.6, (r.rrMax - r.nearKm) * 0.5));
+        let Q = r.P, best = Infinity;
+        for (const q of r.samples) { const dd = Math.abs(q.dist - tgt); if (dd < best) { best = dd; Q = q; } }
+        const camB = anchorCam(Q.lat, Q.lng, Math.min(15, camA.zoom + 0.2), 50, LW, LH, 0.5, 0.56);
+        r.rB = Math.min(r.rrMax, tgt + 0.8);
+        shots.push({ s: acc / tw, e: (acc + W_A) / tw, cam: camA, move: 0.75, infra: i, part: 'a', side: i % 2 ? 1 : -1 });
+        acc += W_A;
+        shots.push({ s: acc / tw, e: (acc + W_B) / tw, cam: camB, move: 1, infra: i, part: 'b', slide: true, side: 0 });
+        acc += W_B;
+      });
+      shots.push({ s: acc / tw, e: 1, cam: camInfra, move: 0.6, recap: true, side: 1 });
+      raw.push({ type: 'infra', d: 2.6 * infra.length + 2.2, to: camInfra, shots, vkey: 'infra', n: infra.length });
+    }
   }
   // Vùng lái xe 5 – 10 – 15 phút (ArcGIS): sau cảnh bán kính, máy ôm trọn vùng 15 phút, 3 vùng lần lượt lan ra từ nhà
   const ISO = scene.iso && scene.iso.areas && scene.iso.areas.length ? scene.iso : null;
@@ -845,7 +876,67 @@ export function buildCaptions(phases, texts, voice, fmtKey) {
   return out;
 }
 
+// Điểm trên đường (toạ độ thế giới zoom 0) tại quãng s tính từ đầu
+function pointAtLen(L, sLen) {
+  const n = L.xs.length;
+  if (n < 2 || sLen <= 0) return { x: L.xs[0], y: L.ys[0] };
+  if (sLen >= L.len) return { x: L.xs[n - 1], y: L.ys[n - 1] };
+  let lo = 0, hi = n - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (L.cum[m] < sLen) lo = m; else hi = m; }
+  const f = (sLen - L.cum[lo]) / Math.max(1e-12, L.cum[hi] - L.cum[lo]);
+  return { x: L.xs[lo] + (L.xs[hi] - L.xs[lo]) * f, y: L.ys[lo] + (L.ys[hi] - L.ys[lo]) * f };
+}
+// Cảnh nhiều cú máy (kết nối vùng, hạ tầng): mỗi cú bay từ khung trước tới khung mới. Hai khung xa nhau thì bay vòng cung
+// (lùi ra giữa chặng rồi hạ xuống), giữa chặng bám theo đầu line đang chạy; tới nơi thì đẩy máy vào chậm + lia ngang nhẹ.
+// Khung máy lúc kết thúc một cú (đã cộng phần đẩy vào + lia ngang) — điểm bắt đầu của cú sau, để không giật khi đổi cú
+function shotEnd(sh) {
+  if (sh._end) return sh._end;
+  const c = { ...sh.cam };
+  if (!sh.slide) {
+    c.zoom += 0.32;
+    if (sh.side) c.lng += sh.side * 42 * metersPerPixel(c.lat, c.zoom) / (111320 * Math.cos(c.lat * Math.PI / 180));
+  }
+  return (sh._end = c);
+}
+function camShots(ph, t) {
+  const d = ph.t1 - ph.t0;
+  const f = clamp01((t - ph.t0) / d);
+  let i = ph.shots.findIndex(sh => f < sh.e);
+  if (i < 0) i = ph.shots.length - 1;
+  const sh = ph.shots[i];
+  const prev = i ? shotEnd(ph.shots[i - 1]) : ph.from;
+  const w = clamp01((f - sh.s) / Math.max(1e-6, sh.e - sh.s));
+  const e = sh.slide ? smooth(w) : smooth(clamp01(w / sh.move));
+  const cam = lerpCam(prev, sh.cam, e);
+  if (sh._arc === undefined) {
+    const a = project(prev.lat, prev.lng, 0), b = project(sh.cam.lat, sh.cam.lng, 0);
+    const dpx = Math.hypot(b.x - a.x, b.y - a.y) * Math.pow(2, Math.min(prev.zoom, sh.cam.zoom));
+    sh._arc = sh.slide ? 0 : Math.max(0, Math.min(2.6, Math.log2(dpx / 420)));
+  }
+  cam.zoom -= sh._arc * Math.sin(Math.PI * e);
+  if (sh.line && e > 0 && e < 1) {
+    // bám đầu line (cùng nhịp với hubReveal)
+    const k = clamp01((w - 0.04) / (sh.move - 0.04));
+    const hp = pointAtLen(sh.line, sh.line.len * smooth(k));
+    const c = project(cam.lat, cam.lng, 0);
+    const bl = 0.5 * Math.sin(Math.PI * e);
+    const ll = unproject(c.x + (hp.x - c.x) * bl, c.y + (hp.y - c.y) * bl, 0);
+    cam.lat = ll.lat; cam.lng = ll.lng;
+  }
+  if (!sh.slide) {
+    // tới nơi: đẩy máy vào chậm và lia ngang (đổi chiều mỗi cú máy) để khung không đứng yên
+    const hold = clamp01((w - sh.move) / Math.max(1e-6, 1 - sh.move));
+    const hs = smooth(hold);
+    cam.zoom += 0.32 * hs;
+    if (sh.side) {
+      const mpp = metersPerPixel(cam.lat, cam.zoom);
+      cam.lng += sh.side * 42 * hs * mpp / (111320 * Math.cos(cam.lat * Math.PI / 180));
+    }
+  }
+  return cam;
+}
 function camAtPhase(ph, t) {
+  if (ph.shots) return camShots(ph, t);
   const d = ph.t1 - ph.t0;
   const hold = ph.hold || 0;
   const e = smooth(clamp01((t - ph.t0 - hold) / ((d - hold) * (ph.move || 1))));
@@ -1909,20 +2000,35 @@ export const CLIP_MAX = 5;
 const HUB_COL = { center: '#FFD54A', airport: '#5BC0FF', port: '#2EE6C5', station: '#FF9F43', metro: '#E77CFF' };
 const HUB_ICON = { center: 'city', airport: 'plane', port: 'ship', station: 'train', metro: 'train' };
 const INFRA_COL = '#FFC233';
-// Đường tới điểm mốc thứ i chạy ra từ 0,24 + 0,66·i/n của cảnh, trong 0,95 khoảng (sfx.js dùng cùng công thức)
+// Đường tới điểm mốc thứ i chạy ra trong cú máy của nó, cùng nhịp với máy bay tới (camShots, sfx.js dùng cùng công thức)
+function shotW(ph, sh, t) { return clamp01(((t - ph.t0) / (ph.t1 - ph.t0) - sh.s) / Math.max(1e-6, sh.e - sh.s)); }
 function hubReveal(tl, i, t) {
   const ph = tl.regionPh;
   if (!ph || t < ph.t0) return 0;
-  const d = ph.t1 - ph.t0, span = 0.66 / Math.max(1, tl.anchors.length);
-  return clamp01((t - ph.t0 - d * (0.24 + span * i)) / (d * span * 0.95));
+  const sh = ph.shots.find(x => x.anchor === i);
+  if (!sh) return 1;
+  return clamp01((shotW(ph, sh, t) - 0.04) / (sh.move - 0.04));
 }
 function hubAlpha(tl, t) { const ph = tl.regionPh; return ph ? fadeWin(t, ph.t0 + 0.15, ph.t1 + 0.45, 0.4, 0.5) : 0; }
-// Tuyến đang thi công thứ i chạy ra từ 0,2 + 0,6·i/n của cảnh, trong 1,1 khoảng (sfx.js dùng cùng công thức)
+// Tuyến đang thi công thứ i: chạy ra trong 2 cú máy của nó (đáp cận + lia dọc tuyến), tới cảnh toàn thì chạy hết tuyến
 function infraReveal(tl, i, t) {
   const ph = tl.infraPh;
   if (!ph || t < ph.t0) return 0;
-  const d = ph.t1 - ph.t0, span = 0.6 / Math.max(1, tl.infra.length);
-  return clamp01((t - ph.t0 - d * (0.2 + span * i)) / (d * span * 1.1));
+  const A = ph.shots.find(x => x.infra === i && x.part === 'a'), B = ph.shots.find(x => x.infra === i && x.part === 'b');
+  if (!A || !B) return 1;
+  const f = (t - ph.t0) / (ph.t1 - ph.t0);
+  const s0 = A.s + 0.25 * (A.e - A.s), s1 = B.s + 0.85 * (B.e - B.s);
+  return clamp01((f - s0) / (s1 - s0));
+}
+function infraRR(tl, i, t) {
+  const ph = tl.infraPh, r = tl.infra[i];
+  if (!ph || t < ph.t0) return 0;
+  if (t >= ph.t1) return r.rrMax;
+  const rec = ph.shots[ph.shots.length - 1];
+  const rB = r.rB ?? r.rrMax;
+  const f = (t - ph.t0) / (ph.t1 - ph.t0);
+  if (f < rec.s) return smooth(infraReveal(tl, i, t)) * rB;
+  return rB + (r.rrMax - rB) * smooth(clamp01((f - rec.s) / ((1 - rec.s) * 0.7)));
 }
 // Rõ trong cảnh của mình, sau đó mờ còn 0,42 suốt các cảnh trục đường rồi tắt
 function infraAlpha(tl, t) {
@@ -2643,7 +2749,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       const k = infraReveal(tl, i, t);
       if (k <= 0) return;
       const heads = [];
-      const paths = r.lines.map(l => revealPath(v, l, smooth(k) * r.rrMax, heads));
+      const paths = r.lines.map(l => revealPath(v, l, infraRR(tl, i, t), heads));
       g.save();
       g.lineCap = 'round'; g.lineJoin = 'round';
       for (const path of paths) {
@@ -2654,7 +2760,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
         g.setLineDash([]); g.lineCap = 'round';
       }
       g.restore();
-      if (k < 1 && t < ph.t1) for (const hd of heads) headGlow(g, hd, INFRA_COL, 15);
+      if (t < ph.t1 && infraRR(tl, i, t) < r.rrMax) for (const hd of heads) headGlow(g, hd, INFRA_COL, 15);
       // Nét chấm trắng từ nhà tới điểm gần nhất của tuyến (chỉ trong cảnh hạ tầng)
       const ca = Math.min(fadeWin(t, ph.t0 + 0.2 * (ph.t1 - ph.t0), ph.t1 + 0.1, 0.4, 0.35), clamp01(k * 3));
       if (ca > 0.01) {
@@ -3232,6 +3338,8 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     const used = [{ x: hs.x - 26, y: hs.y - 64, w: 52, h: 68 }];
     if (logo) used.push(logo);
     if (capL) used.push(capL);
+    // Thẻ của điểm đang ở ngoài khung (máy đang quay cận điểm khác) thì ẩn dần, không dồn ra mép khung
+    const onScr = sp => clamp01((Math.min(sp.x, LW - sp.x, sp.y - safe.top, LH - safe.bottom - sp.y) + 6) / 46);
     const rp = tl.regionPh;
     if (rp && tl.anchors.length) {
       const aH = hubAlpha(tl, t);
@@ -3242,7 +3350,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
         // Mọi ghim (kể cả ghim chưa hiện) đều được né, để thẻ đã đặt không phải dời chỗ khi ghim sau hiện ra
         for (const it of items) used.push({ x: it.s.x - 17, y: it.s.y - 17, w: 34, h: 34 });
         for (const it of items) {
-          const ca = aH * clamp01((it.k - 0.92) / 0.08);
+          const ca = aH * clamp01((it.k - 0.92) / 0.08) * onScr(it.s);
           if (ca > 0.01) hubCard(ctx, tl, it.a, it.s.x, it.s.y, ca, used, 'hub' + it.i, hs.x, hs.y);
         }
         for (const it of items) if (it.k > 0) hubPin(ctx, it.s.x, it.s.y, it.a.type, 0.6 + 0.4 * easeOutBack(clamp01(it.k * 1.4)), aH * clamp01(it.k * 4));
@@ -3261,10 +3369,11 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       for (const r of tl.infra) { const q = S(r.P.lat, r.P.lng); used.push({ x: q.x - 12, y: q.y - 12, w: 24, h: 24 }); }
       tl.infra.forEach((r, i) => {
         const k = infraReveal(tl, i, t);
-        const ca = aI * clamp01((k - 0.25) / 0.2);
+        const ca = aI * clamp01((k - 0.08) / 0.15);
         if (ca <= 0.01) return;
         const sp = S(r.P.lat, r.P.lng);
-        infraCard(ctx, tl, r, sp.x, sp.y, ca, used, 'inf' + i, hs.x, hs.y);
+        if (ca * onScr(sp) <= 0.01) return;
+        infraCard(ctx, tl, r, sp.x, sp.y, ca * onScr(sp), used, 'inf' + i, hs.x, hs.y);
       });
     }
   }
