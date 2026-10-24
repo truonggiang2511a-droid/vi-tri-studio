@@ -39,7 +39,7 @@ const state = {
   legal: '',
   subsOn: true,      // phụ đề chạy chữ theo giọng AI
   logoBg: true,      // nền trắng sau logo
-  musicLib: '',      // nhạc nền có sẵn đang chọn
+  musicLib: 'hung-hon', // nhạc nền có sẵn đang chọn (khách mới mặc định nhạc hùng hồn; ai đã chọn/bỏ nhạc thì giữ lựa chọn cũ)
   simple: undefined, // chế độ 3 bước cho người mới
   coordSet: false,   // đã tự nhập toạ độ (không phải toạ độ ví dụ)
   cloudId: null,     // căn đang mở đã lưu theo tài khoản
@@ -64,12 +64,14 @@ const state = {
   voSig: '', // lựa chọn (cách viết + phong cách) của lần tạo giọng gần nhất
   lotArea: '',       // diện tích hiển thị (trống = tự tính)
   stars: [],         // id tiện ích được khoanh vùng nổi bật
+  roadStars: [],     // id trục đường "điểm nhấn" (vẽ kiểu ranh TP.HCM), tối đa 2
   pageVideo: '',     // link video đã đăng (gắn vào trang web căn nhà)
   pageDesc: '',
   roadTheme: 'auto',
   routeTheme: 'vang',
   roadLabelFace: 'line', // chữ tên trục đường 3D: line (mặc định, mặt chữ theo màu line) | trang | vang
   labelV: 3,
+  musicV: 2,         // 24/10: phiên bản mặc định nhạc nền (2 = có nhạc hùng hồn)
   sfxOn: true,
   sfxVol: 0.7,
   voiceId: 'nu-nam',
@@ -113,6 +115,8 @@ function load() {
       if (o.labelV !== 2) { if (!o.roadLabelFace || o.roadLabelFace === 'vangkim') o.roadLabelFace = 'trang'; o.labelV = 2; }
       if (o.labelV !== 3) { o.roadLabelFace = 'line'; o.labelV = 3; } // 23/10 tối: mặc định về kiểu gốc theo màu line
       if (o.roadLabelFace === 'vangkim') o.roadLabelFace = 'vang'; // bỏ kiểu Vàng kim (23/10): còn Trắng / Vàng
+      // 24/10: trước đây mặc định không có nhạc (đa số khách chưa từng chọn) → bật nhạc hùng hồn một lần; khách đổi lại được
+      if (o.musicV !== 2) { if (!o.musicLib) o.musicLib = 'hung-hon'; o.musicV = 2; }
       Object.assign(state, o);
     }
   } catch { /* bỏ qua */ }
@@ -166,7 +170,8 @@ function selectedPois() {
     .sort((a, b) => a.km - b.km);
 }
 function selectedRoads() {
-  return state.roads.filter(r => state.selectedRoads.includes(r.id));
+  const hi = state.roadStars || [];
+  return state.roads.filter(r => state.selectedRoads.includes(r.id)).map(r => ({ ...r, hi: hi.includes(r.id) }));
 }
 function buildScene() {
   return {
@@ -493,7 +498,7 @@ function applyCoords(text, { silent = false } = {}) {
 
 function resetHouseScoped() {
   Object.assign(state, { areaWard: '', areaProv: '', areaFor: '', roadWidth: '', sub: '', lotText: '', lotArea: '',
-    scriptEdits: {}, scriptAi: false, voSig: '', adminArea: null, admin: null });
+    scriptEdits: {}, scriptAi: false, voSig: '', adminArea: null, admin: null, roadStars: [] });
   media.voiceSegs.clear();
   media.mixKey = '';
   for (const [id, v] of [['areaWardInput', ''], ['areaProvInput', ''], ['roadWidthInput', ''], ['subInput', ''], ['lotText', ''], ['lotArea', '']]) { const el = $(id); if (el) el.value = v; }
@@ -707,11 +712,12 @@ function renderLists() {
   const rl = $('roadList');
   rl.innerHTML = state.roads.length
     ? state.roads.map(r => `
-      <label class="road-chip">
+      <label class="road-chip${(state.roadStars || []).includes(r.id) ? ' hi' : ''}">
         <input type="checkbox" autocomplete="off" data-road="${esc(r.id)}" ${state.selectedRoads.includes(r.id) ? 'checked' : ''}>
         <span class="dot" style="background:${ROAD_DOT[r.level]}"></span>
         <span>${esc(r.label)}${r.alt ? `<small class="alt"> · ${esc(r.alt)}</small>` : ''}</span>
         <span class="km">${formatKm(r.nearKm, true)}</span>
+        <button type="button" class="road-star" data-road-star="${esc(r.id)}" aria-pressed="${(state.roadStars || []).includes(r.id)}" title="Chọn làm tuyến điểm nhấn: vẽ nổi như ranh TP.HCM" aria-label="Tuyến điểm nhấn">★</button>
       </label>`).join('')
     : '<p class="hint">Không có quốc lộ, cao tốc hay đường chính trong bán kính này.</p>';
 
@@ -1498,7 +1504,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'stars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'stars', 'roadStars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -1602,11 +1608,17 @@ async function projListClick(e) {
 }
 
 // ---------- Nhạc nền có sẵn (Vị Trí Studio tự soạn, không vướng bản quyền) ----------
+// 24/10: khách góp ý ít nhạc → thêm 5 bài hùng hồn/điện ảnh hợp kiểu video vẽ vị trí (tools/make_music.py)
 const MUSIC_LIB = [
-  { id: 'nhe-nhang', label: 'Nhẹ nhàng · piano' },
-  { id: 'tuoi-sang', label: 'Tươi sáng · vui tươi' },
+  { id: 'hung-hon', label: '🔥 Hùng hồn · điện ảnh' },
+  { id: 'tran-ca', label: '🥁 Trống trận · mạnh mẽ' },
+  { id: 'dang-cap', label: '🎬 Đẳng cấp · trailer' },
+  { id: 'cong-nghe', label: '⚡ Công nghệ · hợp line neon' },
+  { id: 'khoi-dau', label: '🌅 Khởi đầu · truyền cảm hứng' },
   { id: 'soi-dong', label: 'Sôi động · nhịp nhanh' },
+  { id: 'tuoi-sang', label: 'Tươi sáng · vui tươi' },
   { id: 'sang-trong', label: 'Sang trọng · trầm ấm' },
+  { id: 'nhe-nhang', label: 'Nhẹ nhàng · piano' },
 ];
 async function pickLibrary(id) {
   const tr = MUSIC_LIB.find(x => x.id === id);
@@ -2106,6 +2118,22 @@ function init() {
     const id = e.target.dataset.road;
     if (!id) return;
     state.selectedRoads = e.target.checked ? [...new Set([...state.selectedRoads, id])] : state.selectedRoads.filter(x => x !== id);
+    // Bỏ chọn tuyến thì bỏ luôn điểm nhấn của tuyến đó
+    if (!e.target.checked && (state.roadStars || []).includes(id)) { state.roadStars = state.roadStars.filter(x => x !== id); renderLists(); }
+    scheduleRebuild();
+  });
+  // ★ Tuyến điểm nhấn: khách tự ghim tuyến quan trọng, video vẽ nổi kiểu ranh TP.HCM (tự chọn luôn tuyến đó)
+  $('roadList').addEventListener('click', e => {
+    const b = e.target.closest('.road-star');
+    if (!b) return;
+    e.preventDefault();
+    const id = b.dataset.roadStar;
+    const cur = state.roadStars || [];
+    const on = !cur.includes(id);
+    if (on && cur.length >= 2) { toast('Tối đa 2 tuyến điểm nhấn để video không bị rối. Bỏ ★ tuyến khác trước.'); return; }
+    state.roadStars = on ? [...cur, id] : cur.filter(x => x !== id);
+    if (on && !state.selectedRoads.includes(id)) state.selectedRoads = [...state.selectedRoads, id];
+    renderLists();
     scheduleRebuild();
   });
   // Ngôi sao: khoanh vùng nổi bật tiện ích quan trọng (tự chọn luôn điểm đó)

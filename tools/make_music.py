@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Soạn 4 bản nhạc nền lặp liền mạch cho Vị Trí Studio (tự tổng hợp từ đầu, không dùng mẫu của ai).
+"""Soạn các bản nhạc nền lặp liền mạch cho Vị Trí Studio (tự tổng hợp từ đầu, không dùng mẫu của ai).
 
 Chạy:  python3 tools/make_music.py music
 Ra:    music/<tên>.wav  (sau đó build.sh / lệnh ffmpeg đổi sang .m4a)
@@ -343,6 +343,295 @@ def sang_trong():
     return T.render(reverb=0.42, side_depth=0.15)
 
 
+# ---------- Nhạc cụ điện ảnh (thêm 10/2026 theo góp ý khách: cần nhạc hùng hồn, hợp kiểu video vẽ vị trí) ----------
+def taiko(vel=1.0, f0=62, dec=9.0):
+    """Trống lớn kiểu taiko: thân trầm hạ cao độ + tiếng da mặt trống."""
+    n = int(1.1 * SR)
+    t = np.arange(n) / SR
+    f = f0 + f0 * 1.4 * np.exp(-t * 26)
+    body = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * dec)
+    body += 0.45 * np.sin(2 * np.pi * np.cumsum(f * 1.52) / SR) * np.exp(-t * dec * 1.6)
+    skin = lowpass(RNG.standard_normal(n), 1800) * np.exp(-t * 38) * 0.5
+    return np.tanh((body + skin) * 1.8) * vel * 0.62
+
+
+def tom(f0, vel=1.0):
+    n = int(0.6 * SR)
+    t = np.arange(n) / SR
+    f = f0 * (1 + 0.6 * np.exp(-t * 30))
+    out = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 11)
+    out += lowpass(RNG.standard_normal(n), 2500) * np.exp(-t * 45) * 0.35
+    return np.tanh(out * 1.4) * vel * 0.42
+
+
+def boom(vel=1.0):
+    """Tiếng 'bùm' trầm mở đầu đoạn (sub drop)."""
+    n = int(2.2 * SR)
+    t = np.arange(n) / SR
+    f = 34 + 70 * np.exp(-t * 6)
+    out = np.sin(2 * np.pi * np.cumsum(f) / SR) * np.exp(-t * 2.2)
+    out += lowpass(RNG.standard_normal(n), 700) * np.exp(-t * 9) * 0.6
+    return np.tanh(out * 1.5) * vel * 0.7
+
+
+def swell(dur, vel=1.0):
+    """Cymbal/khí cuộn lên (đảo ngược) dẫn vào đoạn mới."""
+    n = int(dur * SR)
+    t = np.arange(n) / SR
+    noise = highpass(RNG.standard_normal(n), 3000, 2)
+    e = (t / dur) ** 2.6
+    return noise * e * vel * 0.12
+
+
+def riser(dur, vel=1.0, f0=200, f1=2400):
+    n = int(dur * SR)
+    t = np.arange(n) / SR
+    f = f0 * (f1 / f0) ** (t / dur)
+    tone = saw_stack_var(f, n)
+    noise = highpass(RNG.standard_normal(n), 2000) * 0.5
+    e = (t / dur) ** 2
+    return lowpass(tone * 0.5 + noise, 7000) * e * vel * 0.1
+
+
+def saw_stack_var(f, n):
+    """Sóng răng cưa với tần số thay đổi theo thời gian (mảng f)."""
+    ph = 2 * np.pi * np.cumsum(f) / SR
+    out = np.zeros(n)
+    for h in range(1, 16):
+        out += ((-1) ** (h + 1)) / h * np.sin(ph * h)
+    return out
+
+
+def brass(freqs, dur, vel=0.7, swell_t=0.35, bright=2600):
+    """Kèn đồng giả lập: chồng răng cưa lệch nhẹ, bộ lọc mở dần (hai bản lọc trộn theo đường bao)."""
+    n = int((dur + 0.5) * SR)
+    raw = np.zeros(n)
+    for f in freqs:
+        raw += saw_stack(f, n, (-0.07, 0, 0.08))
+    dark = lowpass(raw, 500, 2)
+    br = lowpass(raw, bright, 2)
+    t = np.arange(n) / SR
+    k = np.clip(t / max(swell_t, 0.01), 0, 1) ** 1.5
+    out = dark * (1 - k) + br * k
+    out *= env_adsr(n, min(0.08, swell_t), 0.2, 0.9, 0.45)
+    return np.tanh(out * 1.3) * vel * 0.08
+
+
+def strings_stac(f, dur, vel=0.7):
+    """Dây ngắt âm (ostinato) — linh hồn của nhạc trailer."""
+    n = int((dur + 0.15) * SR)
+    raw = saw_stack(f, n, (-0.11, 0.0, 0.1)) + 0.5 * saw_stack(f * 2, n, (-0.06, 0.07))
+    out = lowpass(raw, 3200, 2) * env_adsr(n, 0.008, 0.08, 0.55, 0.12)
+    return out * vel * 0.11
+
+
+def strings_long(freqs, dur, vel=0.6):
+    n = int((dur + 1.2) * SR)
+    out = np.zeros(n)
+    t = np.arange(n) / SR
+    for f in freqs:
+        vib = 1 + 0.004 * np.sin(2 * np.pi * 5.2 * t + RNG.random() * 6)
+        out += saw_stack_var(f * vib, n)
+    out = lowpass(out, 2400, 2) * env_adsr(n, 0.7, 0.3, 0.9, 1.1)
+    return out * vel * 0.045
+
+
+def braam(f, dur, vel=1.0):
+    """Tiếng 'braam' trầm dày của trailer điện ảnh."""
+    n = int((dur + 0.8) * SR)
+    raw = saw_stack(f, n, (-0.15, -0.05, 0.05, 0.15)) + saw_stack(f * 1.5, n, (-0.1, 0.1)) * 0.6
+    t = np.arange(n) / SR
+    k = np.clip(t / 0.6, 0, 1)
+    out = lowpass(raw, 300, 2) * (1 - k) + lowpass(raw, 1600, 2) * k
+    out = np.tanh(out * 2.2) * env_adsr(n, 0.05, 0.4, 0.8, 0.8)
+    return out * vel * 0.16
+
+
+def tick(vel=1.0):
+    n = int(0.05 * SR)
+    t = np.arange(n) / SR
+    out = bandpass(RNG.standard_normal(n), 2500, 7000) * np.exp(-t * 120)
+    return out * vel * 0.12
+
+
+def synth_arp(f, dur, vel=0.7, bright=3500):
+    n = int((dur + 0.2) * SR)
+    raw = saw_stack(f, n, (-0.05, 0.06))
+    t = np.arange(n) / SR
+    cut = lowpass(raw, bright, 2) * np.exp(-t * 6) + lowpass(raw, 700, 2) * (1 - np.exp(-t * 6))
+    return cut * env_adsr(n, 0.004, 0.1, 0.5, 0.1) * vel * 0.12
+
+
+def hung_hon():
+    """Hùng hồn · điện ảnh: Rê thứ, 92 BPM, dây ngắt âm, kèn đồng, taiko, cymbal cuộn."""
+    T = Track(92, 24)
+    prog = [(50, 'min'), (46, 'maj'), (53, 'maj'), (48, 'maj')]  # Dm Bb F C
+    for bar in range(T.bars):
+        root, kind = prog[bar % 4]
+        notes = chord_notes(root, kind)
+        b0 = bar * 4
+        sec = 0 if bar < 4 else (1 if bar < 16 else 2)  # 0: dựng ngắn ~10 s, 1: bùng, 2: cao trào
+        # Dây ngắt âm 1/8 (từ đoạn 2 thành 1/16)
+        step = 0.5 if sec == 0 else 0.25
+        pat = [0, 0, 2, 0, 1, 0, 2, 1] if step == 0.5 else [0, 0, 2, 0, 0, 1, 2, 0, 0, 0, 2, 0, 1, 2, 1, 0]
+        for i, a in enumerate(pat):
+            T.put(strings_stac(mtof(notes[a] + 12), step * T.beat * 0.8, 0.55 + 0.15 * (i % 4 == 0)), b0 + i * step, 'side', -0.35 if i % 2 else 0.35)
+        T.put(strings_long([mtof(x) for x in notes], 4 * T.beat, 0.6 + 0.2 * sec), b0, 'music', 0, 0.9)
+        T.put(bass(mtof(root - 12), 3.8 * T.beat, 0.75), b0, 'side')
+        if sec >= 1:
+            T.put(brass([mtof(x) for x in notes], 1.8 * T.beat, 0.75), b0, 'music', 0, 1.0)
+            T.put(brass([mtof(x + 12) for x in notes[:2]], 1.6 * T.beat, 0.55, 0.15), b0 + 2.5, 'music', 0.2)
+        if sec == 2:  # giai điệu kèn cao trào
+            mel = [notes[0] + 24, notes[2] + 12, notes[1] + 24, notes[0] + 24]
+            for i, m in enumerate(mel):
+                T.put(brass([mtof(m)], 0.9 * T.beat, 0.5, 0.1, 3400), b0 + i, 'music', -0.15)
+        # Trống
+        T.put(taiko(1.0), b0, 'drums', 0)
+        T.kicks.append(b0)
+        if sec >= 1:
+            T.put(taiko(0.8, 74), b0 + 1.5, 'drums', -0.2)
+            T.put(taiko(0.9), b0 + 2, 'drums', 0.1)
+            T.kicks.append(b0 + 2)
+            T.put(snare(0.7), b0 + 1, 'drums'); T.put(snare(0.7), b0 + 3, 'drums')
+        else:
+            T.put(taiko(0.6, 70), b0 + 2.5, 'drums', 0.2)
+        if bar % 4 == 0:
+            T.put(boom(0.9 if sec else 0.6), b0, 'drums')
+        if bar % 4 == 3:
+            T.put(swell(2 * T.beat, 0.9), b0 + 2, 'drums', 0)
+            for i in range(4):
+                T.put(tom(110 - i * 12, 0.6 + i * 0.12), b0 + 3 + i * 0.25, 'drums', -0.3 + i * 0.2)
+    return T.render(reverb=0.34, side_depth=0.3)
+
+
+def tran_ca():
+    """Trống trận · mạnh mẽ: Mi thứ, 100 BPM, dàn taiko + kèn đồng nhấn."""
+    T = Track(100, 24)
+    prog = [(52, 'min'), (52, 'min'), (48, 'maj'), (50, 'maj')]  # Em Em C D
+    groove = [(0, 1.0, 58), (0.75, 0.55, 74), (1.5, 0.8, 66), (2, 1.0, 58), (2.5, 0.6, 82), (3, 0.85, 66), (3.5, 0.65, 74)]
+    for bar in range(T.bars):
+        root, kind = prog[bar % 4]
+        notes = chord_notes(root, kind)
+        b0 = bar * 4
+        sec = 0 if bar < 4 else (1 if bar < 16 else 2)
+        T.put(strings_long([mtof(root - 12), mtof(root - 5)], 4 * T.beat, 0.7), b0, 'music', 0, 1.0)
+        for pos, v, f0 in groove:
+            if sec == 0 and pos not in (0, 2, 3):
+                continue
+            T.put(taiko(v, f0), b0 + pos, 'drums', (f0 - 66) / 40)
+            if pos in (0, 2):
+                T.kicks.append(b0 + pos)
+        if sec >= 1:
+            T.put(brass([mtof(x) for x in notes], 0.7 * T.beat, 0.8, 0.05, 3000), b0, 'music', 0)
+            T.put(brass([mtof(x) for x in notes], 0.5 * T.beat, 0.6, 0.05, 3000), b0 + 1.5, 'music', 0)
+            for i in range(8):
+                T.put(strings_stac(mtof(notes[0] + 12 + (7 if i % 4 == 3 else 0)), 0.4 * T.beat, 0.5), b0 + i * 0.5, 'side', 0.3 if i % 2 else -0.3)
+        if sec == 2:
+            mel = [notes[0] + 24, notes[0] + 26, notes[1] + 24, notes[2] + 24]
+            for i, m in enumerate(mel):
+                T.put(brass([mtof(m)], 0.8 * T.beat, 0.5, 0.08, 3400), b0 + i, 'music', 0.15)
+        T.put(bass(mtof(root - 24), 3.6 * T.beat, 0.7), b0, 'side')
+        if bar % 4 == 0:
+            T.put(boom(0.8), b0, 'drums')
+        if bar % 8 == 7:
+            T.put(swell(2 * T.beat, 1.0), b0 + 2, 'drums')
+            for i in range(8):
+                T.put(taiko(0.5 + i * 0.07, 70 + (i % 2) * 10), b0 + 2 + i * 0.25, 'drums', 0.2 if i % 2 else -0.2)
+    return T.render(reverb=0.3, side_depth=0.25)
+
+
+def cong_nghe():
+    """Công nghệ · hiện đại: La thứ, 118 BPM, arp synth 1/16, bass sâu — hợp nền bản đồ tối/line neon."""
+    T = Track(118, 32)
+    prog = [(57, 'min7'), (53, 'maj7'), (55, 'maj'), (52, 'min')]  # Am7 Fmaj7 G Em
+    for bar in range(T.bars):
+        root, kind = prog[bar % 4]
+        notes = chord_notes(root, kind)
+        b0 = bar * 4
+        sec = 0 if bar < 4 else 1 + ((bar - 4) // 8) % 3
+        bright = 1800 + 600 * (bar % 8)  # bộ lọc mở dần trong mỗi đoạn
+        for i in range(16):
+            nn = notes[(i * 3) % len(notes)] + (12 if i % 8 >= 4 else 0)
+            T.put(synth_arp(mtof(nn), 0.22 * T.beat, 0.5 + 0.2 * (i % 4 == 0), bright), b0 + i * 0.25, 'side', 0.4 * np.sin(i * 0.8))
+        T.put(pad([mtof(x - 12) for x in notes], 4 * T.beat, 0.5, 1600, 0.3, 0.6), b0, 'side', 0, 0.8)
+        for q in range(4):
+            T.put(bass(mtof(root - 24), 0.22 * T.beat, 0.8), b0 + q + 0.5, 'side')
+            T.put(bass(mtof(root - 24), 0.22 * T.beat, 0.6), b0 + q + 0.75, 'side')
+            if sec != 0:
+                T.kick(b0 + q, 1.0)
+            T.put(hat(0.45), b0 + q + 0.5, 'drums', 0.2)
+            T.put(tick(0.6), b0 + q + 0.25, 'drums', -0.4)
+        if sec == 0:
+            T.kick(b0, 0.9)
+        else:
+            T.put(clap(0.9), b0 + 1, 'drums'); T.put(clap(0.9), b0 + 3, 'drums')
+        if bar % 8 == 6:
+            T.put(riser(2 * 4 * T.beat, 1.0), b0, 'music')
+        if bar % 8 == 0 and bar:
+            T.put(boom(0.7), b0, 'drums')
+    return T.render(reverb=0.2, side_depth=0.55)
+
+
+def khoi_dau():
+    """Khởi đầu · truyền cảm hứng: Đô trưởng, 96 BPM, piano + dây + trống dồn dần."""
+    T = Track(96, 24)
+    prog = [(60, 'maj'), (55, 'maj'), (57, 'min'), (53, 'maj')]  # C G Am F
+    mel = [(0, 76), (1, 74), (1.5, 72), (2, 74), (3, 79)]
+    for bar in range(T.bars):
+        root, kind = prog[bar % 4]
+        notes = chord_notes(root, kind)
+        b0 = bar * 4
+        sec = 0 if bar < 4 else (1 if bar < 16 else 2)
+        for i in range(8):
+            nn = notes[[0, 1, 2, 1, 0, 2, 1, 2][i]] + 12
+            T.put(piano(mtof(nn), 0.5 * T.beat, 0.4 + 0.1 * (i % 4 == 0)), b0 + i * 0.5, 'side', 0.2 * np.sin(i))
+        T.put(piano(mtof(root - 12), 3.5 * T.beat, 0.6), b0, 'music', -0.1)
+        T.put(strings_long([mtof(x) for x in notes], 4 * T.beat, 0.5 + 0.25 * sec), b0, 'music', 0, 0.9)
+        if sec >= 1:
+            T.kick(b0, 0.9); T.kick(b0 + 2, 0.8)
+            T.put(snare(0.6), b0 + 1, 'drums'); T.put(snare(0.6), b0 + 3, 'drums')
+            for q in range(4):
+                T.put(hat(0.4), b0 + q + 0.5, 'drums', 0.25)
+            T.put(bass(mtof(root - 24), 1.8 * T.beat, 0.7), b0, 'side'); T.put(bass(mtof(root - 24), 1.8 * T.beat, 0.6), b0 + 2, 'side')
+        if sec == 2:
+            for pos, m in mel:
+                T.put(brass([mtof(m - 12)], 0.9 * T.beat, 0.45, 0.12, 3200), b0 + pos, 'music', 0.15)
+                T.put(piano(mtof(m), 0.8 * T.beat, 0.5), b0 + pos, 'music', 0.2)
+        if bar % 8 == 7:
+            T.put(swell(2 * T.beat, 0.8), b0 + 2, 'drums')
+            for i in range(4):
+                T.put(tom(140 - i * 15, 0.5 + i * 0.1), b0 + 3 + i * 0.25, 'drums')
+    return T.render(reverb=0.36, side_depth=0.3)
+
+
+def dang_cap():
+    """Đẳng cấp · trailer: Đô thăng thứ, 80 BPM, braam, nhịp tim, tiếng đồng hồ, nổ nhấn."""
+    T = Track(80, 16)
+    prog = [49, 45, 52, 47]  # C#m A E B (gốc)
+    for bar in range(T.bars):
+        root = prog[bar % 4]
+        b0 = bar * 4
+        sec = bar // 8
+        if bar % 2 == 0:
+            T.put(braam(mtof(root - 12), 3.6 * T.beat, 0.9 + 0.2 * sec), b0, 'music', 0)
+            T.put(boom(0.9), b0, 'drums')
+            T.put(taiko(0.9, 56), b0, 'drums')
+            T.kicks.append(b0)
+        T.put(strings_long([mtof(root), mtof(root + 7), mtof(root + 12)], 4 * T.beat, 0.55), b0, 'music', 0, 0.9)
+        for i in range(8):
+            T.put(tick(0.7 if i % 2 == 0 else 0.4), b0 + i * 0.5, 'drums', 0.5 if i % 2 else -0.5)
+        # nhịp tim trầm
+        T.put(kick(0.5), b0 + 1, 'drums'); T.put(kick(0.4), b0 + 1.35, 'drums')
+        T.put(kick(0.5), b0 + 3, 'drums'); T.put(kick(0.4), b0 + 3.35, 'drums')
+        if sec == 1:
+            for i in range(8):
+                T.put(strings_stac(mtof(root + 12 + (3 if i % 4 == 2 else 0)), 0.4 * T.beat, 0.5), b0 + i * 0.5, 'side', 0.3 if i % 2 else -0.3)
+            T.put(brass([mtof(root), mtof(root + 3), mtof(root + 7)], 2.5 * T.beat, 0.6, 0.6), b0 + 1, 'music')
+        if bar % 4 == 3:
+            T.put(riser(4 * T.beat, 0.9, 150, 3000), b0, 'music')
+    return T.render(reverb=0.45, side_depth=0.2)
+
+
 def write_wav(path, x):
     import wave
     y = np.clip(x, -1, 1)
@@ -357,7 +646,12 @@ def write_wav(path, x):
 if __name__ == '__main__':
     out = sys.argv[1] if len(sys.argv) > 1 else 'music'
     os.makedirs(out, exist_ok=True)
-    for name, fn in (('nhe-nhang', nhe_nhang), ('tuoi-sang', tuoi_sang), ('soi-dong', soi_dong), ('sang-trong', sang_trong)):
+    ALL = (('nhe-nhang', nhe_nhang), ('tuoi-sang', tuoi_sang), ('soi-dong', soi_dong), ('sang-trong', sang_trong),
+           ('hung-hon', hung_hon), ('tran-ca', tran_ca), ('cong-nghe', cong_nghe), ('khoi-dau', khoi_dau), ('dang-cap', dang_cap))
+    only = sys.argv[2:]  # vd: python3 tools/make_music.py music hung-hon cong-nghe
+    for name, fn in ALL:
+        if only and name not in only:
+            continue
         x = fn()
         write_wav(os.path.join(out, name + '.wav'), x)
         print(name, f'{len(x) / SR:.1f}s')

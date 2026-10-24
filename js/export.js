@@ -75,17 +75,23 @@ export async function preloadTiles(tl, scale, cache, onProgress, signal) {
   return list.length;
 }
 
+// Bitrate cao: ảnh vệ tinh + máy lia liên tục rất nhiều chi tiết; 0,1 bit/điểm ảnh (~6 Mbps ở 1080p) làm video nhoè,
+// lên Zalo/Facebook bị nén thêm lần nữa càng mờ. 0,23 bit/điểm ảnh ≈ 14 Mbps ở 1080p (khách góp ý 24/10).
+const BPP = 0.23;
 async function pickVideoCodec(w, h, fps) {
-  const bitrate = Math.round(w * h * fps * 0.1);
+  const bitrate = Math.round(w * h * fps * BPP);
   const tries = [['avc', 'avc1.640028'], ['avc', 'avc1.4d0028'], ['avc', 'avc1.42e028'], ['avc', 'avc1.640032'], ['avc', 'avc1.42e032'],
     // Máy tính không có H.264 (Linux): dùng VP9 trong MP4 (điện thoại luôn có H.264)
     ['vp9', 'vp09.00.40.08']];
   for (const [kind, codec] of tries) {
-    const cfg = { codec, width: w, height: h, bitrate, framerate: fps, ...(kind === 'avc' ? { avc: { format: 'avc' } } : {}) };
-    try {
-      const s = await VideoEncoder.isConfigSupported(cfg);
-      if (s.supported) return { cfg, kind };
-    } catch { /* thử mã khác */ }
+    const base = { codec, width: w, height: h, bitrate, framerate: fps, ...(kind === 'avc' ? { avc: { format: 'avc' } } : {}) };
+    // Ưu tiên chế độ chất lượng (mã hoá kỹ hơn, không ép thời gian thực); máy không nhận thì bỏ dần tuỳ chọn
+    for (const cfg of [{ ...base, latencyMode: 'quality', bitrateMode: 'variable' }, { ...base, latencyMode: 'quality' }, base]) {
+      try {
+        const s = await VideoEncoder.isConfigSupported(cfg);
+        if (s.supported) return { cfg, kind };
+      } catch { /* thử cấu hình khác */ }
+    }
   }
   return null;
 }
@@ -102,6 +108,33 @@ export function unlockAudioContext() {
     s.buffer = b; s.connect(ctx.destination); s.start(0);
     return ctx;
   } catch { return null; }
+}
+
+// Chỉnh màu lúc xuất: video H.264 phát trên iPhone/Zalo/Facebook thường bạc màu, thiếu tương phản so với xem trên máy.
+// Dựng khung vào canvas phụ rồi vẽ sang canvas mã hoá qua bộ lọc nhẹ để bù (xem trước trong app không đổi).
+const PHONE_GRADE = 'contrast(1.07) saturate(1.14) brightness(1.01)';
+function gradedRenderer(width, height) {
+  const out = document.createElement('canvas');
+  out.width = width; out.height = height;
+  const octx = out.getContext('2d', { alpha: false });
+  let src = null, sctx = null, ok = false;
+  try { octx.filter = PHONE_GRADE; ok = octx.filter === PHONE_GRADE; octx.filter = 'none'; } catch { ok = false; }
+  if (ok) {
+    src = document.createElement('canvas');
+    src.width = width; src.height = height;
+    sctx = src.getContext('2d', { alpha: false });
+  }
+  return {
+    canvas: out,
+    draw(tl, t, opts) {
+      if (!ok) { render(octx, tl, t, opts); return; }
+      render(sctx, tl, t, opts);
+      octx.setTransform(1, 0, 0, 1, 0, 0);
+      octx.filter = PHONE_GRADE;
+      octx.drawImage(src, 0, 0);
+      octx.filter = 'none';
+    },
+  };
 }
 
 export function canEncodeMp4() {
@@ -131,23 +164,25 @@ export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffe
   let encErr = null;
   const venc = new VideoEncoder({
     output: (chunk, meta) => {
+      // Ghi rõ hệ màu BT.709 vào file để điện thoại không đoán sai (đoán sai → màu lệch/bạc)
+      if (meta?.decoderConfig && !meta.decoderConfig.colorSpace?.matrix) {
+        meta = { ...meta, decoderConfig: { ...meta.decoderConfig, colorSpace: { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', fullRange: false } } };
+      }
       chain = chain.then(() => vsrc.add(MB.EncodedPacket.fromEncodedChunk(chunk), meta)).catch(e => { encErr = encErr || e; });
     },
     error: e => { encErr = e; },
   });
   venc.configure(pv.cfg);
 
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d', { alpha: false });
+  const gr = gradedRenderer(width, height);
+  const canvas = gr.canvas;
   const frames = Math.round(tl.duration * fps);
   const us = 1e6 / fps;
   try {
     for (let i = 0; i < frames; i++) {
       if (signal?.aborted) throw new DOMException('Đã huỷ', 'AbortError');
       if (encErr) throw encErr;
-      render(ctx, tl, i / fps, { cache, scale, request: false });
+      gr.draw(tl, i / fps, { cache, scale, request: false });
       const frame = new VideoFrame(canvas, { timestamp: Math.round(i * us), duration: Math.round(us) });
       venc.encode(frame, { keyFrame: i % (fps * 2) === 0 });
       frame.close();
@@ -209,11 +244,9 @@ function hasAudioTrack(b) {
 // Dự phòng: phát thời gian thực và ghi lại canvas
 export async function exportRealtime({ tl, width, height, fps = 30, cache, audioBuffer, audioCtx = null, onProgress, signal }) {
   const scale = width / tl.LW;
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d', { alpha: false });
-  render(ctx, tl, 0, { cache, scale });
+  const gr = gradedRenderer(width, height);
+  const canvas = gr.canvas;
+  gr.draw(tl, 0, { cache, scale });
   const stream = canvas.captureStream(fps);
   let actx = null, src = null, ownCtx = false;
   if (audioBuffer) {
@@ -232,7 +265,7 @@ export async function exportRealtime({ tl, width, height, fps = 30, cache, audio
   const types = ['video/mp4;codecs=avc1.640028,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4',
     'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
   const mimeType = types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
-  const rec = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8_000_000, audioBitsPerSecond: 160_000 });
+  const rec = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 12_000_000, audioBitsPerSecond: 160_000 });
   const chunks = [];
   rec.ondataavailable = e => e.data.size && chunks.push(e.data);
   const stopped = new Promise(r => (rec.onstop = r));
@@ -245,7 +278,7 @@ export async function exportRealtime({ tl, width, height, fps = 30, cache, audio
       const tick = () => {
         if (signal?.aborted) { reject(new DOMException('Đã huỷ', 'AbortError')); return; }
         const t = (performance.now() - t0) / 1000;
-        render(ctx, tl, Math.min(t, tl.duration), { cache, scale });
+        gr.draw(tl, Math.min(t, tl.duration), { cache, scale });
         onProgress?.('frames', Math.min(t, tl.duration), tl.duration);
         if (t >= tl.duration) resolve(); else requestAnimationFrame(tick);
       };

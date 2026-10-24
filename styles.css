@@ -185,6 +185,10 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .road-chip:has(input:checked) { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
 .road-chip:has(input:not(:checked)) { opacity: 0.6; }
 .road-chip:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.road-chip .road-star { border: 0; background: transparent; font-size: 17px; line-height: 1; padding: 2px 2px 2px 4px; margin-right: -4px; color: color-mix(in srgb, currentColor 30%, transparent); cursor: pointer; border-radius: 8px; }
+.road-chip .road-star[aria-pressed="true"] { color: #ff2e7e; text-shadow: 0 0 8px rgba(255,46,126,.65); }
+.road-chip.hi, .road-chip.hi:has(input:checked) { border-color: #ff2e7e; box-shadow: inset 0 0 0 1px #ff2e7e, 0 0 10px rgba(255,46,126,.25); }
+.road-hi-hint { margin: -2px 0 8px; font-size: 12.5px; }
 
 .poi-list { display: flex; flex-direction: column; gap: 2px; }
 .cat-group { border-top: 1px solid var(--line); }

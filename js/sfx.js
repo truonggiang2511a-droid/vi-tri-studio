@@ -11,8 +11,10 @@ export function sfxEvents(tl) {
     switch (p.type) {
       case 'intro': {
         const i0 = p.t0 + (p.hold || 0);
-        if (p.hold) add(i0, 'whoosh', 0.75, 1.5); // hết cảnh móc giá → bay vào bản đồ
-        else add(0.25, 'whoosh', 0.7, 1.6);
+        // Mở màn có lực (24/10): tiếng nổ trầm ngay giây đầu cùng lúc thẻ giá bật lên, rồi whoosh bay vào bản đồ
+        if (p.hookLen) { add(0.02, 'impact', 0.95); add(0.05, 'pop', 0.45); }
+        add(p.hookLen ? 0.12 : 0.25, 'whoosh', 0.7, 1.6);
+        if (p.hookLen) add(p.t0 + p.hookLen - 0.3, 'whoosh', 0.5, 1.2); // thẻ giá rút đi
         // Ghim bất động sản rơi xuống (cùng thời điểm với hình trong render.js): tiếng rơi + chạm đất + "pop"
         if (tl.provPh || tl.scene.adminArea) {
           const drop = i0 + (p.t1 - i0) * 0.72; // khớp dropAt trong render.js
@@ -233,6 +235,21 @@ const SYNTH = {
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass'; lp.frequency.value = 700;
     s.connect(lp).connect(env(ctx, t, g * 0.5, 0.004, 0.12)).connect(out);
+  },
+  // Tiếng nổ trầm mở màn kiểu trailer: sub hạ cao độ + tiếng nổ lọc thấp có đuôi vang
+  impact(ctx, out, t, g) {
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(120, t);
+    o.frequency.exponentialRampToValueAtTime(34, t + 0.9);
+    o.connect(env(ctx, t, g, 0.008, 1.4)).connect(out);
+    o.start(t); o.stop(t + 1.5);
+    const s = noiseSrc(ctx, t, 1.1);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(2400, t);
+    lp.frequency.exponentialRampToValueAtTime(180, t + 1.0);
+    s.connect(lp).connect(env(ctx, t, g * 0.55, 0.004, 1.0)).connect(out);
   },
   pop(ctx, out, t, g) {
     const o = ctx.createOscillator();
