@@ -64,6 +64,7 @@ const state = {
   voSig: '', // lựa chọn (cách viết + phong cách) của lần tạo giọng gần nhất
   lotArea: '',       // diện tích hiển thị (trống = tự tính)
   stars: [],         // id tiện ích được khoanh vùng nổi bật
+  roadFills: {},     // id tuyến → các đoạn đường thật (lấy bằng chỉ đường) lấp chỗ hở dữ liệu
   roadStars: [],     // id trục đường "điểm nhấn" (line nổi có xung sáng), tối đa 2
   hiTheme: 'dien',   // màu line trục đường điểm nhấn (HI_THEMES)
   pageVideo: '',     // link video đã đăng (gắn vào trang web căn nhà)
@@ -174,15 +175,84 @@ function selectedPois() {
 const stitchCache = new Map();
 function stitchedWays(r) {
   const H = state.house;
-  if (!H || !r.ways || r.ways.length < 2) return r.ways;
-  const key = 'b2:' + r.id + ':' + r.ways.length + ':' + r.ways.reduce((s, w) => s + w.length, 0) + ':' + H.lat.toFixed(4) + ',' + H.lng.toFixed(4);
+  const fills = (state.roadFills || {})[r.id] || [];
+  const src = fills.length ? [...r.ways, ...fills] : r.ways;
+  if (!H || !src || src.length < 2) return src;
+  const key = 'b3:' + r.id + ':' + src.length + ':' + src.reduce((s, w) => s + w.length, 0) + ':' + H.lat.toFixed(4) + ',' + H.lng.toFixed(4);
   let w = stitchCache.get(key);
   if (!w) {
-    try { const F = localFrame(H); w = bridgeWays(stitchWays(r.ways, F, r.level >= 3 ? 3 : 0.6), F, r.level >= 3 ? 4 : 1.5); } catch { w = r.ways; }
+    try { const F = localFrame(H); w = bridgeWays(stitchWays(src, F, r.level >= 3 ? 3 : 0.6), F, r.level >= 3 ? 4 : 1.5); } catch { w = src; }
     if (stitchCache.size > 60) stitchCache.clear();
     stitchCache.set(key, w);
   }
   return w;
+}
+// 24/10: chỗ hở trên trục đường lớn (dữ liệu bản đồ thiếu đoạn) được lấp bằng ĐƯỜNG ĐI THẬT giữa hai đầu mút,
+// lấy từ cùng dịch vụ chỉ đường vẽ đường tới tiện ích (/api/map/route: Vietmap, dự phòng OSRM) — nên line liền và bám đúng mặt đường.
+// Chỉ nhận đường đi gần thẳng (≤ 1,6× khoảng cách + 0,3 km) để không vẽ vòng sang đường khác. Tối đa 8 lần gọi mỗi lần quét.
+async function rawRoute(f, t) {
+  try {
+    const res = await fetch(`/api/map/route?flat=${f.lat.toFixed(6)}&flng=${f.lng.toFixed(6)}&tlat=${t.lat.toFixed(6)}&tlng=${t.lng.toFixed(6)}`);
+    if (!res.ok) return null;
+    const r = (await res.json()).route;
+    return r && r.coords?.length ? r : null;
+  } catch { return null; }
+}
+const fillPending = new Set();
+async function fillRoadGaps(onlyIds = null) {
+  const H = state.house;
+  if (!H) return;
+  const hk = H.lat.toFixed(5) + ',' + H.lng.toFixed(5);
+  const F = localFrame(H);
+  let calls = 0, added = 0;
+  state.roadFills ||= {};
+  const roads = state.roads.filter(r => state.selectedRoads.includes(r.id) && (!onlyIds || onlyIds.includes(r.id)) && !state.roadFills[r.id] && !fillPending.has(hk + r.id));
+  for (const r of roads) {
+    fillPending.add(hk + r.id);
+    const list = [];
+    try {
+      const ways = stitchWays(r.ways, F, r.level >= 3 ? 3 : 0.6);
+      if (ways.length >= 2) {
+        const ends = [];
+        ways.forEach((w, i) => {
+          ends.push({ i, k: i + ':0', p: w[0], nb: w[Math.min(w.length - 1, 3)] });
+          ends.push({ i, k: i + ':1', p: w[w.length - 1], nb: w[Math.max(0, w.length - 4)] });
+        });
+        const xy = p => F.xy(p);
+        const pairs = [];
+        for (let a = 0; a < ends.length; a++) for (let b = a + 1; b < ends.length; b++) {
+          const A = ends[a], B = ends[b];
+          if (A.i === B.i) continue;
+          const pa = xy(A.p), pb = xy(B.p), d = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]);
+          if (d < 0.05 || d > 3) continue;
+          // hai đầu không được quay lưng hẳn vào nhau (tránh nối sang nhánh rẽ ngược chiều)
+          const da = [pa[0] - xy(A.nb)[0], pa[1] - xy(A.nb)[1]], db = [pb[0] - xy(B.nb)[0], pb[1] - xy(B.nb)[1]];
+          const c = [(pb[0] - pa[0]) / d, (pb[1] - pa[1]) / d];
+          const na = Math.hypot(...da) || 1, nb = Math.hypot(...db) || 1;
+          if ((da[0] * c[0] + da[1] * c[1]) / na < -0.3 || -(db[0] * c[0] + db[1] * c[1]) / nb < -0.3) continue;
+          pairs.push({ A, B, d });
+        }
+        pairs.sort((x, y) => x.d - y.d);
+        const used = new Set();
+        for (const pr of pairs) {
+          if (calls >= 10) break;
+          if (used.has(pr.A.k) || used.has(pr.B.k)) continue;
+          used.add(pr.A.k); used.add(pr.B.k);
+          calls++;
+          // Thử cả hai chiều (đường một chiều/tách làn làm một chiều phải đi vòng), lấy chiều ngắn hơn
+          const A = { lat: pr.A.p[0], lng: pr.A.p[1] }, B = { lat: pr.B.p[0], lng: pr.B.p[1] };
+          const [r1, r2] = await Promise.all([rawRoute(A, B), rawRoute(B, A)]);
+          const rt = [r1, r2].filter(Boolean).sort((x, y) => x.km - y.km)[0];
+          if (rt && rt.coords?.length > 1 && rt.km <= pr.d * 1.8 + 0.4) list.push([[A.lat, A.lng], ...rt.coords, [B.lat, B.lng]]);
+        }
+      }
+    } finally { fillPending.delete(hk + r.id); }
+    // căn đã đổi trong lúc chờ thì bỏ kết quả
+    if (!state.house || state.house.lat.toFixed(5) + ',' + state.house.lng.toFixed(5) !== hk) return;
+    state.roadFills = { ...(state.roadFills || {}), [r.id]: list };
+    if (list.length) { added += list.length; stitchCache.clear(); scheduleRebuild(); }
+  }
+  if (roads.length) save();
 }
 function selectedRoads() {
   const hi = state.roadStars || [];
@@ -514,7 +584,7 @@ function applyCoords(text, { silent = false } = {}) {
 
 function resetHouseScoped() {
   Object.assign(state, { areaWard: '', areaProv: '', areaFor: '', roadWidth: '', sub: '', lotText: '', lotArea: '',
-    scriptEdits: {}, scriptAi: false, voSig: '', adminArea: null, admin: null, roadStars: [] });
+    scriptEdits: {}, scriptAi: false, voSig: '', adminArea: null, admin: null, roadStars: [], roadFills: {} });
   media.voiceSegs.clear();
   media.mixKey = '';
   for (const [id, v] of [['areaWardInput', ''], ['areaProvInput', ''], ['roadWidthInput', ''], ['subInput', ''], ['lotText', ''], ['lotArea', '']]) { const el = $(id); if (el) el.value = v; }
@@ -616,6 +686,7 @@ async function scan() {
     const houseKey = `${state.house.lat.toFixed(3)},${state.house.lng.toFixed(3)}`;
     const newHouse = state.areaFor !== houseKey;
     if (newHouse) resetHouseScoped();
+    state.roadFills = {};
     const manual = state.pois.filter(p => p.manual);
     state.pois = [...res.pois, ...manual];
     state.roads = res.roads;
@@ -643,6 +714,7 @@ async function scan() {
     renderLists();
     queueRoutes();
     scheduleRebuild();
+    fillRoadGaps();
     const b = res.admin?.boundary;
     toast(`Tìm thấy ${res.pois.length} tiện ích, ${res.roads.length} tuyến đường lớn` + (b ? `, ranh ${b.short} cách ${formatKm(b.km)}` : '') + `. Đã chọn sẵn ${state.selected.length} điểm.`, 4000);
     showStep(2);
@@ -1553,7 +1625,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'stars', 'roadStars', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'stars', 'roadStars', 'roadFills', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -1626,7 +1698,7 @@ async function openProject(id) {
   try {
     const r = await rpc('vt_project_get', { p_token: account.token, p_id: id });
     const d = r.data || {};
-    Object.assign(state, { pois: [], roads: [], selected: [], selectedRoads: [], routes: {}, admin: null, scriptEdits: {} }, fixSpeed(d));
+    Object.assign(state, { pois: [], roads: [], selected: [], selectedRoads: [], routes: {}, admin: null, scriptEdits: {}, roadFills: {} }, fixSpeed(d));
     if (state.roadLabelFace === 'vangkim') state.roadLabelFace = 'vang';
     state.cloudId = r.id;
     state.projName = r.name;
@@ -2167,6 +2239,7 @@ function init() {
     const id = e.target.dataset.road;
     if (!id) return;
     state.selectedRoads = e.target.checked ? [...new Set([...state.selectedRoads, id])] : state.selectedRoads.filter(x => x !== id);
+    if (e.target.checked) fillRoadGaps([id]);
     // Bỏ chọn tuyến thì bỏ luôn điểm nhấn của tuyến đó
     if (!e.target.checked && (state.roadStars || []).includes(id)) { state.roadStars = state.roadStars.filter(x => x !== id); renderLists(); }
     scheduleRebuild();
@@ -2521,6 +2594,8 @@ function init() {
   }
   fontsReady().then(() => { dirty = true; });
   rebuild();
+  // Căn quét/lưu trước bản 24/10 chưa có đoạn lấp chỗ hở: lấy bổ sung một lần (tuyến đã thử sẽ không gọi lại)
+  if (state.roads.length && state.selectedRoads.length) setTimeout(() => fillRoadGaps(), 1500);
   requestAnimationFrame(frame);
   queueRoutes();
 }

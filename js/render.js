@@ -69,9 +69,9 @@ function useStyle(key) {
 const PINK = '#FF2E7E';
 const CYAN = '#5EEAF5';
 const ROAD = {
-  3: { core: '#FF8A1F', glow: '#FF6A00', w: 4.8 },
-  2: { core: '#FFC93C', glow: '#FFA200', w: 4.2 },
-  1: { core: '#FFE59A', glow: '#FFC94D', w: 3.4 },
+  3: { core: '#FF8A1F', glow: '#FF6A00', w: 4.1 }, // 24/10: mảnh hơn ~15% (Giang)
+  2: { core: '#FFC93C', glow: '#FFA200', w: 3.6 },
+  1: { core: '#FFE59A', glow: '#FFC94D', w: 2.9 },
 };
 export const LINE_THEMES = {
   auto:  { label: 'Theo cấp đường' },
@@ -2077,9 +2077,9 @@ function drawHiWall(ctx, P, v, W, t, LW, LH) {
     // MỘT line sáng duy nhất, nâng lên khỏi mặt đất
     const top = new Path2D();
     run.forEach((q, i) => (i ? top.lineTo(q.x, q.y - q.h) : top.moveTo(q.x, q.y - q.h)));
-    ctx.globalAlpha = W.a * 0.18; ctx.strokeStyle = C.glow; ctx.lineWidth = 20; ctx.stroke(top);
-    ctx.globalAlpha = W.a * 0.5; ctx.strokeStyle = C.glow; ctx.lineWidth = 9; ctx.stroke(top);
-    ctx.globalAlpha = W.a; ctx.strokeStyle = C.core; ctx.lineWidth = 4.4;
+    ctx.globalAlpha = W.a * 0.18; ctx.strokeStyle = C.glow; ctx.lineWidth = 17; ctx.stroke(top);
+    ctx.globalAlpha = W.a * 0.5; ctx.strokeStyle = C.glow; ctx.lineWidth = 7.6; ctx.stroke(top);
+    ctx.globalAlpha = W.a; ctx.strokeStyle = C.core; ctx.lineWidth = 3.7;
     ctx.shadowColor = C.glow; ctx.shadowBlur = 12; ctx.stroke(top);
     ctx.shadowBlur = 0;
     ctx.globalAlpha = W.a * 0.9; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.4; ctx.stroke(top);
@@ -2087,8 +2087,8 @@ function drawHiWall(ctx, P, v, W, t, LW, LH) {
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
     ctx.setLineDash([16, 74]); ctx.lineDashOffset = -t * 95;
-    ctx.globalAlpha = W.a * 0.55; ctx.strokeStyle = C.core; ctx.lineWidth = 11; ctx.stroke(top);
-    ctx.globalAlpha = W.a; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4; ctx.stroke(top);
+    ctx.globalAlpha = W.a * 0.55; ctx.strokeStyle = C.core; ctx.lineWidth = 9.4; ctx.stroke(top);
+    ctx.globalAlpha = W.a; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3.4; ctx.stroke(top);
     ctx.restore();
     ctx.globalAlpha = 1;
   }
@@ -2187,8 +2187,8 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       g.lineCap = 'round'; g.lineJoin = 'round';
       // Dưới đất chỉ có bóng đổ + quầng màu nhạt (line sáng thật vẽ nổi lên trên màn hình ở drawHiWall)
       for (const path of paths) {
-        g.globalAlpha = a * 0.4; g.strokeStyle = '#000000'; g.lineWidth = 9; g.stroke(path);
-        g.globalAlpha = a * 0.22; g.strokeStyle = HI_ROAD.glow; g.lineWidth = 22; g.stroke(path);
+        g.globalAlpha = a * 0.4; g.strokeStyle = '#000000'; g.lineWidth = 7.6; g.stroke(path);
+        g.globalAlpha = a * 0.22; g.strokeStyle = HI_ROAD.glow; g.lineWidth = 19; g.stroke(path);
       }
       g.globalAlpha = 1;
       hiWalls.push({ r, rr, a, k: easeOut(clamp01((t - ph.t0 - 0.12 * d) / 0.9)) });
