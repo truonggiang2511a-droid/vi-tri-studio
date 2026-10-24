@@ -49,6 +49,26 @@ export function sfxEvents(tl) {
         add(p.t0, 'whoosh', 0.6, 1.3);
         for (let k = 0; k < 3; k++) { add(p.t0 + d * (0.14 + 0.2 * k), 'shimmer', 0.3, 0.9); add(p.t0 + d * (0.14 + 0.2 * k) + 0.5, 'pop', 0.35); }
         break;
+      case 'region': { // lùi ra cấp vùng, đường tới từng điểm mốc chạy ra (khớp hubReveal trong render.js)
+        add(p.t0, 'whoosh', 0.7, 1.6);
+        const n = Math.max(1, p.n || 1), span = 0.66 / n;
+        for (let k = 0; k < n; k++) {
+          const s0 = p.t0 + d * (0.24 + span * k);
+          add(s0, 'shimmer', 0.28, d * span * 0.95);
+          add(s0 + d * span * 0.95, 'pop', 0.42);
+        }
+        break;
+      }
+      case 'infra': { // tuyến đang thi công chạy ra (khớp infraReveal trong render.js), thẻ hiện thì "ding"
+        add(p.t0, 'whoosh', 0.6, 1.4);
+        const n = Math.max(1, p.n || 1), span = 0.6 / n;
+        for (let k = 0; k < n; k++) {
+          const s0 = p.t0 + d * (0.2 + span * k);
+          add(s0, 'shimmer', 0.32, d * span * 1.1);
+          add(s0 + d * span * 1.1 * 0.3, 'ding', 0.4);
+        }
+        break;
+      }
       case 'clip': // video thực tế lồng vào giữa: lướt vào, lướt ra (khớp drawClips trong render.js)
         add(p.t0, 'whoosh', 0.55, 1.1);
         add(p.t1 - 0.25, 'whoosh', 0.35, 0.9);

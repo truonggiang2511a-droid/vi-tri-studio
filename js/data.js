@@ -5,6 +5,7 @@
 import { VectorTile } from '@mapbox/vector-tile';
 import Pbf from 'pbf';
 import { haversineKm, project, unproject } from './geo.js';
+import { HUBS } from './hubs.js';
 
 const TILEJSON = 'https://tiles.openfreemap.org/planet';
 const FALLBACK_TILES = 'https://tiles.openfreemap.org/planet/20261011_080001_pt/{z}/{x}/{y}.pbf';
@@ -1201,4 +1202,128 @@ export async function routeTo(from, to, signal) {
   } catch {
     return null;
   } finally { T.done(); }
+}
+
+// ---------- Kết nối vùng: điểm mốc lớn (trung tâm, sân bay, cảng, ga) ----------
+// Chọn tối đa 6 điểm mốc theo khoảng cách chim bay; thời gian/đường đi thật do app gọi routeTo sau.
+export function pickHubs(center, max = 5) {
+  const all = HUBS.map(([type, name, lat, lng, tier]) => ({ type, name, lat, lng, tier: tier || 0, d: haversineKm(center, { lat, lng }) }))
+    .filter(h => h.d >= 0.6).sort((a, b) => a.d - b.d);
+  // Thứ tự ưu tiên khi quá 5 điểm: trung tâm lớn → sân bay gần nhất → ga metro (≤ 4 km) → cảng → sân bay thứ 2 (≤ 60 km)
+  // → trung tâm gần khác (tỉnh ≤ 30 km, đô thị cũ ≤ 12 km) → ga tàu (≤ 25 km)
+  const out = [];
+  const take = h => { if (h && !out.includes(h)) out.push(h); };
+  const c1 = all.find(h => h.type === 'center' && h.tier === 1 && h.d <= 90) || all.find(h => h.type === 'center' && h.tier <= 2 && h.d <= 70);
+  const air = all.filter(h => h.type === 'airport' && h.d <= 85);
+  take(c1);
+  take(air[0]);
+  take(all.find(h => h.type === 'metro' && h.d <= 4));
+  take(all.find(h => h.type === 'port' && h.d <= 40));
+  if (air[1] && air[1].d <= 60) take(air[1]);
+  take(all.find(h => h.type === 'center' && h !== c1 && (h.tier <= 2 ? h.d <= 30 : h.d <= 12) && (!c1 || haversineKm(h, c1) > 8)));
+  take(all.find(h => h.type === 'station' && h.d <= 25));
+  const ORDER = { center: 0, airport: 1, port: 2, metro: 3, station: 4 };
+  return out.slice(0, max).sort((a, b) => ORDER[a.type] - ORDER[b.type] || a.d - b.d)
+    .map(h => ({ id: h.type + ':' + h.name, type: h.type, name: h.name, lat: h.lat, lng: h.lng, km0: Math.round(h.d * 100) / 100 }));
+}
+
+// ---------- Hạ tầng đang thi công gần nhà (cao tốc, vành đai, cầu, đường lớn) ----------
+// Lấy từ ô bản đồ OpenFreeMap (OpenStreetMap): lớp transportation_name, class "*_construction" (tuyến có tên/số hiệu).
+// Dữ liệu cộng đồng, không phải quy hoạch chính thức → app ghi rõ nguồn và để khách tắt từng tuyến.
+const INFRA_LEVEL = { motorway: 3, trunk: 2, primary: 1, secondary: 0 };
+function infraLabel(names, ref) {
+  const fix = s => tidy(s)
+    .replace(/^Đường cao tốc/i, 'Cao tốc').replace(/^Dự án (đường )?/i, '').replace(/^Đường (?=(vành đai|cao tốc|song hành))/i, '')
+    .replace(/\s*(Thành phố Hồ Chí Minh|TP\.? ?HCM|TPHCM|TP\.? Hồ Chí Minh)/gi, ' TP.HCM').replace(/Vành Đai/g, 'Vành đai')
+    .replace(/\s+[-–]\s+/g, ' – ').replace(/\s+/g, ' ').trim().replace(/^\p{Ll}/u, c => c.toUpperCase());
+  // Ưu tiên tên dự án (mở rộng, giai đoạn…), rồi tên nói rõ loại tuyến (cao tốc, vành đai…), rồi tên cầu/đoạn; cùng hạng thì tên ngắn
+  const rank = n => (/(mở rộng|giai đoạn|nâng cấp)/i.test(n) ? 0 : /^(cao tốc|vành đai|quốc lộ|tỉnh lộ|đường|đại lộ|trục)/i.test(n) ? 1 : 2);
+  const list = names.map(fix).filter(n => n && !/^cầu cạn$/i.test(n)).sort((a, b) => rank(a) - rank(b) || a.length - b.length);
+  if (list[0] && rank(list[0]) === 2 && ref) return `${list[0]} (${ref})`;
+  return list[0] || (ref ? 'Tuyến ' + ref : '');
+}
+export async function loadInfra(center, signal) {
+  const tpl = await tileTemplate(signal);
+  const F = localFrame(center);
+  const groups = new Map();
+  const scan = async (z, R, classes, onlyNew) => {
+    const dLat = R / 111.32, dLng = R / (111.32 * Math.cos(center.lat * Math.PI / 180));
+    const a = project(center.lat + dLat, center.lng - dLng, z), b = project(center.lat - dLat, center.lng + dLng, z);
+    const jobs = [];
+    for (let x = Math.floor(a.x / 256); x <= Math.floor(b.x / 256); x++) for (let y = Math.floor(a.y / 256); y <= Math.floor(b.y / 256); y++) jobs.push([x, y]);
+    const found = [];
+    await Promise.all(jobs.map(async ([x, y]) => {
+      const buf = await fetchTile(tpl, z, x, y, signal).catch(e => { if (signal?.aborted) throw e; return null; });
+      if (!buf) return;
+      const t = new VectorTile(new Pbf(buf));
+      const L = t.layers.transportation_name; // tên + hình tuyến (lớp transportation không có tên ở mức zoom này)
+      if (!L) return;
+      const conv = (pt, ext) => { const ll = unproject((x + pt.x / ext) * 256, (y + pt.y / ext) * 256, z); return [ll.lat, ll.lng]; };
+      for (let i = 0; i < L.length; i++) {
+        const f = L.feature(i);
+        if (f.type !== 2) continue;
+        const pr = f.properties;
+        const m = /^(\w+)_construction$/.exec(pr.class || '');
+        if (!m || !classes.includes(m[1])) continue;
+        const name = tidy(pr['name:vi'] || pr.name || ''), ref = tidy(pr.ref || '');
+        if (!name && !ref) continue;
+        for (const line of f.loadGeometry()) for (const piece of clipLine(line, 0, L.extent)) {
+          const pts = piece.map(q => conv(q, L.extent));
+          if (pts.length > 1) found.push({ level: INFRA_LEVEL[m[1]], name, ref, pts });
+        }
+      }
+    }));
+    for (const r of found) {
+      const key = r.ref ? 'ref:' + r.ref.toUpperCase().replace(/\s+/g, '') : 'n:' + r.name.toLowerCase().replace(/^(đường|dự án)\s+/, '');
+      if (onlyNew && groups.has(key) && !groups.get(key).z12) continue;
+      const g = groups.get(key) || { key, level: r.level, names: [], ref: r.ref, ways: [], z12: onlyNew };
+      g.level = Math.max(g.level, r.level);
+      if (r.name && !g.names.includes(r.name)) g.names.push(r.name);
+      g.ways.push(r.pts);
+      groups.set(key, g);
+    }
+  };
+  await scan(11, 25, ['motorway', 'trunk', 'primary'], false);
+  await scan(12, 8, ['trunk', 'primary', 'secondary'], true).catch(e => { if (signal?.aborted) throw e; });
+  const out = [];
+  for (const g of groups.values()) {
+    let ways = stitchWays(g.ways, F, 0.8);
+    // Chỉ giữ phần trong 35 km quanh nhà (đủ cho khung máy), đơn giản hoá cho nhẹ
+    const keep = [];
+    for (const w of ways) {
+      let cur = [];
+      for (const p of w) {
+        const q = F.xy(p);
+        if (Math.hypot(q[0], q[1]) <= 35) cur.push(p); else { if (cur.length > 1) keep.push(cur); cur = []; }
+      }
+      if (cur.length > 1) keep.push(cur);
+    }
+    ways = keep.map(w => simplify(w, F, 0.02).map(p => [Math.round(p[0] * 1e5) / 1e5, Math.round(p[1] * 1e5) / 1e5])).filter(w => w.length > 1);
+    let len = 0, best = null;
+    for (const w of ways) for (let i = 1; i < w.length; i++) {
+      const A = F.xy(w[i - 1]), B = F.xy(w[i]);
+      len += Math.hypot(B[0] - A[0], B[1] - A[1]);
+      const dx = B[0] - A[0], dy = B[1] - A[1], L2 = dx * dx + dy * dy || 1e-12;
+      const k = Math.max(0, Math.min(1, -(A[0] * dx + A[1] * dy) / L2));
+      const px = A[0] + dx * k, py = A[1] + dy * k, d = Math.hypot(px, py);
+      if (!best || d < best.d) { const ll = F.ll(px, py); best = { d, lat: ll[0], lng: ll[1] }; }
+    }
+    if (!best || len < 0.5) continue;
+    const lim = g.level >= 2 ? 25 : g.level === 1 ? 12 : 5;
+    if (best.d > lim) continue;
+    const label = infraLabel(g.names, g.ref);
+    if (!label) continue;
+    out.push({ id: g.key, label, ref: g.ref || '', level: g.level, nearKm: Math.round(best.d * 100) / 100, P: { lat: best.lat, lng: best.lng }, ways });
+  }
+  // Luôn có cao tốc/vành đai đang xây gần nhất (giá trị tiềm năng lớn nhất), còn lại: gần + cấp cao trước; tối đa 3 tuyến
+  out.sort((a, b) => a.nearKm / (1 + a.level) - b.nearKm / (1 + b.level));
+  const top = out.filter(r => r.level === 3).sort((a, b) => a.nearKm - b.nearKm)[0];
+  return (top ? [top, ...out.filter(r => r !== top)] : out).slice(0, 3);
+}
+
+// Đơn giản hoá một đường [[lat, lng], …] (dùng cho đường đi dài tới điểm mốc vùng, cho nhẹ bộ nhớ)
+export function simplifyLine(pts, tolKm = 0.015) {
+  if (!pts || pts.length < 3) return pts;
+  const F = localFrame({ lat: pts[0][0], lng: pts[0][1] });
+  return simplify(pts, F, tolKm).map(p => [Math.round(p[0] * 1e5) / 1e5, Math.round(p[1] * 1e5) / 1e5]);
 }

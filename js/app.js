@@ -1,6 +1,6 @@
 // Điều khiển giao diện: nhập toạ độ → quét → chọn → xem trước → xuất video.
 import { parseCoords, haversineKm, formatKm } from './geo.js';
-import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, guessCategory, stitchWays, bridgeWays, localFrame } from './data.js';
+import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, guessCategory, stitchWays, bridgeWays, localFrame, pickHubs, loadInfra, simplifyLine } from './data.js';
 import { ICON_PATHS } from './icons.js';
 import {
   FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, HI_THEMES, STYLES, BASES,
@@ -70,6 +70,11 @@ const state = {
   iso: null,         // vùng lái xe 5–10–15 phút từ nhà {areas:[{min, rings}]} (ArcGIS), theo từng căn
   isoFor: '',        // toạ độ căn đã lấy vùng (làm tròn) — đổi căn thì lấy lại
   showIso: true,     // khách tắt/bật cảnh vùng lái xe
+  region: null,      // kết nối vùng {anchors:[điểm mốc + đường đi + phút], infra:[tuyến đang thi công]}, theo từng căn
+  regionFor: '',     // toạ độ căn đã tính kết nối vùng (làm tròn)
+  showRegion: true,  // cảnh Kết nối vùng (thời gian tới trung tâm, sân bay, cảng…)
+  showInfra: true,   // cảnh Hạ tầng đang thi công gần nhà
+  regionOff: [],     // id điểm mốc / tuyến hạ tầng khách tắt
   hiTheme: 'dien',   // màu line trục đường điểm nhấn (HI_THEMES)
   pageVideo: '',     // link video đã đăng (gắn vào trang web căn nhà)
   pageDesc: '',
@@ -301,6 +306,7 @@ function buildScene() {
     pois: selectedPois(),
     roads: selectedRoads(),
     iso: state.showIso && state.iso && state.iso.areas?.length ? state.iso : null,
+    region: regionScene(),
     boundary: state.useBoundary && state.admin?.boundary ? { ...state.admin.boundary, route: state.routes.__ranh || null } : null,
     provinceShort: state.admin?.provinceShort || '',
     commune: state.admin?.commune || '',
@@ -646,7 +652,7 @@ function applyCoords(text, { silent = false } = {}) {
 
 function resetHouseScoped() {
   Object.assign(state, { areaWard: '', areaProv: '', areaFor: '', roadWidth: '', sub: '', lotText: '', lotArea: '',
-    scriptEdits: {}, scriptAi: false, voSig: '', adminArea: null, admin: null, roadStars: [], roadFills: {}, iso: null, isoFor: '' });
+    scriptEdits: {}, scriptAi: false, voSig: '', adminArea: null, admin: null, roadStars: [], roadFills: {}, iso: null, isoFor: '', region: null, regionFor: '', regionOff: [] });
   media.voiceSegs.clear();
   media.mixKey = '';
   for (const [id, v] of [['areaWardInput', ''], ['areaProvInput', ''], ['roadWidthInput', ''], ['subInput', ''], ['lotText', ''], ['lotArea', '']]) { const el = $(id); if (el) el.value = v; }
@@ -753,7 +759,7 @@ const SAMPLE = { coord: '10.7285, 106.6185', price: '3,2 tỷ', area: '5x20m', b
 // không tốn lượt gọi Vietmap/chỉ đường cho mỗi khách mới. Chỉ các mục thuộc CĂN NHÀ — giữ nguyên logo/SĐT/thương hiệu của khách.
 const SAMPLE_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'price', 'area', 'beds', 'legal', 'floors', 'thoCu',
   'pois', 'roads', 'streets', 'adminArea', 'admin', 'areaWard', 'areaProv', 'areaFor', 'selected', 'selectedRoads', 'routes',
-  'roadStars', 'roadFills', 'scannedAt', 'useBoundary',
+  'roadStars', 'roadFills', 'scannedAt', 'useBoundary', 'region', 'regionFor', 'regionOff',
   // Kịch bản AI (phong cách Chuyên gia) + giọng đọc tạo sẵn 1 lần cho căn mẫu (sample-voice.m4a), có phụ đề
   'scriptEdits', 'scriptAi', 'voSig', 'aiTone', 'scriptMode', 'voiceId', 'voiceSpeed'];
 const SAMPLE_PLAY = 'vitri.samplePlay';
@@ -932,6 +938,74 @@ async function loadIso(force = false) {
     scheduleRebuild();
   } catch { /* để lần sau */ } finally { if (isoJob === k) isoJob = ''; }
 }
+// Kết nối vùng (24/10, Giang: "liên kết vùng" cho khách thấy vị trí đắc địa): thời gian lái xe thật tới trung tâm,
+// sân bay, cảng, ga gần nhất (Vietmap qua /api/map/route, nhớ đệm 30 ngày) + tuyến cao tốc/vành đai/cầu ĐANG THI CÔNG
+// gần nhà (OpenStreetMap). Điểm mốc quá xa (> 70 phút) mặc định tắt, khách bật lại được.
+let regionJob = '';
+async function loadRegion(force = false) {
+  const h = state.house;
+  if (!h) return;
+  const k = `${h.lat.toFixed(4)},${h.lng.toFixed(4)}`;
+  if (!force && (state.regionFor === k || regionJob === k)) return;
+  regionJob = k;
+  renderRegion();
+  try {
+    const hubs = pickHubs(h);
+    const [infra, routes] = await Promise.all([
+      loadInfra(h).catch(() => []),
+      Promise.all(hubs.map(x => routeTo(h, x).catch(() => null))),
+    ]);
+    if (!state.house || `${state.house.lat.toFixed(4)},${state.house.lng.toFixed(4)}` !== k) return;
+    const anchors = hubs.map((x, i) => {
+      const r = routes[i];
+      const km = r ? r.km : x.km0 * 1.35;
+      // Thời gian của Vietmap có tính kẹt xe lúc gọi (giờ cao điểm 20 km có thể ra 48 phút) → chặn trên theo tốc độ
+      // trung bình thường ngày (26 km/h cho quãng ngắn, tăng dần tới 70 km/h cho quãng dài), để số phút ổn định, không phụ thuộc giờ quét
+      const typical = km / Math.max(26, Math.min(70, 24 + 0.5 * km)) * 60;
+      const min = r && r.min > 0 ? Math.min(r.min, typical) : typical;
+      return { id: x.id, type: x.type, name: x.name, lat: x.lat, lng: x.lng, km: Math.round(km * 10) / 10,
+        min: Math.max(1, Math.round(min)), approx: !r, coords: r ? simplifyLine(r.coords, 0.015) : null };
+    });
+    state.region = { anchors, infra: infra || [] };
+    state.regionFor = k;
+    state.regionOff = anchors.filter(a => a.min > 70).map(a => a.id);
+    renderRegion();
+    save();
+    scheduleRebuild();
+  } catch { /* để lần sau */ } finally { if (regionJob === k) { regionJob = ''; renderRegion(); } }
+}
+function regionScene() {
+  const R = state.region;
+  if (!R) return null;
+  const off = new Set(state.regionOff || []);
+  const anchors = state.showRegion !== false ? (R.anchors || []).filter(a => !off.has(a.id)) : [];
+  const infra = state.showInfra !== false ? (R.infra || []).filter(a => !off.has(a.id)) : [];
+  return anchors.length || infra.length ? { anchors, infra } : null;
+}
+const HUB_ICON = { center: '🏙️', airport: '✈️', port: '⚓', station: '🚆', metro: '🚇' };
+function renderRegion() {
+  const box = $('regionBox');
+  if (!box) return;
+  const R = state.region;
+  const head = $('regionHead');
+  if (!R) {
+    box.innerHTML = regionJob ? '<p class="hint">Đang tính thời gian tới trung tâm, sân bay, cảng… gần nhất</p>' : '';
+    box.hidden = !regionJob; if (head) head.hidden = !regionJob;
+    return;
+  }
+  box.hidden = false; if (head) head.hidden = false;
+  const off = new Set(state.regionOff || []);
+  const chip = (id, text, meta, on) => `<label class="road-chip"><input type="checkbox" autocomplete="off" data-region="${esc(id)}" ${on ? 'checked' : ''}><span>${text}</span><span class="km">${meta}</span></label>`;
+  const A = R.anchors || [], I = R.infra || [];
+  box.innerHTML = (A.length ? `
+    <label class="check-row"><input autocomplete="off" type="checkbox" id="regionOn" ${state.showRegion !== false ? 'checked' : ''}><span><strong>Cảnh Kết nối vùng</strong>: đường đi + thời gian lái xe tới các điểm mốc lớn</span></label>
+    <div class="road-list region-list">${A.map(a => chip(a.id, `${HUB_ICON[a.type] || '📍'} ${esc(a.name)}`, `${a.approx ? '≈ ' : ''}${a.min} phút`, !off.has(a.id))).join('')}</div>` : '') +
+    (I.length ? `
+    <label class="check-row"><input autocomplete="off" type="checkbox" id="infraOn" ${state.showInfra !== false ? 'checked' : ''}><span><strong>Hạ tầng đang thi công</strong> gần nhà</span></label>
+    <div class="road-list region-list">${I.map(r => chip(r.id, `🚧 ${esc(r.label)}`, formatKm(r.nearKm, true), !off.has(r.id))).join('')}</div>
+    <p class="hint">Theo dữ liệu bản đồ OpenStreetMap (cộng đồng cập nhật). Anh chị kiểm tra lại, tuyến nào đã xong hoặc không đúng thì bỏ tick.</p>` : '') +
+    (!A.length && !I.length ? '<p class="hint">Không có điểm mốc lớn hay tuyến đang thi công gần căn này.</p>' : '');
+}
 function syncIsoUi() {
   const row = $('isoRow');
   if (row) row.hidden = !(state.iso && state.iso.areas?.length);
@@ -983,6 +1057,7 @@ async function scan() {
     scheduleRebuild();
     fillRoadGaps();
     loadIso(true);
+    loadRegion(true);
     const b = res.admin?.boundary;
     toast(`Tìm thấy ${res.pois.length} tiện ích, ${res.roads.length} tuyến đường lớn` + (b ? `, ranh ${b.short} cách ${formatKm(b.km)}` : '') + `. Đã chọn sẵn ${state.selected.length} điểm.`, 4000);
     showStep(2);
@@ -1071,6 +1146,7 @@ function renderAdmin() {
 
 function renderLists() {
   renderAdmin();
+  renderRegion();
   const has = state.pois.length || state.roads.length;
   // Khách mới chưa quét căn nào: mời thử ngay với căn mẫu (36% tài khoản chưa xuất video nào)
   const sb = $('sampleBox'); if (sb) sb.hidden = !!has;
@@ -1120,6 +1196,12 @@ const TYPE_WORD = { 'VỊ TRÍ CĂN NHÀ': 'Căn nhà', 'VỊ TRÍ CĂN VILLA': 
 function kmSpeak(km) {
   if (km < 0.95) return Math.max(50, Math.round(km * 1000 / 50) * 50) + ' mét';
   return String(km < 10 ? km.toFixed(1) : Math.round(km)).replace('.', ',').replace(/,0$/, '') + ' km';
+}
+// Tên điểm mốc / tuyến hạ tầng đọc trong câu: chữ đầu viết thường ("trung tâm …", "sân bay …"), bỏ ngoặc, bỏ số hiệu tuyến
+const lowerFirst = s => s.replace(/^\p{Lu}/u, c => c.toLowerCase());
+function hubSpeak(name) { return lowerFirst(nameSpeak(name)); }
+function infraSpeak(label) {
+  return lowerFirst(nameSpeak(String(label || '').replace(/\s*\((?:[A-ZĐ]{2,3}\.?\s?\d+\w*)\)/g, '').replace(/\s*\(([^)]*)\)/g, ' $1').replace(/\s+[–-]\s+/g, ' – ')));
 }
 function nameSpeak(s) {
   return String(s || '')
@@ -1264,6 +1346,20 @@ function scriptSegments() {
   add('overview', 'Toàn cảnh', list
     ? `Trong bán kính ${R} km có đủ ${list}${roads.length ? `, cùng ${roads.length} trục đường lớn` : ''}.`
     : roads.length ? `Cùng xem ${roads.length} trục đường lớn quanh ${twl}.` : `Cùng xem xung quanh ${twl} có gì nhé.`);
+  // Kết nối vùng: thời gian lái xe tới điểm mốc lớn + hạ tầng đang thi công
+  const RG = regionScene();
+  if (RG && RG.anchors.length) {
+    const list = RG.anchors.slice(0, 4).map(a => `${a.min} phút tới ${hubSpeak(a.name)}`);
+    const joined = list.length > 1 ? list.slice(0, -1).join(', ') + ' và ' + list[list.length - 1] : list[0];
+    add('region', 'Kết nối vùng', pick([`Kết nối vùng rất thuận tiện: chỉ khoảng ${joined}.`, `Từ ${twl}, lái xe khoảng ${joined}.`,
+      `Đi đâu cũng nhanh: khoảng ${joined}.`], 4));
+  }
+  if (RG && RG.infra.length) {
+    const [a, b] = RG.infra;
+    add('infra', 'Hạ tầng đang thi công', pick([
+      `Đặc biệt, ${infraSpeak(a.label)} đang thi công, cách nhà khoảng ${kmSpeak(a.nearKm)}${b ? `, cùng ${infraSpeak(b.label)}` : ''}, kết nối khu vực sẽ còn mạnh hơn.`,
+      `Điểm cộng lớn: ${infraSpeak(a.label)} đang được xây dựng, chỉ cách khoảng ${kmSpeak(a.nearKm)}${b ? `, thêm ${infraSpeak(b.label)}` : ''}.`], 5));
+  }
   if (state.showIso && state.iso?.areas?.length) {
     const mins = state.iso.areas.map(a => a.min).join(', ').replace(/, (\d+)$/, ' rồi $1');
     add('iso', 'Vùng lái xe', pick([`Từ ${twl}, lái xe ${mins} phút, anh chị đi được tới đâu, nhìn bản đồ là thấy ngay.`,
@@ -1417,10 +1513,12 @@ async function aiRewrite() {
       duong_lon: selectedRoads().map(r => ({ ten: r.label, ten_duong: r.alt || '', cach_km: +r.nearKm.toFixed(2) })),
       ranh_gioi: state.useBoundary && state.admin?.boundary ? { tinh: state.admin.boundary.short, chim_bay_km: +state.admin.boundary.km.toFixed(2), duong_di_km: state.routes.__ranh ? +state.routes.__ranh.km.toFixed(2) : null, phut_o_to: state.routes.__ranh?.min ? Math.round(state.routes.__ranh.min) : null } : null,
       tien_ich: selectedPois().map(p => ({ ten: p.name, nhom: CATEGORIES[p.cat].label, cach_km: +(p.route ? p.route.km : p.km).toFixed(2) })),
+      ket_noi_vung: (regionScene()?.anchors || []).map(a => ({ ten: a.name, duong_di_km: a.km, phut_o_to: a.min })),
+      ha_tang_dang_thi_cong: (regionScene()?.infra || []).map(r => ({ ten: r.label, cach_km: r.nearKm })),
     };
     // KHÔNG gửi câu mẫu (AI sẽ chép lại y chang) — chỉ gửi hình đang hiện + dữ liệu của từng cảnh
     const SCENE = { intro: 'Mở đầu: trung cảnh ghim bất động sản, xã/phường sáng lên', province: 'Cả tỉnh/thành phố hiện lên', house: 'Cận cảnh bất động sản, máy lượn quanh',
-      overview: 'Toàn cảnh vòng bán kính quanh nhà', iso: 'Vùng lái xe 5, 10, 15 phút quanh nhà sáng lên lần lượt', boundary: 'Ranh giới sang tỉnh/thành bên cạnh', summary: 'Tổng kết tất cả tiện ích', photos: 'Ảnh thực tế của bất động sản', outro: 'Kết video, kêu gọi đi xem nhà' };
+      overview: 'Toàn cảnh vòng bán kính quanh nhà', region: 'Kết nối vùng: đường đi + số phút lái xe tới trung tâm, sân bay, cảng, ga', infra: 'Hạ tầng đang thi công gần nhà (nét đứt)', iso: 'Vùng lái xe 5, 10, 15 phút quanh nhà sáng lên lần lượt', boundary: 'Ranh giới sang tỉnh/thành bên cạnh', summary: 'Tổng kết tất cả tiện ích', photos: 'Ảnh thực tế của bất động sản', outro: 'Kết video, kêu gọi đi xem nhà' };
     const roadById = Object.fromEntries(selectedRoads().map(r => [r.id, r]));
     const poiById = Object.fromEntries(selectedPois().map(p => [p.id, p]));
     const segments = Object.fromEntries(segs.map(sg => {
@@ -1430,6 +1528,8 @@ async function aiRewrite() {
         const p = poiById[id], km = p.route ? p.route.km : p.km;
         return [sg.key, { canh: 'Tiện ích', ten: p.name, nhom: CATEGORIES[p.cat]?.label || '', cach: kmSpeak(km), phut_xe_may: Math.max(1, Math.round(p.route?.min || km * 60 / 22)) }];
       }
+      if (kind === 'region') return [sg.key, { canh: SCENE.region, diem_moc: (regionScene()?.anchors || []).slice(0, 4).map(a => ({ ten: a.name, phut_o_to: a.min, duong_di: kmSpeak(a.km) })) }];
+      if (kind === 'infra') return [sg.key, { canh: SCENE.infra, tuyen: (regionScene()?.infra || []).slice(0, 2).map(r => ({ ten: r.label, cach: kmSpeak(r.nearKm) })) }];
       return [sg.key, { canh: SCENE[kind] || sg.label }];
     }));
     if (ai.gated && !account.profile && !(await requireLogin('Đăng nhập để AI viết kịch bản.'))) { $('ttsMsg').textContent = ''; return; }
@@ -1975,7 +2075,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -2770,6 +2870,19 @@ function init() {
   syncIsoUi();
   $('isoOn').addEventListener('change', e => { state.showIso = e.target.checked; save(); scheduleRebuild(); });
   if (state.scannedAt && state.house && !state.sample) setTimeout(() => loadIso(), 2000);
+  renderRegion();
+  if (state.scannedAt && state.house && !state.region) setTimeout(() => loadRegion(), 2600);
+  $('regionBox').addEventListener('change', e => {
+    const el = e.target;
+    if (el.id === 'regionOn') state.showRegion = el.checked;
+    else if (el.id === 'infraOn') state.showInfra = el.checked;
+    else if (el.dataset.region) {
+      const off = new Set(state.regionOff || []);
+      if (el.checked) off.delete(el.dataset.region); else off.add(el.dataset.region);
+      state.regionOff = [...off];
+    } else return;
+    save(); scheduleRebuild();
+  });
   $('radiusInput').addEventListener('input', e => {
     state.radiusKm = parseFloat(e.target.value);
     updateScanLabel();

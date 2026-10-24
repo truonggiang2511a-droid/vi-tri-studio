@@ -123,7 +123,7 @@ function routeStyle(scene) {
 export const ATTRIBUTION = 'Bản đồ: Esri, Maxar, HERE, Garmin · Dữ liệu: © OpenStreetMap, Overture Maps';
 const NOTE = 'Ranh giới hành chính và đường đi theo OpenStreetMap (tham khảo) · thời gian ô tô ước tính';
 const PMAX = 40;
-const PITCH = { region: 0, houseTop: 0, house: 30, overview: 40, roads: 40, boundary: 38, poi: 34, summary: 28, outro: 32 };
+const PITCH = { hub: 18, region: 0, houseTop: 0, house: 30, overview: 40, roads: 40, boundary: 38, poi: 34, summary: 28, outro: 32 };
 
 // Cho phép môi trường thử nghiệm (Node) thay cách tạo canvas phụ
 let makeCanvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
@@ -636,6 +636,34 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   };
   pushClips('house');
   raw.push({ type: 'overview', d: lot ? 4.2 : 3.6, to: camOverview, move: lot ? 0.9 : 0.8, drift: 0.02, vkey: 'overview' });
+  // Kết nối vùng (24/10): máy lùi ra cấp vùng, đường đi thật tới từng điểm mốc lớn (trung tâm, sân bay, cảng, ga) lần lượt
+  // chạy ra kèm thẻ "km · phút"; rồi cảnh hạ tầng đang thi công gần nhà (nét đứt vàng cam, chạy ra từ điểm gần nhà nhất).
+  const RG = scene.region || null;
+  const anchors = (RG?.anchors || []).map(a => ({ ...a, line: prepLine(a.coords && a.coords.length > 1 ? a.coords : [[H.lat, H.lng], [a.lat, a.lng]]) }));
+  if (anchors.length) {
+    const pts = [H];
+    for (const a of anchors) {
+      pts.push(a);
+      const L = a.line;
+      for (let j = 0; j < L.xs.length; j += Math.max(1, Math.floor(L.xs.length / 16))) pts.push(unproject(L.xs[j], L.ys[j], 0));
+    }
+    const camHub = fitCam(pts, LW, LH, { left: safe.x + 64, right: safe.x + 64, top: safe.top + 120, bottom: safe.bottom + 96 }, PITCH.hub, 6, 13.4);
+    if (camHub) raw.push({ type: 'region', d: 2.2 + 1.2 * anchors.length, to: camHub, move: 0.3, drift: 0.01, vkey: 'region', n: anchors.length });
+  }
+  const infra = (RG?.infra || []).map(r => {
+    const lines = prepReveal(r.ways, r.P);
+    return { ...r, lines, rrMax: Math.max(0.5, ...lines.map(l => Math.max(...l.dist))), samples: sampleLines(lines, 0.2) };
+  });
+  if (infra.length) {
+    const pts = [H];
+    for (const r of infra) {
+      pts.push(r.P);
+      const near = r.samples.filter(q => q.dist <= r.nearKm + 3);
+      for (let i = 0; i < near.length; i += Math.max(1, Math.floor(near.length / 12))) pts.push(near[i]);
+    }
+    const camInfra = fitCam(pts, LW, LH, { left: safe.x + 50, right: safe.x + 50, top: safe.top + 130, bottom: safe.bottom + 120 }, PITCH.roads, 8, 14.6);
+    if (camInfra) raw.push({ type: 'infra', d: 3.0 + 1.4 * infra.length, to: camInfra, move: 0.42, drift: 0.012, vkey: 'infra', n: infra.length });
+  }
   // Vùng lái xe 5 – 10 – 15 phút (ArcGIS): sau cảnh bán kính, máy ôm trọn vùng 15 phút, 3 vùng lần lượt lan ra từ nhà
   const ISO = scene.iso && scene.iso.areas && scene.iso.areas.length ? scene.iso : null;
   if (ISO) {
@@ -733,7 +761,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     fmt: fmtKey, LW, LH, safe, duration: t, phases, scene, panelH,
     G: groundDims(LW, LH),
     intro: first('intro'), house: first('house'), overview: first('overview'), boundaryPh: first('boundary'),
-    summary: first('summary'), outro: first('outro'), photosPh: first('photos'), isoPh: first('iso'), photos, radarPh: first('radar'), provPh: first('province'), flow: radar ? 'radar' : 'lanluot',
+    summary: first('summary'), outro: first('outro'), photosPh: first('photos'), isoPh: first('iso'), regionPh: first('region'), infraPh: first('infra'), anchors, infra, photos, radarPh: first('radar'), provPh: first('province'), flow: radar ? 'radar' : 'lanluot',
     roadPhases: phases.filter(p => p.type === 'road'), poiPhases: phases.filter(p => p.type === 'poi'),
     clips, clipWins: phases.filter(p => p.type === 'clip').map(p => ({ clip: p.clip, t0: p.t0, t1: p.t1 })),
     pois, roads, boundary, captions, hook, lot, lotArea: lot ? lotAreaM2(lot) : 0,
@@ -1877,6 +1905,155 @@ function isoAlpha(tl, t) {
 
 // ---------- Video thực tế căn nhà ----------
 export const CLIP_MAX = 5;
+// ---------- Kết nối vùng + hạ tầng đang thi công ----------
+const HUB_COL = { center: '#FFD54A', airport: '#5BC0FF', port: '#2EE6C5', station: '#FF9F43', metro: '#E77CFF' };
+const HUB_ICON = { center: 'city', airport: 'plane', port: 'ship', station: 'train', metro: 'train' };
+const INFRA_COL = '#FFC233';
+// Đường tới điểm mốc thứ i chạy ra từ 0,24 + 0,66·i/n của cảnh, trong 0,95 khoảng (sfx.js dùng cùng công thức)
+function hubReveal(tl, i, t) {
+  const ph = tl.regionPh;
+  if (!ph || t < ph.t0) return 0;
+  const d = ph.t1 - ph.t0, span = 0.66 / Math.max(1, tl.anchors.length);
+  return clamp01((t - ph.t0 - d * (0.24 + span * i)) / (d * span * 0.95));
+}
+function hubAlpha(tl, t) { const ph = tl.regionPh; return ph ? fadeWin(t, ph.t0 + 0.15, ph.t1 + 0.45, 0.4, 0.5) : 0; }
+// Tuyến đang thi công thứ i chạy ra từ 0,2 + 0,6·i/n của cảnh, trong 1,1 khoảng (sfx.js dùng cùng công thức)
+function infraReveal(tl, i, t) {
+  const ph = tl.infraPh;
+  if (!ph || t < ph.t0) return 0;
+  const d = ph.t1 - ph.t0, span = 0.6 / Math.max(1, tl.infra.length);
+  return clamp01((t - ph.t0 - d * (0.2 + span * i)) / (d * span * 1.1));
+}
+// Rõ trong cảnh của mình, sau đó mờ còn 0,42 suốt các cảnh trục đường rồi tắt
+function infraAlpha(tl, t) {
+  const ph = tl.infraPh;
+  if (!ph || t < ph.t0) return 0;
+  if (t < ph.t1) return clamp01((t - ph.t0 - 0.15) / 0.4);
+  const end = Math.max(tl.roadsEnd || 0, ph.t1);
+  if (t < end) return Math.max(0.42, 1 - (t - ph.t1) / 0.7);
+  return Math.max(0, 0.42 - (t - end) / 0.6);
+}
+function hubPin(ctx, x, y, type, s, alpha) {
+  if (s <= 0.01 || alpha <= 0.01) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(x, y);
+  ctx.scale(s, s);
+  const col = HUB_COL[type] || GOLD;
+  ctx.shadowColor = col; ctx.shadowBlur = 14;
+  ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI * 2);
+  ctx.fillStyle = col; ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.lineWidth = 2.4; ctx.strokeStyle = '#fff'; ctx.stroke();
+  drawIcon(ctx, HUB_ICON[type] || 'pin', 0, 0, 16, '#0d1218');
+  ctx.restore();
+}
+const hitAny = (r, list) => list.some(a => r.x < a.x + a.w && r.x + r.w > a.x && r.y < a.y + a.h && r.y + r.h > a.y);
+const overlapArea = (r, list) => list.reduce((s, a) => s + Math.max(0, Math.min(r.x + r.w, a.x + a.w) - Math.max(r.x, a.x)) * Math.max(0, Math.min(r.y + r.h, a.y + a.h) - Math.max(r.y, a.y)), 0);
+// Chọn chỗ đặt thẻ quanh ghim (12 hướng × 4 khoảng cách), ít đè nhất, ưu tiên gần ghim và hướng ra xa căn nhà.
+// Chỗ đã chọn được nhớ theo `key` (không nhảy qua lại giữa các khung hình), chỉ đổi khi chỗ cũ bị đè nhiều.
+function placeCard(tl, key, w, h, px, py, hx, hy, avoid) {
+  const { LW, LH, safe } = tl;
+  const slots = tl._cardSlots || (tl._cardSlots = {});
+  const out = Math.atan2(py - hy, px - hx);
+  const evalAt = (ang, rad) => {
+    const cx = px + Math.cos(ang) * (rad + w * 0.5 * Math.abs(Math.cos(ang)));
+    const cy = py + Math.sin(ang) * (rad + h * 0.5 * Math.abs(Math.sin(ang)));
+    const x = Math.max(safe.x, Math.min(LW - safe.x - w, cx - w / 2));
+    const y = Math.max(safe.top + 6, Math.min(LH - safe.bottom - h, cy - h / 2));
+    const r = { x, y, w, h };
+    const score = overlapArea(r, avoid) / (w * h) * 30 + Math.hypot(x + w / 2 - px, y + h / 2 - py) / 90 + (1 - Math.cos(ang - out)) * 0.35;
+    return { r, score, ang, rad };
+  };
+  const prev = slots[key];
+  if (prev) {
+    const e = evalAt(prev.ang, prev.rad);
+    if (e.score < prev.score + 2.5) { slots[key] = { ...prev, score: Math.min(prev.score, e.score) }; return e.r; }
+  }
+  let best = null;
+  for (const rad of [14, 46, 86, 130]) for (let k = 0; k < 12; k++) {
+    const e = evalAt(-Math.PI / 2 + k * Math.PI / 6, rad);
+    if (!best || e.score < best.score) best = e;
+  }
+  slots[key] = { ang: best.ang, rad: best.rad, score: best.score };
+  return best.r;
+}
+// Nét dẫn mảnh từ ghim tới thẻ khi thẻ đặt xa ghim
+function leader(ctx, px, py, r, col, alpha) {
+  const qx = Math.max(r.x, Math.min(r.x + r.w, px)), qy = Math.max(r.y, Math.min(r.y + r.h, py));
+  if (Math.hypot(qx - px, qy - py) < 22) return;
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.9; ctx.strokeStyle = col; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(qx, qy); ctx.stroke();
+  ctx.restore();
+}
+// Thẻ gọn cho điểm mốc: tên + "km · phút". Chọn chỗ quanh ghim không đè ghim nhà, thẻ khác, logo, phụ đề.
+function hubCard(ctx, tl, a, px, py, alpha, avoid, key, hx, hy) {
+  ctx.save();
+  ctx.font = `800 13.5px ${FONT}`;
+  const name = fitOneLine(ctx, a.name, 210);
+  const nameW = ctx.measureText(name).width;
+  const sub = `${formatKm(a.km)} · ${a.approx ? '≈ ' : ''}${a.min} phút`;
+  ctx.font = `800 12.5px ${FONT}`;
+  const subW = ctx.measureText(sub).width;
+  const w = Math.max(nameW, subW) + 28, h = 44;
+  const best = placeCard(tl, key, w, h, px, py, hx, hy, avoid);
+  const y = best.y + (1 - easeOut(alpha)) * 8;
+  const col = HUB_COL[a.type] || GOLD;
+  leader(ctx, px, py, { ...best, y }, col, alpha);
+  ctx.globalAlpha = alpha;
+  ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 3;
+  roundRect(ctx, best.x, y, w, h, 10);
+  ctx.fillStyle = ST.card; ctx.fill();
+  ctx.shadowColor = 'transparent';
+  roundRect(ctx, best.x, y, 5, h, 3);
+  ctx.fillStyle = col; ctx.fill();
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = ST.ink; ctx.font = `800 13.5px ${FONT}`;
+  ctx.fillText(name, best.x + 15, y + 19);
+  ctx.fillStyle = ST.light ? shade(col, 0.55) : col; ctx.font = `800 12.5px ${FONT}`;
+  ctx.fillText(sub, best.x + 15, y + 36);
+  ctx.restore();
+  avoid.push(best);
+}
+// Thẻ tuyến đang thi công: "ĐANG THI CÔNG" + tên tuyến + "cách nhà … km"
+function infraCard(ctx, tl, r, px, py, alpha, avoid, key, hx, hy) {
+  ctx.save();
+  ctx.font = `800 14.5px ${FONT}`;
+  const lines = wrapText(ctx, r.label, 236, 2);
+  const nameW = Math.max(...lines.map(l => ctx.measureText(l).width));
+  const kick = 'ĐANG THI CÔNG';
+  ctx.font = `800 10.5px ${FONT}`;
+  const kickW = ctx.measureText(kick).width + kick.length * 1.2 + 22;
+  const dist = `cách nhà ${formatKm(r.nearKm)}`;
+  ctx.font = `800 12.5px ${FONT}`;
+  const chipW = ctx.measureText(dist).width + 18;
+  const w = Math.max(nameW, kickW, chipW) + 26, h = 30 + lines.length * 18 + 34;
+  const best = placeCard(tl, key, w, h, px, py, hx, hy, avoid);
+  const y = best.y + (1 - easeOut(alpha)) * 8;
+  leader(ctx, px, py, { ...best, y }, INFRA_COL, alpha);
+  ctx.globalAlpha = alpha;
+  ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 3;
+  roundRect(ctx, best.x, y, w, h, 11);
+  ctx.fillStyle = ST.card; ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.lineWidth = 1.4; ctx.strokeStyle = INFRA_COL; ctx.stroke();
+  drawIcon(ctx, 'cone', best.x + 21, y + 17, 14, ST.light ? '#E07B00' : INFRA_COL);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.font = `800 10.5px ${FONT}`;
+  ctx.fillStyle = ST.light ? '#C26A00' : INFRA_COL;
+  spacedCaps(ctx, kick, best.x + 33, y + 21, 1.2);
+  ctx.fillStyle = ST.ink; ctx.font = `800 14.5px ${FONT}`;
+  lines.forEach((l, i) => ctx.fillText(l, best.x + 13, y + 40 + i * 18));
+  const cy = y + 40 + (lines.length - 1) * 18 + 10;
+  roundRect(ctx, best.x + 13, cy, chipW, 21, 6);
+  ctx.fillStyle = INFRA_COL; ctx.fill();
+  ctx.fillStyle = '#1a1206'; ctx.font = `800 12.5px ${FONT}`;
+  ctx.fillText(dist, best.x + 22, cy + 15);
+  ctx.restore();
+  avoid.push(best);
+}
+
 const CLIP_D = 2.8;
 // Thời điểm trong file video ứng với giây t của cửa sổ chiếu w. Lấy đoạn giữa file (bỏ lúc bắt đầu/kết thúc quay hay rung),
 // file ngắn hơn cảnh thì chiếu chậm lại (≥ 0,5×) cho đủ thời lượng. Cửa sổ nền thẻ giá lấy đoạn sau (~62%) để không trùng.
@@ -2283,6 +2460,9 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     if (tl.radarPh && t >= tl.radarPh.t0 && (!sm || t < sm.t0)) ringA = Math.max(ringA, clamp01((t - tl.radarPh.t0) / 0.5));
     if (sm && t >= sm.t0) ringA = Math.min(0.7, clamp01((t - sm.t0) / 0.8));
     if (t >= ou.t0) ringA = Math.max(0, 0.7 - (t - ou.t0) / 0.8);
+    // Cảnh kết nối vùng / hạ tầng: ẩn vòng bán kính và nhãn của nó cho đỡ rối
+    const rgS = tl.regionPh || tl.infraPh, rgE = tl.infraPh || tl.regionPh;
+    if (rgS) ringA *= 1 - fadeWin(t, rgS.t0, rgE.t1 + 0.6, 0.5, 0.6);
   }
   const rpx = scene.radiusKm * 1000 / metersPerPixel(H.lat, cam.zoom);
   if (ringP > 0 && ringA > 0.01) {
@@ -2439,6 +2619,54 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       }
       g.restore();
     }
+  }
+
+  // Kết nối vùng: đường đi thật tới từng điểm mốc lớn, mỗi loại một màu, lần lượt chạy ra
+  if (tl.regionPh && tl.anchors.length) {
+    const aH = hubAlpha(tl, t);
+    if (aH > 0.01) tl.anchors.forEach((a, i) => {
+      const k = hubReveal(tl, i, t);
+      if (k <= 0) return;
+      const col = HUB_COL[a.type] || GOLD;
+      const { path, head } = linePath(v, a.line, a.line.len * smooth(k));
+      if (a.approx) g.setLineDash([8, 7]);
+      glowStroke(g, path, col, col, 3.4, aH);
+      g.setLineDash([]);
+      if (head && k < 1) headGlow(g, head, col, 13);
+    });
+  }
+  // Hạ tầng đang thi công: nét đứt vàng/đen kiểu rào công trường, chạy ra hai phía từ điểm gần nhà nhất
+  if (tl.infraPh && tl.infra.length) {
+    const aI = infraAlpha(tl, t);
+    const ph = tl.infraPh;
+    if (aI > 0.01) tl.infra.forEach((r, i) => {
+      const k = infraReveal(tl, i, t);
+      if (k <= 0) return;
+      const heads = [];
+      const paths = r.lines.map(l => revealPath(v, l, smooth(k) * r.rrMax, heads));
+      g.save();
+      g.lineCap = 'round'; g.lineJoin = 'round';
+      for (const path of paths) {
+        g.globalAlpha = aI * 0.28; g.strokeStyle = '#FF8A00'; g.lineWidth = 18; g.stroke(path);
+        g.globalAlpha = aI * 0.85; g.strokeStyle = '#17110a'; g.lineWidth = 7.4; g.stroke(path);
+        g.lineCap = 'butt';
+        g.globalAlpha = aI; g.strokeStyle = INFRA_COL; g.lineWidth = 5; g.setLineDash([12, 9]); g.lineDashOffset = -t * 22; g.stroke(path);
+        g.setLineDash([]); g.lineCap = 'round';
+      }
+      g.restore();
+      if (k < 1 && t < ph.t1) for (const hd of heads) headGlow(g, hd, INFRA_COL, 15);
+      // Nét chấm trắng từ nhà tới điểm gần nhất của tuyến (chỉ trong cảnh hạ tầng)
+      const ca = Math.min(fadeWin(t, ph.t0 + 0.2 * (ph.t1 - ph.t0), ph.t1 + 0.1, 0.4, 0.35), clamp01(k * 3));
+      if (ca > 0.01) {
+        const pg = gLL(v, r.P.lat, r.P.lng);
+        g.save();
+        g.globalAlpha = ca; g.setLineDash([3, 6]); g.lineCap = 'round'; g.strokeStyle = '#ffffff'; g.lineWidth = 2;
+        g.beginPath(); g.moveTo(hg.x, hg.y); g.lineTo(pg.x, pg.y); g.stroke();
+        g.setLineDash([]);
+        g.beginPath(); g.arc(pg.x, pg.y, 5.5, 0, Math.PI * 2); g.fillStyle = INFRA_COL; g.fill(); g.lineWidth = 2; g.stroke();
+        g.restore();
+      }
+    });
   }
 
   // Khoanh vùng hành chính ở cảnh mở đầu: xã/phường sáng lên ở trung cảnh, rồi lùi ra vẽ nổi cả tỉnh/thành phố.
@@ -2994,6 +3222,49 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
         ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
         ctx.fillText(text, x + 21, y + h / 2 + 0.5);
         ctx.restore();
+      });
+    }
+  }
+
+  // Kết nối vùng / hạ tầng: chữ đầu cảnh, ghim + thẻ điểm mốc, thẻ tuyến đang thi công
+  {
+    const bannerY = logo && tl.fmt !== 'h' ? logo.y + logo.h + 20 : safe.top + 24;
+    const used = [{ x: hs.x - 26, y: hs.y - 64, w: 52, h: 68 }];
+    if (logo) used.push(logo);
+    if (capL) used.push(capL);
+    const rp = tl.regionPh;
+    if (rp && tl.anchors.length) {
+      const aH = hubAlpha(tl, t);
+      if (aH > 0.01) {
+        chip(ctx, LW / 2, bannerY, 'KẾT NỐI VÙNG', Math.min(aH, fadeWin(t, rp.t0 + 0.3, rp.t1, 0.4, 0.4)), GOLD);
+        used.push({ x: LW / 2 - 80, y: bannerY - 14, w: 160, h: 28 });
+        const items = tl.anchors.map((a, i) => ({ a, i, k: hubReveal(tl, i, t), s: S(a.lat, a.lng) }));
+        // Mọi ghim (kể cả ghim chưa hiện) đều được né, để thẻ đã đặt không phải dời chỗ khi ghim sau hiện ra
+        for (const it of items) used.push({ x: it.s.x - 17, y: it.s.y - 17, w: 34, h: 34 });
+        for (const it of items) {
+          const ca = aH * clamp01((it.k - 0.92) / 0.08);
+          if (ca > 0.01) hubCard(ctx, tl, it.a, it.s.x, it.s.y, ca, used, 'hub' + it.i, hs.x, hs.y);
+        }
+        for (const it of items) if (it.k > 0) hubPin(ctx, it.s.x, it.s.y, it.a.type, 0.6 + 0.4 * easeOutBack(clamp01(it.k * 1.4)), aH * clamp01(it.k * 4));
+      }
+    }
+    const ip = tl.infraPh;
+    if (ip && tl.infra.length && t >= ip.t0 && t < ip.t1 + 0.5) {
+      const aI = fadeWin(t, ip.t0 + 0.2, ip.t1 + 0.1, 0.4, 0.4);
+      chip(ctx, LW / 2, bannerY, 'HẠ TẦNG ĐANG THI CÔNG', aI, INFRA_COL);
+      ctx.save();
+      ctx.globalAlpha = aI * 0.85; ctx.font = `600 10.5px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 4;
+      ctx.fillText('Theo dữ liệu bản đồ OpenStreetMap · tham khảo', LW / 2, bannerY + 24);
+      ctx.restore();
+      used.push({ x: LW / 2 - 130, y: bannerY - 14, w: 260, h: 48 });
+      for (const r of tl.infra) { const q = S(r.P.lat, r.P.lng); used.push({ x: q.x - 12, y: q.y - 12, w: 24, h: 24 }); }
+      tl.infra.forEach((r, i) => {
+        const k = infraReveal(tl, i, t);
+        const ca = aI * clamp01((k - 0.25) / 0.2);
+        if (ca <= 0.01) return;
+        const sp = S(r.P.lat, r.P.lng);
+        infraCard(ctx, tl, r, sp.x, sp.y, ca, used, 'inf' + i, hs.x, hs.y);
       });
     }
   }
