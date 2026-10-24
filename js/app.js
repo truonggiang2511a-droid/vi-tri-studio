@@ -1906,18 +1906,18 @@ async function doExport({ job = null } = {}) {
           audio: packAudio(audio), nextFrame: 0, gops: 0, meta: null,
           media: { photos: media.photos.length, clips: media.clips.length, logo: !!media.logo },
         }, 'cur'));
-        saveOk = !!ok;
+        saveOk = ok !== null;
       }
       const onCheckpoint = ({ gop, nextFrame, meta }) => {
         if (!saveOk) return;
         const k = gopN++;
         saving = saving.then(async () => {
           if (!saveOk) return;
-          const a = await xop('gop', 'readwrite', st => st.put(gop, k));
-          const cur = a && await xjobGet();
-          if (!a || !cur) { saveOk = false; return; } // máy hết chỗ: vẫn xuất bình thường, chỉ không lưu tiến độ
+          const a = await xop('gop', 'readwrite', st => st.put(gop, k)); // null = lỗi ghi (khoá trả về có thể là 0)
+          const cur = a !== null && await xjobGet();
+          if (a === null || !cur) { saveOk = false; return; } // máy hết chỗ: vẫn xuất bình thường, chỉ không lưu tiến độ
           cur.nextFrame = nextFrame; cur.gops = k + 1; cur.meta = meta;
-          if (!(await xop('job', 'readwrite', st => st.put(cur, 'cur')))) saveOk = false;
+          if ((await xop('job', 'readwrite', st => st.put(cur, 'cur'))) === null) saveOk = false;
         });
       };
       try {
