@@ -488,7 +488,8 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     const lines = prepReveal(g.ways, P);
     const maxD = Math.max(0.5, ...lines.map(l => Math.max(...l.dist)));
     const samples = sampleLines(lines, 0.06);
-    return { ...g, P, nearKm: P.d ?? g.nearKm, lines, samples, rrMax: Math.min(maxD, R * 1.4 + 1) };
+    // Vẽ HẾT tuyến đã có dữ liệu (trước đây dừng ở bán kính ×1,4 + 1 km nên tuyến dài bị cụt)
+    return { ...g, P, nearKm: P.d ?? g.nearKm, lines, samples, rrMax: maxD };
   });
   let boundary = null;
   if (scene.boundary && scene.boundary.ways?.length) {

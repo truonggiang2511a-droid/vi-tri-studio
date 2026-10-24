@@ -634,6 +634,46 @@ export function stitchWays(ways, F, gapKm = 0.6) {
   return list.map(x => x.pts);
 }
 
+// 24/10 (Giang cho phép): sau khi nối thông thường, còn chỗ hở thì VẼ NỐI TIẾP bằng đoạn thẳng giữa hai đầu mút gần nhau nhất
+// (≤ maxKm), chỉ nối đầu với đầu (không tạo nhánh), không nối hai đầu đang quay lưng hẳn vào nhau → một line liền, không khoảng trống.
+export function bridgeWays(ways, F, maxKm = 1.5) {
+  if (!F || !ways || ways.length < 2) return ways;
+  let list = ways.map(w => ({ pts: w, xy: w.map(F.xy) }));
+  const dirAt = (xy, end) => {
+    const n = xy.length, a = end ? xy[n - 1] : xy[0];
+    let b = end ? xy[Math.max(0, n - 2)] : xy[Math.min(n - 1, 1)];
+    for (let k = 1; k < n; k++) { const q = end ? xy[n - 1 - k] : xy[k]; b = q; if (Math.hypot(a[0] - q[0], a[1] - q[1]) >= 1.0) break; } // nhìn lùi ~1 km: bỏ qua móc cong ở đầu mút
+    const d = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1;
+    return [(a[0] - b[0]) / d, (a[1] - b[1]) / d];
+  };
+  for (let guard = 0; guard < 40 && list.length > 1; guard++) {
+    let best = null;
+    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+      for (const ei of [true, false]) for (const ej of [true, false]) {
+        const A = list[i].xy, B = list[j].xy;
+        const pa = ei ? A[A.length - 1] : A[0], pb = ej ? B[B.length - 1] : B[0];
+        const d = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]);
+        if (d > maxKm) continue;
+        if (d > 0.05) {
+          const c = [(pb[0] - pa[0]) / d, (pb[1] - pa[1]) / d];
+          const da = dirAt(A, ei), db = dirAt(B, ej);
+          const lim = d < 0.5 ? -0.6 : -0.2; // hở ngắn: nối gần như mọi hướng, chỉ bỏ khi hai đầu quay lưng hẳn
+          if (da[0] * c[0] + da[1] * c[1] < lim || -(db[0] * c[0] + db[1] * c[1]) < lim) continue;
+        }
+        if (!best || d < best.d) best = { i, j, ei, ej, d };
+      }
+    }
+    if (!best) break;
+    const A = list[best.i], B = list[best.j];
+    const a = best.ei ? A.pts : A.pts.slice().reverse();
+    const b = best.ej ? B.pts.slice().reverse() : B.pts;
+    const merged = a.concat(b);
+    list = list.filter((_, k) => k !== best.i && k !== best.j);
+    list.push({ pts: merged, xy: merged.map(F.xy) });
+  }
+  return list.map(x => x.pts);
+}
+
 function buildRoads(raw, center, radiusKm) {
   const F = localFrame(center);
   // Tên → ref, để mảnh chỉ có tên vẫn vào đúng tuyến có số hiệu (vd. "Lê Khả Phiêu" là QL.1)

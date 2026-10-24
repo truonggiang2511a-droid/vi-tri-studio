@@ -1,6 +1,6 @@
 // Điều khiển giao diện: nhập toạ độ → quét → chọn → xem trước → xuất video.
 import { parseCoords, haversineKm, formatKm } from './geo.js';
-import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, guessCategory, stitchWays, localFrame } from './data.js';
+import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, guessCategory, stitchWays, bridgeWays, localFrame } from './data.js';
 import { ICON_PATHS } from './icons.js';
 import {
   FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, HI_THEMES, STYLES, BASES,
@@ -175,10 +175,10 @@ const stitchCache = new Map();
 function stitchedWays(r) {
   const H = state.house;
   if (!H || !r.ways || r.ways.length < 2) return r.ways;
-  const key = r.id + ':' + r.ways.length + ':' + r.ways.reduce((s, w) => s + w.length, 0) + ':' + H.lat.toFixed(4) + ',' + H.lng.toFixed(4);
+  const key = 'b2:' + r.id + ':' + r.ways.length + ':' + r.ways.reduce((s, w) => s + w.length, 0) + ':' + H.lat.toFixed(4) + ',' + H.lng.toFixed(4);
   let w = stitchCache.get(key);
   if (!w) {
-    try { w = stitchWays(r.ways, localFrame(H), r.level >= 3 ? 3 : 0.6); } catch { w = r.ways; }
+    try { const F = localFrame(H); w = bridgeWays(stitchWays(r.ways, F, r.level >= 3 ? 3 : 0.6), F, r.level >= 3 ? 4 : 1.5); } catch { w = r.ways; }
     if (stitchCache.size > 60) stitchCache.clear();
     stitchCache.set(key, w);
   }
@@ -548,6 +548,12 @@ function setHouse(h) {
 }
 
 // ---------- Thử ngay với căn mẫu (khách mới) ----------
+// Chọn tối đa 2 tuyến điểm nhấn trong các tuyến đã chọn: ưu tiên quốc lộ/tỉnh lộ/đường lớn (cấp ≥ 2) gần nhà, không lấy tuyến ở xa
+function autoHiRoads() {
+  const sel = state.roads.filter(r => state.selectedRoads.includes(r.id) && !r.far && r.nearKm <= 2.5);
+  const rank = r => (r.level >= 2 ? 0 : r.level === 1 ? 1.5 : 3) + r.nearKm;
+  return sel.slice().sort((a, b) => rank(a) - rank(b)).slice(0, 2).map(r => r.id);
+}
 const SAMPLE = { coord: '10.7285, 106.6185', price: '3,2 tỷ', area: '5x20m', beds: '3', legal: 'Sổ hồng riêng', floors: '1 trệt 2 lầu' };
 async function trySample() {
   $('coordInput').value = SAMPLE.coord;
@@ -555,6 +561,8 @@ async function trySample() {
   for (const [k, id] of [['price', 'priceInput'], ['area', 'areaInput'], ['beds', 'bedsInput'], ['legal', 'legalInput'], ['floors', 'floorsInput']]) {
     if (!state[k]) { state[k] = SAMPLE[k]; const el = $(id); if (el) el.value = SAMPLE[k]; }
   }
+  // Căn mẫu luôn có nhạc hùng hồn để khách thấy video hoàn chỉnh
+  if (!state.musicLib || !media.music) { $('musicLib').value = 'hung-hon'; await pickLibrary('hung-hon'); }
   save();
   await scan();
   if (state.pois.length) {
@@ -616,6 +624,9 @@ async function scan() {
     updateAreaPlaceholders();
     state.selected = [...autoPick(res.pois), ...manual.map(p => p.id)].slice(0, MAX_POIS);
     state.selectedRoads = autoPickRoads(state.roads);
+    // 24/10: mặc định gắn ★ điểm nhấn cho 2 trục đường lớn gần nhà nhất để video đầu tiên đã đẹp (khách bỏ ★ được)
+    const keepStars = (state.roadStars || []).filter(id => state.selectedRoads.includes(id));
+    state.roadStars = !newHouse && keepStars.length ? keepStars : autoHiRoads();
     state.routes = {};
     state.admin = res.admin;
     // Tự điền tên xã/phường, tỉnh/thành nhận diện theo vị trí vào ô (khách sửa được); căn mới thì luôn điền lại
