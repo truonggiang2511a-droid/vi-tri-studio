@@ -584,7 +584,7 @@ function applyCoords(text, { silent = false } = {}) {
     msg.textContent = 'Đang mở link Google Maps…'; msg.className = 'hint';
     resolveMapsLink(text).then(r => {
       const t = `${r.lat.toFixed(6)}, ${r.lng.toFixed(6)}`;
-      setHouse({ lat: r.lat, lng: r.lng });
+      setHouse({ lat: r.lat, lng: r.lng }, { fresh: true });
       state.coordText = t;
       state.coordSet = true;
       $('coordInput').value = t;
@@ -599,7 +599,7 @@ function applyCoords(text, { silent = false } = {}) {
     if (!silent) { msg.textContent = r.error; msg.className = 'hint err'; }
     return false;
   }
-  setHouse({ lat: r.lat, lng: r.lng });
+  setHouse({ lat: r.lat, lng: r.lng }, { fresh: !silent });
   state.coordText = text;
   if (!silent) state.coordSet = true;
   msg.textContent = `Đã đọc: ${r.lat.toFixed(6)}, ${r.lng.toFixed(6)}`;
@@ -617,17 +617,78 @@ function resetHouseScoped() {
   renderScript();
   save();
 }
-function setHouse(h) {
+// Thông tin GẮN VỚI TỪNG BẤT ĐỘNG SẢN (khách nhập): làm căn mới thì để trống hết cho khách tự nhập lại.
+// Giữ lại thông tin của môi giới (tên, SĐT, logo), loại BĐS đang chọn và các lựa chọn phong cách/nhạc/giọng.
+const HOUSE_INFO = [['price', 'priceInput'], ['area', 'areaInput'], ['thoCu', 'thoCuInput'], ['floors', 'floorsInput'], ['beds', 'bedsInput'],
+  ['legal', 'legalInput'], ['roadWidth', 'roadWidthInput'], ['sub', 'subInput'], ['lotText', 'lotText'], ['lotArea', 'lotArea'],
+  ['pageVideo', 'pageVideo'], ['pageDesc', 'pageDesc'], ['areaWard', 'areaWardInput'], ['areaProv', 'areaProvInput']];
+// Nhớ thông tin căn vừa bị để trống: khách lỡ sửa toạ độ rồi dán lại đúng căn cũ (lệch < 30 m) thì tự điền lại
+const houseMemo = [];
+function resetHouseInfo(prev) {
+  const has = HOUSE_INFO.some(([k]) => state[k]) || state.lot?.length || state.stars?.length;
+  if (has && prev) {
+    houseMemo.unshift({ house: prev, lot: state.lot || [], stars: state.stars || [], areaFor: state.areaFor || '', info: Object.fromEntries(HOUSE_INFO.map(([k]) => [k, state[k] || ''])) });
+    houseMemo.length = Math.min(houseMemo.length, 5);
+  }
+  for (const [k, id] of HOUSE_INFO) { state[k] = ''; const el = $(id); if (el) el.value = ''; }
+  state.lot = [];
+  state.stars = [];
+  state.pois = state.pois.filter(p => !p.manual);
+  state.selected = state.selected.filter(id => state.pois.some(p => p.id === id));
+  updateAreaPlaceholders();
+  return has;
+}
+function restoreHouseInfo(h) {
+  const i = houseMemo.findIndex(x => haversineKm(x.house, h) <= 0.03);
+  if (i < 0 || HOUSE_INFO.some(([k]) => state[k])) return false;
+  const [m] = houseMemo.splice(i, 1);
+  for (const [k, id] of HOUSE_INFO) { state[k] = m.info[k] || ''; const el = $(id); if (el) el.value = state[k]; }
+  state.lot = m.lot; state.stars = m.stars; state.areaFor = m.areaFor;
+  updateAreaPlaceholders();
+  toast('Đã điền lại thông tin của căn này.', 2500);
+  return true;
+}
+// Nút "Làm căn mới": để trống mọi thông tin của căn đang làm, xoá ô toạ độ, đưa khách về bước 1 để dán toạ độ căn mới.
+// (Danh sách tiện ích cũ vẫn để đó tới khi khách dán toạ độ căn mới — lúc ấy app tự xoá và quét lại.)
+function startNewHouse() {
+  leaveSample();
+  resetHouseInfo(state.house);
+  resetHouseScoped();
+  state.cloudId = null; state.projName = '';
+  state.coordSet = false;
+  $('coordInput').value = '';
+  $('coordMsg').textContent = 'Dán toạ độ hoặc link Google Maps của căn mới. Xã/phường, tỉnh/thành sẽ tự điền khi quét.';
+  $('coordMsg').className = 'hint';
+  $('resultBox').hidden = true;
+  { const lp = $('lookPick'); if (lp) lp.hidden = true; }
+  renderLists();
+  scheduleRebuild();
+  save();
+  showStep(1);
+  setTimeout(() => $('coordInput').focus(), 350);
+  toast('Đã để trống thông tin. Dán toạ độ căn mới để bắt đầu.', 3500);
+}
+function updateNewHouseBtn() {
+  const b = $('newHouseBtn');
+  if (b) b.hidden = !(state.scannedAt && state.coordSet && !state.sample);
+}
+// fresh = khách dán/nhập toạ độ hoặc link mới (không phải dời ghim để chỉnh lại vị trí)
+function setHouse(h, { fresh = false } = {}) {
   const prev = state.house;
   state.house = h;
   setAccountLocation(h);
   const moved = prev ? haversineKm(prev, h) : Infinity;
-  // Đổi sang căn khác thì bỏ ranh lô đất cũ
-  if (moved > 0.3 && state.lot?.length) state.lot = [];
-  // Căn MỚI (dời xa hơn 300 m): xoá mọi thứ thuộc về căn cũ — tên xã/tỉnh khách sửa tay, dòng phụ, chữ trên lô,
-  // bề rộng đường, kịch bản và giọng đã tạo. Tránh lỗi đọc nhầm tên xã/tỉnh của căn làm trước đó.
-  // Xã/tỉnh của căn mới tự nhận diện khi quét (ranh hành chính theo toạ độ).
-  if (moved > 0.3 && prev) { leaveSample(); resetHouseScoped(); }
+  // Căn MỚI: dán toạ độ khác căn cũ (> 30 m), hoặc dời ghim xa hơn 300 m → xoá mọi thứ thuộc về căn cũ:
+  // giá, diện tích, thổ cư, số tầng, phòng ngủ, pháp lý, lô đất, chữ trên lô, bề rộng đường, dòng phụ, tên xã/tỉnh,
+  // kịch bản và giọng đã tạo. Xã/tỉnh của căn mới tự nhận diện và điền vào ô khi quét (ranh hành chính theo toạ độ).
+  const newHouse = prev && (moved > 0.3 || (fresh && moved > 0.03));
+  if (newHouse) {
+    leaveSample();
+    const had = resetHouseInfo(prev); // trước resetHouseScoped để còn nhớ tên xã/tỉnh khách đã sửa
+    resetHouseScoped();
+    state.cloudId = null; state.projName = ''; // căn mới lưu thành căn riêng, không ghi đè căn đã lưu trước
+    if (!restoreHouseInfo(h) && had) toast('Căn mới: đã để trống thông tin căn cũ (giá, diện tích, lô đất…). Anh/chị nhập lại cho căn này nhé.', 4500);
+  } else if (fresh && prev && moved <= 0.03) restoreHouseInfo(h);
   if (moved > 0.5) {
     if (state.pois.length) toast('Đã đổi vị trí. Bấm Quét tiện ích để tìm lại quanh căn nhà mới.');
     state.pois = []; state.roads = []; state.streets = null; state.adminArea = null; state.selected = []; state.selectedRoads = []; state.routes = {}; state.admin = null;
@@ -905,6 +966,7 @@ function renderLists() {
   const has = state.pois.length || state.roads.length;
   // Khách mới chưa quét căn nào: mời thử ngay với căn mẫu (36% tài khoản chưa xuất video nào)
   const sb = $('sampleBox'); if (sb) sb.hidden = !!has;
+  updateNewHouseBtn();
   $('results').hidden = !has;
   $('resultsEmpty').hidden = !!has;
   updateCount();
@@ -2754,6 +2816,8 @@ function init() {
   $('logoFile').addEventListener('change', e => pickLogo(e.target.files[0]));
   $('photoFile').addEventListener('change', e => pickPhotos(e.target.files));
   $('clipFile').addEventListener('change', e => pickClips(e.target.files));
+  $('newHouseBtn').addEventListener('click', startNewHouse);
+  document.addEventListener('click', e => { if (e.target.closest('[data-act="newhouse"]')) startNewHouse(); });
   $('clipRow').addEventListener('click', e => { const b = e.target.closest('button[data-rm]'); if (b) removeClip(Number(b.dataset.rm)); });
   $('pageVideo').value = state.pageVideo || '';
   $('pageDesc').value = state.pageDesc || '';
