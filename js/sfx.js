@@ -107,6 +107,9 @@ export function sfxEvents(tl) {
   if (sm) sweeps.push([sm.t0 + 0.2, Math.min(sm.t1, sm.t0 + 3.2)]);
   // 23/10: Giang thấy tiếng radar (ping sonar + ù) chói tai → bỏ, không phát gì khi radar quét. Giữ hàm âm để dùng lại nếu cần.
   void sweeps;
+  // Đoạn video mặt tiền mở đầu (không có thẻ giá): whoosh khi chuyển sang bản đồ
+  const ow = (tl.clipWins || []).find(w => w.open);
+  if (ow) add(ow.t1 - 0.35, 'whoosh', 0.55, 1.1);
   return ev.sort((a, b) => a.t - b.t);
 }
 

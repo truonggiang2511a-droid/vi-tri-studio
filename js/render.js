@@ -633,10 +633,11 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   const hasStreets = !!(scene.streets && scene.streets.lines && scene.streets.lines.length);
   raw.push({ type: 'house', d: lot ? 7.4 : 6.0, to: camHouse, move: camProv ? 0.5 : 0.6, drift: 0.02, orbit: true, vkey: 'house' });
   // Video thực tế căn nhà (khách quay, không MC): mỗi đoạn một cảnh ~2,8 s lồng vào giữa các cảnh bản đồ.
-  // Thứ tự chèn theo số đoạn: sau cảnh căn nhà → giữa các tiện ích → trước cảnh tổng kết → trước cảnh kết.
+  // 24/10 tối (Giang): đoạn ĐẦU (khách quay mặt tiền) hiện 2–3 s đầu video (nền thẻ giá, hoặc toàn khung nếu không có giá);
+  // các đoạn còn lại dồn xuống CUỐI, sau khi bản đồ đã vẽ xong (sau cảnh tổng kết, trước ảnh thực tế) — giống kịch bản của ảnh.
   const clips = (scene.clips || []).filter(c => c && c.el && c.dur > 0.3).slice(0, CLIP_MAX);
-  const CLIP_SLOTS = [[], ['house'], ['house', 'sum'], ['house', 'mid', 'sum'], ['house', 'house', 'mid', 'sum'], ['house', 'house', 'mid', 'sum', 'end']][clips.length];
-  let clipNext = 0;
+  const CLIP_SLOTS = clips.map((c, i) => (i ? 'after' : 'open'));
+  let clipNext = clips.length ? 1 : 0;
   const pushClips = slot => {
     while (clipNext < clips.length && CLIP_SLOTS[clipNext] === slot) {
       raw.push({ type: 'clip', d: CLIP_D, clip: clipNext, to: raw[raw.length - 1].to, move: 1, vkey: 'clip' + clipNext });
@@ -760,6 +761,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   while (clipNext < clips.length && CLIP_SLOTS[clipNext] === 'mid') CLIP_SLOTS[clipNext] = 'sum';
   pushClips('sum');
   if (pois.length || boundary) raw.push({ type: 'summary', d: 5.4, to: camSummary, move: 0.5, push: 0.14, side: 1, arc: 1.0, vkey: 'summary' });
+  pushClips('after');
   // Ảnh thực tế căn nhà: phủ kín khung, camera bản đồ phía dưới bay dần về căn nhà để nối vào cảnh kết
   const photos = (scene.photos || []).filter(im => im && im.width && im.height).slice(0, 6);
   if (photos.length) raw.push({ type: 'photos', d: Math.max(3.2, photos.length * 2.4 + 0.6), to: camEnd, move: 1, vkey: 'photos' });
@@ -809,6 +811,8 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   tl.hookEnd = hook ? tl.intro.t0 + tl.intro.hookLen : 0;
   // Có video thực tế: đoạn đầu làm nền chuyển động cho thẻ giá mở đầu (ưu tiên hơn ảnh tĩnh)
   if (clips.length && hook) tl.clipWins.unshift({ clip: 0, t0: tl.intro.t0, t1: tl.hookEnd + 0.4, hook: true });
+  // Không có thẻ giá: đoạn đầu (mặt tiền) chiếu toàn khung 2,6 s đầu, máy bay vào bản đồ ở phía dưới rồi lộ ra
+  else if (clips.length) tl.clipWins.unshift({ clip: 0, t0: tl.intro.t0, t1: tl.intro.t0 + 2.6, open: true });
   tl.roadsEnd = tl.roadPhases.length ? tl.roadPhases[tl.roadPhases.length - 1].t1 : tl.overview.t1;
   tl.roadLabels = camRoads ? placeRoadLabels(tl, camRoads, gi => !tl.roads[gi].cam) : [];
   tl.roads.forEach((r, gi) => { if (r.cam) tl.roadLabels.push(...placeRoadLabels(tl, r.cam, g => g === gi)); });
@@ -2207,7 +2211,7 @@ function drawClips(ctx, tl, t, logo) {
   const { LW, LH, safe } = tl;
   const D = w.t1 - w.t0, lt = t - w.t0;
   const fade = Math.min(0.35, D * 0.18);
-  const A = Math.min(clamp01(lt / fade), clamp01((w.t1 - t) / fade));
+  const A = Math.min(w.open ? 1 : clamp01(lt / fade), clamp01((w.t1 - t) / (w.open ? 0.5 : fade)));
   if (A <= 0) return;
   ctx.save();
   ctx.globalAlpha = A;
@@ -2348,7 +2352,8 @@ function drawHook(ctx, tl, t) {
   const hookClip = hw && tl.clips[hw.clip] && clipReady(tl.clips[hw.clip].el) ? tl.clips[hw.clip].el : null;
   if (hookClip || (tl.photos && tl.photos.length)) {
     photoLayer(ctx, tl, hookClip || tl.photos[0], 0, 0, LW, LH, clamp01(lt / (tl.hookEnd - t0 + 0.4)), 1, A);
-    ctx.save(); ctx.globalAlpha = A * 0.42; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, LW, LH); ctx.restore();
+    // Video mặt tiền làm nền: tối nhẹ hơn ảnh để vẫn nhìn rõ căn nhà trong 2–3 s đầu (24/10 tối)
+    ctx.save(); ctx.globalAlpha = A * (hookClip ? 0.28 : 0.42); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, LW, LH); ctx.restore();
   } else {
     // Làm tối vừa đủ để chữ nổi nhưng vẫn thấy bản đồ đang bay vào phía sau
     ctx.save(); ctx.globalAlpha = A * 0.36; ctx.fillStyle = '#05090a'; ctx.fillRect(0, 0, LW, LH); ctx.restore();
