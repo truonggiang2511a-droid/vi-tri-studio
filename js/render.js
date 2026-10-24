@@ -668,7 +668,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
         shots.push({ s: (i * W_HUB) / tw, e: ((i + 1) * W_HUB) / tw, cam, move: 0.68, anchor: i, line: L, side: i % 2 ? 1 : -1 });
       });
       shots.push({ s: (anchors.length * W_HUB) / tw, e: 1, cam: { ...camHub, pitch: 26 }, move: 0.55, recap: true, side: 1 });
-      raw.push({ type: 'region', d: 2.8 * anchors.length + 3.0, to: shots[shots.length - 1].cam, shots, vkey: 'region', n: anchors.length });
+      raw.push({ type: 'region', d: 3.3 * anchors.length + 3.5, to: shots[shots.length - 1].cam, shots, vkey: 'region', n: anchors.length });
     }
   }
   const infra = (RG?.infra || []).map(r => {
