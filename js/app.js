@@ -1459,9 +1459,23 @@ function updateVoCard() {
     : (mode === 'ai' ? '🔄 Tạo lại: kịch bản AI mới + giọng' : '🔄 Tạo lại: cách viết khác + giọng');
   btn.classList.toggle('btn-primary', st !== 'ready');
   btn.classList.toggle('btn-quiet', st === 'ready');
+  // Tuỳ chọn: bỏ giọng đọc, video chỉ có nhạc nền + SFX (nhiều khách không cần giọng). Ẩn khi đã có giọng.
+  const skip = $('noVoiceBtn');
+  if (skip) skip.hidden = !!voiceDurations();
   const only = $('voVoiceOnly');
   only.hidden = st !== 'stale';
   only.textContent = 'Hoặc viết kịch bản mới hoàn toàn';
+}
+// Khách chọn không dùng giọng đọc: tắt giọng (video chỉ nhạc nền + SFX, thời lượng theo nhịp) rồi sang bước xuất video.
+// Bấm "Tạo giọng đọc" sau đó thì giọng tự bật lại (generateVoices đặt aiVoiceOn = true).
+function skipVoice() {
+  state.aiVoiceOn = false;
+  $('aiVoiceOn').checked = false;
+  media.mixKey = '';
+  rebuild();
+  save();
+  showStep(4);
+  toast('Video sẽ chỉ có nhạc nền và SFX. Muốn thêm giọng đọc thì quay lại bước 3.', 4000);
 }
 // fresh = viết kịch bản mới (bỏ kịch bản cũ). Không fresh: giữ lời đã có, chỉ đọc phần còn thiếu
 async function makeScriptAndVoice({ fresh } = {}) {
@@ -2981,6 +2995,7 @@ function init() {
   $('sfxOn').addEventListener('change', e => { state.sfxOn = e.target.checked; media.mixKey = ''; save(); });
   $('sfxVol').addEventListener('input', e => { state.sfxVol = parseFloat(e.target.value); media.mixKey = ''; save(); });
   $('aiVoiceOn').addEventListener('change', e => { state.aiVoiceOn = e.target.checked; scheduleRebuild(); });
+  $('noVoiceBtn').addEventListener('click', skipVoice);
   $('aiScriptBtn').addEventListener('click', aiRewrite);
   if (!state.voSig) state.aiTone = ''; // căn chưa tạo giọng: khách chọn lại phong cách
   setSeg('aiToneSeg', state.aiTone || '');

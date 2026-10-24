@@ -782,3 +782,4 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .appnav .zalo-link.pulse { animation: navPulse 1.2s ease-in-out 5; color: #0068ff; }
 @keyframes navPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.15); } }
 @media (prefers-reduced-motion: reduce) { .appnav .zalo-link.pulse { animation: none; } }
+.vo-skip { font-size: 14px; font-weight: 700; white-space: normal; line-height: 1.3; }
