@@ -33,7 +33,7 @@ try:
 except ImportError:
     for f in os.listdir('icons'): shutil.copy('icons/' + f, 'site/icons/' + f)
 PY
-cp manifest.webmanifest _headers 404.html gioi-thieu.html chinh-sach-bao-mat.html dieu-khoan.html demo.mp4 demo-poster.jpg sample.json huong-dan.mp4 huong-dan-poster.jpg og.jpg site/
+cp manifest.webmanifest _headers 404.html gioi-thieu.html chinh-sach-bao-mat.html dieu-khoan.html demo.mp4 demo-poster.jpg sample.json sample-voice.m4a huong-dan.mp4 huong-dan-poster.jpg og.jpg site/
 cp -r poi site/poi
 cp -r l site/l
 cp -r music site/music

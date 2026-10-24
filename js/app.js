@@ -749,7 +749,9 @@ const SAMPLE = { coord: '10.7285, 106.6185', price: '3,2 tỷ', area: '5x20m', b
 // không tốn lượt gọi Vietmap/chỉ đường cho mỗi khách mới. Chỉ các mục thuộc CĂN NHÀ — giữ nguyên logo/SĐT/thương hiệu của khách.
 const SAMPLE_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'price', 'area', 'beds', 'legal', 'floors', 'thoCu',
   'pois', 'roads', 'streets', 'adminArea', 'admin', 'areaWard', 'areaProv', 'areaFor', 'selected', 'selectedRoads', 'routes',
-  'roadStars', 'roadFills', 'scannedAt', 'useBoundary'];
+  'roadStars', 'roadFills', 'scannedAt', 'useBoundary',
+  // Kịch bản AI (phong cách Chuyên gia) + giọng đọc tạo sẵn 1 lần cho căn mẫu (sample-voice.m4a), có phụ đề
+  'scriptEdits', 'scriptAi', 'voSig', 'aiTone', 'scriptMode', 'voiceId', 'voiceSpeed'];
 const SAMPLE_PLAY = 'vitri.samplePlay';
 async function fetchSample(ms = 4000) {
   const ctl = new AbortController();
@@ -764,7 +766,8 @@ function writeSampleStore(d, base = {}) {
   const o = { ...base };
   for (const k of SAMPLE_KEYS) if (k in d) o[k] = d[k];
   Object.assign(o, { sample: true, coordSet: true, cloudId: null, projName: '', musicLib: 'hung-hon', musicV: 2, labelV: 3, speedV: 2,
-    scriptEdits: {}, scriptAi: false, voSig: '', lot: [] });
+    lot: [], sampleVoice: d.voice || null, aiVoiceOn: true, subsOn: true });
+  if (!d.voice) Object.assign(o, { scriptEdits: {}, scriptAi: false, voSig: '' });
   localStorage.setItem(STORE, JSON.stringify(o));
 }
 // Khách MỚI (máy chưa từng mở app): nạp căn mẫu TRƯỚC khi dựng giao diện → vào là thấy video mẫu tự phát.
@@ -780,9 +783,43 @@ async function bootSample() {
   try { writeSampleStore(d); return true; } catch { return false; }
 }
 // Khách đổi sang căn của mình: bỏ thông tin mẫu (giá, diện tích…) để không lọt vào video căn thật
+// Giọng đọc của căn mẫu: một file m4a, mỗi câu một đoạn (mốc trong sample.json) → cắt ra gắn vào từng cảnh như giọng AI thật
+let sampleVoiceJob = null;
+function loadSampleVoice() {
+  const V = state.sampleVoice;
+  if (!state.sample || !V || !V.segs?.length) return Promise.resolve(false);
+  if (sampleVoiceJob) return sampleVoiceJob;
+  sampleVoiceJob = (async () => {
+    try {
+      const ab = await (await fetch('/' + V.file)).arrayBuffer();
+      const whole = await new OfflineAudioContext(1, 48000, 48000).decodeAudioData(ab);
+      if (!state.sample) return false;
+      const sr = whole.sampleRate, src = whole.getChannelData(0);
+      const byKey = Object.fromEntries(scriptSegments().map(sg => [sg.key, sg]));
+      for (const g of V.segs) {
+        const sg = byKey[g.key];
+        if (!sg) continue;
+        const a = Math.max(0, Math.round(g.start * sr)), n = Math.min(src.length - a, Math.round(g.dur * sr));
+        if (n <= 0) continue;
+        const buf = new AudioBuffer({ length: n, numberOfChannels: 1, sampleRate: sr });
+        buf.copyToChannel(src.subarray(a, a + n), 0);
+        media.voiceSegs.set(g.key, { ck: voiceKey(sg.text), buffer: buf, speed: g.speed ?? 0 });
+      }
+      state.aiVoiceOn = true;
+      media.mixKey = '';
+      rebuild();
+      renderScript();
+      updateVoCard();
+      return true;
+    } catch { return false; }
+  })();
+  return sampleVoiceJob;
+}
 function leaveSample() {
   if (!state.sample) return;
   state.sample = false;
+  state.sampleVoice = null;
+  state.aiTone = ''; // căn thật: khách tự chọn phong cách kịch bản (không chọn sẵn)
   for (const [k, id] of [['price', 'priceInput'], ['area', 'areaInput'], ['beds', 'bedsInput'], ['legal', 'legalInput'], ['floors', 'floorsInput']]) {
     if (state[k] === SAMPLE[k]) { state[k] = ''; const el = $(id); if (el) el.value = ''; }
   }
@@ -3074,7 +3111,9 @@ function init() {
   if (state.sample) {
     let fresh = false;
     try { fresh = !!sessionStorage.getItem(SAMPLE_PLAY) || bootFresh; sessionStorage.removeItem(SAMPLE_PLAY); } catch { /* bỏ qua */ }
-    if (fresh && state.pois.length) autoPlaySample();
+    // Chờ giọng đọc mẫu (tối đa 4 s) rồi mới phát, để video có lời + phụ đề ngay từ đầu
+    const voiceReady = Promise.race([loadSampleVoice(), new Promise(r => setTimeout(r, 4000))]);
+    if (fresh && state.pois.length) voiceReady.then(() => autoPlaySample());
     else { const tg = $('sampleTag'); if (tg) tg.hidden = false; }
   }
 }
