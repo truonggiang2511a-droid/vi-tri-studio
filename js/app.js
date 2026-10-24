@@ -60,6 +60,8 @@ const state = {
   adminArea: null,   // ranh xã/phường + tỉnh {ward, province} (KHÁC state.area = diện tích khách nhập)
   areaWard: '', areaProv: '', roadWidth: '',
   showStreets: true, // vẽ đường quanh nhà kiểu đường nhựa
+  showAdminArea: false, // cảnh khoanh vùng xã/phường + cả tỉnh/thành (mặc định tắt, khách tick mới vẽ)
+  showSweep: false,  // tia radar quét ở cảnh bán kính + tổng kết (24/10 tối: mặc định tắt, khách tự bật)
   aiTone: '', // phong cách kịch bản AI — để trống, khách phải tự chọn trước khi tạo
   scriptMode: 'ai', // 'ai' = AI viết (mặc định, nổi bật) | 'mau' = kịch bản mẫu
   voSig: '', // lựa chọn (cách viết + phong cách) của lần tạo giọng gần nhất
@@ -317,13 +319,15 @@ function buildScene() {
     lot: state.lot && state.lot.length >= 3 ? state.lot : null,
     lotLabel: { text: state.lotText, area: state.lotArea },
     streets: state.streets || null,
-    adminArea: state.adminArea ? {
+    // 24/10 tối (Giang): cảnh xã/phường sáng lên + lùi ra cả tỉnh/thành MẶC ĐỊNH TẮT (như bản đầu), khách tick mới vẽ
+    adminArea: state.showAdminArea && state.adminArea ? {
       ward: state.adminArea.ward, province: state.adminArea.province,
       wardName: (state.areaWard || '').trim() || state.adminArea.ward?.name || state.admin?.commune || '',
       provName: (state.areaProv || '').trim() || state.adminArea.province?.name || state.admin?.province || '',
     } : null,
     roadWidth: (state.roadWidth || '').trim(),
     showStreets: state.showStreets !== false,
+    sweep: !!state.showSweep,
     roadTheme: state.roadTheme,
     hiTheme: state.hiTheme,
     routeTheme: state.routeTheme,
@@ -1325,7 +1329,7 @@ function scriptSegments() {
   ];
   // Trình tự: trung cảnh "Đây là vị trí … thuộc phường …" → cả tỉnh/thành → cận cảnh thông tin → bán kính
   const ward = wardName(), prov = provName();
-  const hasProvScene = !!(state.adminArea?.province?.rings?.length && state.adminArea?.ward?.rings?.length);
+  const hasProvScene = !!(state.showAdminArea && state.adminArea?.province?.rings?.length && state.adminArea?.ward?.rings?.length);
   if (ward) {
     const head = price ? (generic ? `${tw} giá chỉ ${price}${near}. ` : `${nameSpeak(title)}, giá chỉ ${price}. `) : (generic ? '' : `${nameSpeak(title)}. `);
     add('intro', 'Mở đầu · xã/phường', head + pick([`Đây là vị trí ${twl} thuộc ${midSentence(ward)}.`, `Đây là vị trí ${twl}, nằm tại ${midSentence(ward)}.`], 1));
@@ -2075,7 +2079,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -3037,6 +3041,10 @@ function init() {
   $('titleInput').addEventListener('input', e => { state.title = e.target.value; scheduleRebuild(); });
   $('showStreets').checked = state.showStreets !== false;
   $('showStreets').addEventListener('change', e => { state.showStreets = e.target.checked; scheduleRebuild(); });
+  $('sweepOn').checked = !!state.showSweep;
+  $('adminAreaOn').checked = !!state.showAdminArea;
+  $('adminAreaOn').addEventListener('change', e => { state.showAdminArea = e.target.checked; save(); renderScript(); scheduleRebuild(); });
+  $('sweepOn').addEventListener('change', e => { state.showSweep = e.target.checked; save(); scheduleRebuild(); });
   for (const [id, key] of [['areaWardInput', 'areaWard'], ['areaProvInput', 'areaProv'], ['roadWidthInput', 'roadWidth']]) {
     $(id).value = state[key] || '';
     $(id).addEventListener('input', e => { state[key] = e.target.value; scheduleRebuild(); });

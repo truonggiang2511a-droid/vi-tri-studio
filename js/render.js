@@ -644,7 +644,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     }
   };
   pushClips('house');
-  raw.push({ type: 'overview', d: lot ? 3.9 : 3.3, to: camOverview, move: lot ? 0.75 : 0.65, push: 0.22, side: 1, vkey: 'overview' });
+  raw.push({ type: 'overview', d: lot ? 4.2 : 3.6, to: camOverview, move: lot ? 0.8 : 0.7, push: 0.16, side: 1, vkey: 'overview' });
   // Kết nối vùng (24/10): máy lùi ra cấp vùng, đường đi thật tới từng điểm mốc lớn (trung tâm, sân bay, cảng, ga) lần lượt
   // chạy ra kèm thẻ "km · phút"; rồi cảnh hạ tầng đang thi công gần nhà (nét đứt vàng cam, chạy ra từ điểm gần nhà nhất).
   const RG = scene.region || null;
@@ -665,10 +665,10 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
         const L = a.line, near = [a];
         for (let j = 0; j < L.xs.length; j++) if (L.cum[j] >= 0.7 * L.len) near.push(unproject(L.xs[j], L.ys[j], 0));
         const cam = fitCam(near, LW, LH, { left: safe.x + 80, right: safe.x + 80, top: safe.top + 170, bottom: safe.bottom + 150 }, 44, 9.5, 14.6) || camHub;
-        shots.push({ s: (i * W_HUB) / tw, e: ((i + 1) * W_HUB) / tw, cam, move: 0.62, anchor: i, line: L, side: i % 2 ? 1 : -1 });
+        shots.push({ s: (i * W_HUB) / tw, e: ((i + 1) * W_HUB) / tw, cam, move: 0.68, anchor: i, line: L, side: i % 2 ? 1 : -1 });
       });
       shots.push({ s: (anchors.length * W_HUB) / tw, e: 1, cam: { ...camHub, pitch: 26 }, move: 0.55, recap: true, side: 1 });
-      raw.push({ type: 'region', d: 2.3 * anchors.length + 2.6, to: shots[shots.length - 1].cam, shots, vkey: 'region', n: anchors.length });
+      raw.push({ type: 'region', d: 2.8 * anchors.length + 3.0, to: shots[shots.length - 1].cam, shots, vkey: 'region', n: anchors.length });
     }
   }
   const infra = (RG?.infra || []).map(r => {
@@ -701,7 +701,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
         acc += W_B;
       });
       shots.push({ s: acc / tw, e: 1, cam: camInfra, move: 0.6, recap: true, side: 1 });
-      raw.push({ type: 'infra', d: 2.6 * infra.length + 2.2, to: camInfra, shots, vkey: 'infra', n: infra.length });
+      raw.push({ type: 'infra', d: 3.1 * infra.length + 2.6, to: camInfra, shots, vkey: 'infra', n: infra.length });
     }
   }
   // Vùng lái xe 5 – 10 – 15 phút (ArcGIS): sau cảnh bán kính, máy ôm trọn vùng 15 phút, 3 vùng lần lượt lan ra từ nhà
@@ -710,10 +710,10 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     const big = ISO.areas[ISO.areas.length - 1];
     const camIso = fitCam([H, ...ringPtsOf(big.rings, 140)], LW, LH,
       { left: safe.x + 24, right: safe.x + 24, top: safe.top + 96, bottom: safe.bottom + 70 }, PITCH.boundary, 9, 16);
-    if (camIso) raw.push({ type: 'iso', d: 5.0, to: camIso, move: 0.5, push: 0.22, side: 1, vkey: 'iso' });
+    if (camIso) raw.push({ type: 'iso', d: 5.4, to: camIso, move: 0.55, push: 0.16, side: 1, vkey: 'iso' });
   }
-  roads.forEach((r, i) => raw.push({ type: 'road', d: 3.2 + (r.hi ? 0.9 : 0), to: r.cam || camRoads, move: 0.55, push: 0.3, side: i % 2 ? 1 : -1, arc: 1.4, road: i, vkey: 'road:' + r.id }));
-  if (boundary) raw.push({ type: 'boundary', d: 7.0, to: camBoundary, move: 0.42, push: 0.3, side: -1, arc: 1.6, vkey: 'boundary' });
+  roads.forEach((r, i) => raw.push({ type: 'road', d: 3.5 + (r.hi ? 0.9 : 0), to: r.cam || camRoads, move: 0.6, push: 0.2, side: i % 2 ? 1 : -1, arc: 1.0, road: i, vkey: 'road:' + r.id }));
+  if (boundary) raw.push({ type: 'boundary', d: 7.4, to: camBoundary, move: 0.45, push: 0.2, side: -1, arc: 1.2, vkey: 'boundary' });
   // Chế độ "Quét vòng tròn": một khung cố định thấy cả vòng bán kính và mọi tiện ích, line lần lượt chạy ra rồi giữ lại
   // 2 kiểu hiện tiện ích:
   // - lanluot: bay tới từng tiện ích, line đường đi chạy ra (mặc định)
@@ -753,19 +753,19 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     // trông nhỏ xíu giữa khung rộng ~1 km). Nay khung ôm sát nhà + tiện ích + đường đi; xa bao nhiêu thì lùi ra bấy nhiêu.
     const cam = fitCam(pts, LW, LH,
       { left: safe.x + 56, right: safe.x + 56, top: safe.top + 110, bottom: safe.bottom + 60 }, PITCH.poi, 11, 17.6);
-    raw.push({ type: 'poi', d: 3.2, to: cam, move: 0.55, push: 0.28, side: i % 2 ? 1 : -1, arc: 1.6, poi: i, vkey: 'poi:' + p.id });
+    raw.push({ type: 'poi', d: 3.5, to: cam, move: 0.6, push: 0.18, side: i % 2 ? 1 : -1, arc: 1.2, poi: i, vkey: 'poi:' + p.id });
     if (i === Math.ceil(pois.length / 2) - 1 && pois.length >= 2) pushClips('mid');
   });
   // Không đủ tiện ích để chèn giữa: dời đoạn "giữa" xuống trước cảnh tổng kết
   while (clipNext < clips.length && CLIP_SLOTS[clipNext] === 'mid') CLIP_SLOTS[clipNext] = 'sum';
   pushClips('sum');
-  if (pois.length || boundary) raw.push({ type: 'summary', d: 5.0, to: camSummary, move: 0.45, push: 0.2, side: 1, arc: 1.2, vkey: 'summary' });
+  if (pois.length || boundary) raw.push({ type: 'summary', d: 5.4, to: camSummary, move: 0.5, push: 0.14, side: 1, arc: 1.0, vkey: 'summary' });
   // Ảnh thực tế căn nhà: phủ kín khung, camera bản đồ phía dưới bay dần về căn nhà để nối vào cảnh kết
   const photos = (scene.photos || []).filter(im => im && im.width && im.height).slice(0, 6);
   if (photos.length) raw.push({ type: 'photos', d: Math.max(3.2, photos.length * 2.4 + 0.6), to: camEnd, move: 1, vkey: 'photos' });
   for (let i = clipNext; i < clips.length; i++) CLIP_SLOTS[i] = 'end';
   pushClips('end');
-  raw.push({ type: 'outro', d: 3.4, to: camEnd, move: 0.6, push: 0.3, side: -1, arc: 1.2, vkey: 'outro' });
+  raw.push({ type: 'outro', d: 3.4, to: camEnd, move: 0.65, push: 0.2, side: -1, arc: 1.0, vkey: 'outro' });
 
   let total = raw.reduce((s, p) => s + p.d, 0) / sp;
   let k = 1 / sp;
@@ -902,8 +902,8 @@ function shotEnd(sh) {
   if (sh._end) return sh._end;
   const c = { ...sh.cam };
   if (!sh.slide) {
-    c.zoom += 0.32;
-    if (sh.side) c.lng += sh.side * 42 * metersPerPixel(c.lat, c.zoom) / (111320 * Math.cos(c.lat * Math.PI / 180));
+    c.zoom += 0.24;
+    if (sh.side) c.lng += sh.side * 30 * metersPerPixel(c.lat, c.zoom) / (111320 * Math.cos(c.lat * Math.PI / 180));
   }
   return (sh._end = c);
 }
@@ -920,7 +920,7 @@ function camShots(ph, t) {
   if (sh._arc === undefined) {
     const a = project(prev.lat, prev.lng, 0), b = project(sh.cam.lat, sh.cam.lng, 0);
     const dpx = Math.hypot(b.x - a.x, b.y - a.y) * Math.pow(2, Math.min(prev.zoom, sh.cam.zoom));
-    sh._arc = sh.slide ? 0 : Math.max(0, Math.min(2.6, Math.log2(dpx / 420)));
+    sh._arc = sh.slide ? 0 : Math.max(0, Math.min(2.0, Math.log2(dpx / 480)));
   }
   cam.zoom -= sh._arc * Math.sin(Math.PI * e);
   if (sh.line && e > 0 && e < 1) {
@@ -936,10 +936,10 @@ function camShots(ph, t) {
     // tới nơi: đẩy máy vào chậm và lia ngang (đổi chiều mỗi cú máy) để khung không đứng yên
     const hold = clamp01((w - sh.move) / Math.max(1e-6, 1 - sh.move));
     const hs = smooth(hold);
-    cam.zoom += 0.32 * hs;
+    cam.zoom += 0.24 * hs;
     if (sh.side) {
       const mpp = metersPerPixel(cam.lat, cam.zoom);
-      cam.lng += sh.side * 42 * hs * mpp / (111320 * Math.cos(cam.lat * Math.PI / 180));
+      cam.lng += sh.side * 30 * hs * mpp / (111320 * Math.cos(cam.lat * Math.PI / 180));
     }
   }
   return cam;
@@ -956,7 +956,7 @@ function camAtPhase(ph, t) {
     if (ph._arc === undefined) {
       const a = project(ph.from.lat, ph.from.lng, 0), b = project(ph.to.lat, ph.to.lng, 0);
       const dpx = Math.hypot(b.x - a.x, b.y - a.y) * Math.pow(2, Math.min(ph.from.zoom, ph.to.zoom));
-      ph._arc = Math.max(0, Math.min(ph.arc, Math.log2(dpx / 520)));
+      ph._arc = Math.max(0, Math.min(ph.arc, Math.log2(dpx / 600)));
     }
     cam.zoom -= ph._arc * Math.sin(Math.PI * e);
   }
@@ -965,7 +965,7 @@ function camAtPhase(ph, t) {
     const mv = (d - hold) * (ph.move || 1);
     const hs = smooth(clamp01((t - ph.t0 - hold - mv) / Math.max(1e-6, d - hold - mv)));
     cam.zoom += ph.push * hs;
-    if (ph.side) cam.lng += ph.side * 34 * hs * metersPerPixel(cam.lat, cam.zoom) / (111320 * Math.cos(cam.lat * Math.PI / 180));
+    if (ph.side) cam.lng += ph.side * 26 * hs * metersPerPixel(cam.lat, cam.zoom) / (111320 * Math.cos(cam.lat * Math.PI / 180));
   }
   // Máy lượn quanh bất động sản: tâm khung đi theo vòng cung nhỏ quanh điểm đích sau khi đã bay tới
   if (ph.orbit) {
@@ -3004,9 +3004,12 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   }
 
   // Tia quét radar quay quanh căn nhà: lúc giới thiệu bán kính, pha quét (chế độ vòng tròn) và cảnh tổng kết
-  const sweeps = [[ov.t0 + 0.3 * (ov.t1 - ov.t0), ov.t1 + 0.3]];
+  // 24/10 tối (Giang): tia radar quét ở cảnh bán kính + tổng kết MẶC ĐỊNH TẮT cho tự nhiên; khách bật ở mục Phong cách (scene.sweep).
+  // Kiểu hiện tiện ích "Quét vòng tròn" vẫn có tia quét riêng của nó.
+  const sweeps = [];
+  if (scene.sweep) sweeps.push([ov.t0 + 0.3 * (ov.t1 - ov.t0), ov.t1 + 0.3]);
   if (tl.radarPh) sweeps.push([tl.radarPh.t0, tl.radarPh.t1 + 0.6]);
-  if (sm) sweeps.push([sm.t0 + 0.2, Math.min(sm.t1, sm.t0 + 3.2)]);
+  if (sm && scene.sweep) sweeps.push([sm.t0 + 0.2, Math.min(sm.t1, sm.t0 + 3.2)]);
   for (const [s0, s1] of sweeps) {
     if (t < s0 || t >= s1 || rpx < 8) continue;
     const sa = Math.min(clamp01((t - s0) / 0.4), clamp01((s1 - t) / 0.6));
