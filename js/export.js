@@ -147,7 +147,24 @@ export function canEncodeMp4() {
   return typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
 }
 
-export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffer, onProgress, signal, prepFrame = null }) {
+// Chờ khách quay lại app (trang bị ẩn khi chuyển app/khoá máy): dừng dựng khung để không hỏng bộ mã hoá
+function waitVisible(signal) {
+  if (typeof document === 'undefined' || !document.hidden) return Promise.resolve();
+  return new Promise(res => {
+    const on = () => { if (!document.hidden || signal?.aborted) { document.removeEventListener('visibilitychange', on); res(); } };
+    document.addEventListener('visibilitychange', on);
+    signal?.addEventListener?.('abort', on, { once: true });
+  });
+}
+const descOf = cfg => (cfg && cfg.description ? new Uint8Array(cfg.description instanceof ArrayBuffer ? cfg.description : cfg.description.buffer.slice(cfg.description.byteOffset, cfg.description.byteOffset + cfg.description.byteLength)) : null);
+const sameBytes = (a, b) => { if (!a || !b) return a === b; if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
+
+// Xuất MP4 có thể TIẾP TỤC giữa chừng (24/10, khách lỡ thoát app khi đang xuất):
+// - Gói video được chốt theo từng nhóm 2 giây (GOP, bắt đầu bằng khung khoá). Nhóm đang dở giữ riêng ở `pending`.
+// - Khách rời app: tạm dừng dựng; quay lại mà bộ mã hoá đã bị trình duyệt thu hồi/lỗi → mở bộ mã hoá mới và
+//   dựng lại từ khung đầu của nhóm đang dở (mất tối đa ~2 giây công, không làm lại từ đầu).
+// - onCheckpoint(nhóm vừa chốt) để app lưu vào máy; trang bị tắt hẳn thì lần sau `resume` nạp lại các nhóm đã lưu.
+export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffer, onProgress, signal, prepFrame = null, resume = null, onCheckpoint = null }) {
   const scale = width / tl.LW;
   const pv = await pickVideoCodec(width, height, fps);
   if (!pv) throw new Error('Máy này không mã hoá được video ở độ phân giải ' + width + 'x' + height + '. Thử chất lượng 720p.');
@@ -165,56 +182,138 @@ export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffe
   }
   await output.start();
 
+  const frames = Math.round(tl.duration * fps);
+  const us = 1e6 / fps;
+  const GOP = fps * 2;
   // Gói video phải đưa vào theo đúng thứ tự: xếp hàng bằng một chuỗi promise
   let chain = Promise.resolve();
-  let encErr = null;
-  const venc = new VideoEncoder({
-    output: (chunk, meta) => {
-      // Ghi rõ hệ màu BT.709 vào file để điện thoại không đoán sai (đoán sai → màu lệch/bạc)
-      if (meta?.decoderConfig && !meta.decoderConfig.colorSpace?.matrix) {
-        meta = { ...meta, decoderConfig: { ...meta.decoderConfig, colorSpace: { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', fullRange: false } } };
-      }
-      chain = chain.then(() => vsrc.add(MB.EncodedPacket.fromEncodedChunk(chunk), meta)).catch(e => { encErr = encErr || e; });
-    },
-    error: e => { encErr = e; },
-  });
-  venc.configure(pv.cfg);
+  let muxErr = null;
+  let decMeta = null, refDesc = null, sentMeta = false;
+  const push = pk => {
+    const meta = sentMeta ? undefined : decMeta;
+    sentMeta = true;
+    chain = chain.then(() => vsrc.add(new MB.EncodedPacket(pk.data, pk.type, pk.ts / 1e6, pk.dur / 1e6), meta)).catch(e => { muxErr = muxErr || e; });
+  };
+  let committed = 0; // số khung đã chốt (= khung đầu của nhóm đang dở)
+  let pending = [];
+  if (resume && resume.meta && resume.gops?.length) {
+    decMeta = resume.meta;
+    refDesc = descOf(decMeta.decoderConfig);
+    for (const g of resume.gops) for (const pk of g) push(pk);
+    committed = resume.nextFrame;
+    await chain;
+    if (muxErr) throw muxErr;
+  }
+  const commit = () => {
+    if (!pending.length) return;
+    const g = pending;
+    pending = [];
+    for (const pk of g) push(pk);
+    committed = Math.round(Math.max(...g.map(pk => pk.ts)) / us) + 1;
+    try { onCheckpoint?.({ gop: g, nextFrame: committed, frames, meta: decMeta }); } catch { /* lưu tạm không bắt buộc */ }
+  };
+
+  let venc = null, encErr = null, gen = 0, encStart = 0, recoveries = 0;
+  const openEncoder = startFrame => {
+    const my = ++gen;
+    encErr = null;
+    encStart = startFrame;
+    pending = [];
+    venc = new VideoEncoder({
+      output: (chunk, meta) => {
+        if (my !== gen) return;
+        if (meta?.decoderConfig) {
+          const d = descOf(meta.decoderConfig);
+          if (!decMeta) {
+            // Đối tượng thường (lưu được vào máy để tiếp tục sau). Ghi rõ hệ màu BT.709 khi trình duyệt không ghi
+            // để điện thoại không đoán sai (đoán sai → màu lệch/bạc)
+            const c = meta.decoderConfig, cs = c.colorSpace;
+            decMeta = { decoderConfig: {
+              codec: c.codec, codedWidth: c.codedWidth, codedHeight: c.codedHeight,
+              ...(c.displayAspectWidth ? { displayAspectWidth: c.displayAspectWidth, displayAspectHeight: c.displayAspectHeight } : {}),
+              ...(d ? { description: d } : {}),
+              colorSpace: cs?.matrix ? { primaries: cs.primaries, transfer: cs.transfer, matrix: cs.matrix, fullRange: cs.fullRange }
+                : { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', fullRange: false },
+            } };
+            refDesc = d;
+          } else if (refDesc && d && !sameBytes(refDesc, d)) {
+            encErr = Object.assign(new Error('Bộ mã hoá đổi cấu hình giữa chừng'), { code: 'DESC_CHANGED' });
+            return;
+          }
+        }
+        const data = new Uint8Array(chunk.byteLength);
+        chunk.copyTo(data);
+        // Khung khoá mới = nhóm trước đã đủ → chốt nhóm trước
+        if (chunk.type === 'key' && pending.length) commit();
+        pending.push({ data, type: chunk.type, ts: chunk.timestamp, dur: chunk.duration || Math.round(us) });
+      },
+      error: e => { if (my === gen) encErr = e || new Error('Bộ mã hoá lỗi'); },
+    });
+    venc.configure(pv.cfg);
+  };
+  // Bộ mã hoá hỏng (thường do rời app): bỏ nhóm đang dở, mở bộ mới, dựng lại từ khung đã chốt
+  const recover = why => {
+    if (why?.code === 'DESC_CHANGED') throw why;
+    if (++recoveries > 6) throw why || new Error('Bộ mã hoá lỗi nhiều lần');
+    gen++;
+    try { venc?.close(); } catch { /* đã đóng */ }
+    openEncoder(committed);
+    return committed;
+  };
+  const broken = () => encErr || !venc || venc.state === 'closed';
 
   const gr = gradedRenderer(width, height);
   const canvas = gr.canvas;
-  const frames = Math.round(tl.duration * fps);
-  const us = 1e6 / fps;
+  openEncoder(committed);
+  let i = committed;
   try {
-    for (let i = 0; i < frames; i++) {
-      if (signal?.aborted) throw new DOMException('Đã huỷ', 'AbortError');
-      if (encErr) throw encErr;
-      // Video thực tế: tua đúng khung hình trong file trước khi vẽ (chỉ ở các cảnh có video)
-      const pf = prepFrame && prepFrame(i / fps);
-      if (pf) await pf;
-      gr.draw(tl, i / fps, { cache, scale, request: false });
-      const frame = new VideoFrame(canvas, { timestamp: Math.round(i * us), duration: Math.round(us) });
-      venc.encode(frame, { keyFrame: i % (fps * 2) === 0 });
-      frame.close();
-      if (venc.encodeQueueSize > 6) {
-        await new Promise(r => {
-          const check = () => (venc.encodeQueueSize <= 3 ? r() : setTimeout(check, 4));
-          check();
-        });
+    for (;;) {
+      while (i < frames) {
+        if (signal?.aborted) throw new DOMException('Đã huỷ', 'AbortError');
+        if (typeof document !== 'undefined' && document.hidden) await waitVisible(signal);
+        if (muxErr) throw muxErr;
+        if (broken()) { i = recover(encErr); continue; }
+        // Video thực tế: tua đúng khung hình trong file trước khi vẽ (chỉ ở các cảnh có video)
+        const pf = prepFrame && prepFrame(i / fps);
+        if (pf) await pf;
+        gr.draw(tl, i / fps, { cache, scale, request: false });
+        const frame = new VideoFrame(canvas, { timestamp: Math.round(i * us), duration: Math.round(us) });
+        try { venc.encode(frame, { keyFrame: i % GOP === 0 || i === encStart }); }
+        catch (e) { frame.close(); i = recover(e); continue; }
+        frame.close();
+        i++;
+        if (venc.encodeQueueSize > 6) {
+          const t0 = Date.now();
+          await new Promise(r => {
+            const check = () => (venc.encodeQueueSize <= 3 || broken() || document.hidden || Date.now() - t0 > 15000 ? r() : setTimeout(check, 4));
+            check();
+          });
+        }
+        if (i % 3 === 0) {
+          onProgress?.('frames', i, frames);
+          await new Promise(r => setTimeout(r, 0));
+        }
       }
-      if (i % 3 === 0) {
-        onProgress?.('frames', i + 1, frames);
-        await new Promise(r => setTimeout(r, 0));
+      try {
+        await venc.flush();
+        if (broken()) throw encErr || new Error('Bộ mã hoá lỗi');
+        break;
+      } catch (e) {
+        if (signal?.aborted) throw new DOMException('Đã huỷ', 'AbortError');
+        if (typeof document !== 'undefined' && document.hidden) await waitVisible(signal);
+        i = recover(e);
       }
     }
-    await venc.flush();
+    commit();
   } catch (e) {
-    try { venc.close(); } catch { /* đã đóng */ }
+    gen++;
+    try { venc?.close(); } catch { /* đã đóng */ }
     try { await output.cancel(); } catch { /* bỏ qua */ }
     throw e;
   }
-  venc.close();
+  try { venc.close(); } catch { /* đã đóng */ }
   await chain;
-  if (encErr) throw encErr;
+  if (muxErr) throw muxErr;
   vsrc.close();
 
   if (asrc) {

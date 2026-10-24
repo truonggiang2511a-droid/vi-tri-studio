@@ -424,6 +424,14 @@
       <header class="step-head"><h2>Xuất video</h2></header>
       <p class="step-guide">Bấm <strong>Xuất video MP4</strong>, giữ màn hình mở tới khi xong, rồi bấm Lưu hoặc Chia sẻ.</p>
       <p id="creditNote" class="credit-note"></p>
+      <div id="resumeBox" class="resume-box" hidden>
+        <strong>Video đang xuất dở <span id="resumePct">0%</span></strong>
+        <span class="hint small">Lần trước anh/chị thoát app khi đang xuất. Bấm để làm tiếp từ chỗ dừng, không phải dựng lại từ đầu.</span>
+        <div class="resume-actions">
+          <button id="resumeBtn" class="btn btn-primary" type="button">▶ Tiếp tục xuất</button>
+          <button id="resumeDrop" class="link-btn" type="button">Bỏ, xuất lại từ đầu</button>
+        </div>
+      </div>
       <button id="exportBtn" class="btn btn-primary btn-block btn-lg" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h11v12H4zM15 10l5-3v10l-5-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
         Xuất video MP4
@@ -431,7 +439,7 @@
       <div id="exportBox" class="export-box" hidden>
         <div class="progress"><div id="progBar" class="progress-bar"></div></div>
         <div class="export-meta"><span id="progText">Đang chuẩn bị…</span><button id="cancelBtn" class="link-btn" type="button">Huỷ</button></div>
-        <p class="hint small">Video dựng ngay trên máy — giữ màn hình mở tới khi xong.</p>
+        <p class="hint small">Video dựng ngay trên máy — giữ màn hình mở tới khi xong. Lỡ thoát app thì quay lại, video làm tiếp từ chỗ đang dở.</p>
       </div>
       <div id="resultBox" class="result" hidden>
         <video id="resultVideo" controls playsinline></video>

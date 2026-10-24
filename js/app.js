@@ -1731,9 +1731,108 @@ function progress(pct, text) {
   $('progBar').style.width = Math.max(0, Math.min(100, pct)).toFixed(1) + '%';
   $('progText').textContent = text;
 }
+// ---------- Xuất video dở dang: lưu từng nhóm 2 giây vào máy để tiếp tục khi khách lỡ thoát app ----------
+// IndexedDB 'vitri-export': store 'job' (khoá 'cur': thông tin lần xuất + âm thanh đã trộn), store 'gop' (gói video đã chốt).
+// Trang chỉ bị ẩn (chuyển app) thì exportMp4 tự tạm dừng rồi làm tiếp; trang bị tắt hẳn thì mở lại app thấy nút "Tiếp tục xuất".
+const XJOB_HOURS = 12;
+function xdb() {
+  return new Promise(res => {
+    try {
+      const r = indexedDB.open('vitri-export', 1);
+      r.onupgradeneeded = () => { r.result.createObjectStore('job'); r.result.createObjectStore('gop'); };
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => res(null);
+    } catch { res(null); }
+  });
+}
+async function xop(store, mode, fn) {
+  const db = await xdb();
+  if (!db) return null;
+  return new Promise(res => {
+    try {
+      const tx = db.transaction(store, mode);
+      const r = fn(tx.objectStore(store));
+      tx.oncomplete = () => { res(r && 'result' in r ? r.result : true); db.close(); };
+      tx.onerror = tx.onabort = () => { res(null); db.close(); };
+    } catch { res(null); db.close(); }
+  });
+}
+const xjobGet = () => xop('job', 'readonly', st => st.get('cur'));
+async function xjobClear() {
+  await xop('job', 'readwrite', st => st.clear());
+  await xop('gop', 'readwrite', st => st.clear());
+}
+function hashStr(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36);
+}
+// Dấu vân tay của video sắp xuất: đổi bất cứ thứ gì (căn, tiện ích, chữ, kiểu, giọng, ảnh/video…) thì không tiếp tục bản cũ
+function exportKey(opts, width, height) {
+  const img = x => (x ? `${x.width || x.videoWidth || 0}x${x.height || x.videoHeight || 0}` : '');
+  return hashStr(JSON.stringify([projectData(), opts, width, height, state.quality, state.fmt,
+    media.photos.map(p => img(p.img)), media.clips.map(c => [c.name, Math.round(c.dur * 10)]), img(media.logo)]));
+}
+function packAudio(buf) {
+  if (!buf) return null;
+  const ch = [];
+  for (let c = 0; c < buf.numberOfChannels; c++) {
+    const d = buf.getChannelData(c), o = new Int16Array(d.length);
+    for (let i = 0; i < d.length; i++) o[i] = Math.max(-32768, Math.min(32767, Math.round(d[i] * 32767)));
+    ch.push(o.buffer);
+  }
+  return { sr: buf.sampleRate, len: buf.length, ch };
+}
+function unpackAudio(a) {
+  if (!a) return null;
+  const buf = new AudioBuffer({ numberOfChannels: a.ch.length, length: a.len, sampleRate: a.sr });
+  a.ch.forEach((ab, c) => {
+    const s16 = new Int16Array(ab), f = new Float32Array(s16.length);
+    for (let i = 0; i < s16.length; i++) f[i] = s16[i] / 32767;
+    buf.copyToChannel(f, c);
+  });
+  return buf;
+}
+// Mở app: có video xuất dở (còn hạn, đúng căn đang mở) thì hiện ô "Tiếp tục xuất"
+async function checkExportJob() {
+  const job = await xjobGet();
+  const box = $('resumeBox');
+  if (!box) return null;
+  if (!job || !job.nextFrame || job.nextFrame >= job.frames || Date.now() - job.createdAt > XJOB_HOURS * 3600e3
+    || !state.house || haversineKm(state.house, job.house) > 0.03) {
+    box.hidden = true;
+    if (job) xjobClear();
+    return null;
+  }
+  $('resumePct').textContent = Math.round(100 * job.nextFrame / job.frames) + '%';
+  box.hidden = false;
+  return job;
+}
+async function resumeExport() {
+  const job = await xjobGet();
+  if (!job) { $('resumeBox').hidden = true; doExport(); return; }
+  // Chờ ảnh / video thực tế / logo của căn nạp lại xong (sau khi mở lại app)
+  for (let k = 0; k < 40; k++) {
+    if (media.photos.length === job.media.photos && media.clips.length === job.media.clips && !!media.logo === job.media.logo) break;
+    await new Promise(r => setTimeout(r, 200));
+  }
+  const q = state.quality === '720' ? 720 : 1080;
+  const F = FORMATS[state.fmt];
+  const width = state.fmt === 'h' ? Math.round(q * 16 / 9) : q;
+  const height = Math.round(width * F.LH / F.LW);
+  if (exportKey(job.opts, width, height) !== job.key) {
+    await xjobClear();
+    $('resumeBox').hidden = true;
+    toast('Thông tin video đã thay đổi so với lần xuất dở, app sẽ xuất lại từ đầu.', 4000);
+    doExport();
+    return;
+  }
+  doExport({ job });
+}
+
 let gating = false;
 let exportAudioCtx = null;
-async function doExport() {
+async function doExport({ job = null } = {}) {
   if (!state.house) { toast('Nhập toạ độ căn nhà trước.'); return; }
   if (exporting || gating) return;
   // Mở khoá âm thanh ngay trong cú bấm (iPhone), dùng khi phải quay thời gian thực
@@ -1742,9 +1841,15 @@ async function doExport() {
   gating = true;
   $('exportBtn').disabled = true; $('stepNext').disabled = true;
   let gate = null;
-  try { gate = await beginExport(state.house); }
-  finally { gating = false; $('exportBtn').disabled = false; $('stepNext').disabled = false; }
+  // Tiếp tục lần xuất dở: lượt đã được tính ở lần bấm Xuất trước đó, không gọi lại máy chủ
+  if (job) gate = { resumed: true, redo: account.redo };
+  else {
+    try { gate = await beginExport(state.house); }
+    finally { gating = false; $('exportBtn').disabled = false; $('stepNext').disabled = false; }
+  }
+  gating = false;
   if (!gate) return;
+  $('resumeBox').hidden = true;
   if (gate.charged) toast(`Đã trừ 1 lượt, còn ${gate.profile.credits} lượt. Căn này còn ${gate.redo?.exports_left ?? 2} lần xuất lại không trừ lượt.`, 4500);
   else if (gate.mode === 'reexport' && gate.redo) toast(`Xuất lại không trừ lượt. Căn này còn ${gate.redo.exports_left} lần xuất lại.`, 3500);
   pause();
@@ -1758,7 +1863,8 @@ async function doExport() {
   let wake = null;
   try { wake = await navigator.wakeLock?.request('screen'); } catch { /* không bắt buộc */ }
   try {
-    const xtl = buildTimeline(buildScene(), state.fmt, timelineOpts());
+    const opts = job ? job.opts : timelineOpts();
+    const xtl = buildTimeline(buildScene(), state.fmt, opts);
     const q = state.quality === '720' ? 720 : 1080;
     const F = FORMATS[state.fmt];
     const width = state.fmt === 'h' ? Math.round(q * 16 / 9) : q;
@@ -1769,10 +1875,13 @@ async function doExport() {
     if (signal.aborted) throw new DOMException('Đã huỷ', 'AbortError');
     await fontsReady();
     let audio = null;
-    const A = audioPlan(xtl);
-    if (media.music || A.voice || A.segs.length || A.sfx) {
-      progress(29, 'Đang trộn âm thanh…');
-      audio = await mixAudio({ music: media.music, voice: A.voice, voiceSegs: A.segs, sfx: A.sfx, duration: xtl.duration, musicVol: state.musicVol });
+    if (job) audio = unpackAudio(job.audio);
+    else {
+      const A = audioPlan(xtl);
+      if (media.music || A.voice || A.segs.length || A.sfx) {
+        progress(29, 'Đang trộn âm thanh…');
+        audio = await mixAudio({ music: media.music, voice: A.voice, voiceSegs: A.segs, sfx: A.sfx, duration: xtl.duration, musicVol: state.musicVol });
+      }
     }
     let blob;
     const onProgress = (stage, d, n) => {
@@ -1780,9 +1889,46 @@ async function doExport() {
       else if (stage === 'audio') progress(97, 'Đang ghép âm thanh…');
     };
     if (canEncodeMp4()) {
+      // Lưu tiến độ vào máy theo từng nhóm 2 giây để lỡ tắt app vẫn làm tiếp được
+      const fps = 30, frames = Math.round(xtl.duration * fps);
+      let resume = null, gopN = 0, saving = Promise.resolve(), saveOk = true;
+      if (job) {
+        progress(30, 'Đang nạp phần video đã xuất…');
+        const gops = [];
+        for (let k = 0; k < job.gops; k++) { const g = await xop('gop', 'readonly', st => st.get(k)); if (!g) break; gops.push(g); }
+        if (gops.length === job.gops && job.meta) { resume = { meta: job.meta, gops, nextFrame: job.nextFrame }; gopN = job.gops; }
+        else { await xjobClear(); job = null; }
+      }
+      if (!job) {
+        await xjobClear();
+        const ok = await xop('job', 'readwrite', st => st.put({
+          key: exportKey(opts, width, height), house: state.house, createdAt: Date.now(), fps, frames, width, height, opts,
+          audio: packAudio(audio), nextFrame: 0, gops: 0, meta: null,
+          media: { photos: media.photos.length, clips: media.clips.length, logo: !!media.logo },
+        }, 'cur'));
+        saveOk = !!ok;
+      }
+      const onCheckpoint = ({ gop, nextFrame, meta }) => {
+        if (!saveOk) return;
+        const k = gopN++;
+        saving = saving.then(async () => {
+          if (!saveOk) return;
+          const a = await xop('gop', 'readwrite', st => st.put(gop, k));
+          const cur = a && await xjobGet();
+          if (!a || !cur) { saveOk = false; return; } // máy hết chỗ: vẫn xuất bình thường, chỉ không lưu tiến độ
+          cur.nextFrame = nextFrame; cur.gops = k + 1; cur.meta = meta;
+          if (!(await xop('job', 'readwrite', st => st.put(cur, 'cur')))) saveOk = false;
+        });
+      };
       try {
-        blob = await exportMp4({ tl: xtl, width, height, fps: 30, cache, audioBuffer: audio, onProgress, signal, prepFrame: tt => seekClipsExact(xtl, tt) });
+        blob = await exportMp4({ tl: xtl, width, height, fps, cache, audioBuffer: audio, onProgress, signal, prepFrame: tt => seekClipsExact(xtl, tt), resume, onCheckpoint });
+        await saving;
+        xjobClear();
       } catch (e) {
+        await saving;
+        // Bộ mã hoá mới khác cấu hình phần đã lưu: không ghép tiếp được → xoá, khách xuất lại từ đầu
+        if (e.code === 'DESC_CHANGED' || e.name === 'AbortError' || e.code === 'NO_AUDIO_ENCODER' || e.code === 'NO_MUXER') xjobClear();
+        if (e.code === 'DESC_CHANGED') throw new Error('Máy đổi bộ mã hoá giữa chừng, bấm Xuất video để làm lại từ đầu');
         if (e.code !== 'NO_AUDIO_ENCODER' && e.code !== 'NO_MUXER') throw e;
         progress(30, 'Đang quay theo thời gian thực để giữ nhạc và giọng đọc — giữ màn hình mở, đừng chuyển app…');
         blob = await exportRealtime({ tl: xtl, width, height, fps: 30, cache, audioBuffer: audio, audioCtx: exportAudioCtx, onProgress, signal, onTick: tt => syncClips(xtl, tt, true) });
@@ -1818,6 +1964,7 @@ async function doExport() {
     $('exportBtn').disabled = false; $('stepNext').disabled = false;
     $('exportBox').hidden = true;
     try { await wake?.release(); } catch { /* bỏ qua */ }
+    checkExportJob(); // lỗi giữa chừng: hiện nút "Tiếp tục xuất" từ chỗ đã lưu
   }
 }
 function saveResult() {
@@ -1909,7 +2056,7 @@ function updateQuick() {
 }
 let lastFresh = null;
 async function stepNext() {
-  if (step === 4) { doExport(); return; }
+  if (step === 4) { if (!$('resumeBox').hidden) resumeExport(); else doExport(); return; }
   if (step === 1) { if (state.pois.length) showStep(2); else await scan(); return; }
   if (step === 2) { showStep(state.pois.length ? 3 : 1); return; }
   if (step === 3) {
@@ -3065,7 +3212,11 @@ function init() {
     dirty = true;
   });
 
-  $('exportBtn').addEventListener('click', doExport);
+  $('exportBtn').addEventListener('click', () => doExport());
+  $('resumeBtn').addEventListener('click', resumeExport);
+  $('resumeDrop').addEventListener('click', async () => { await xjobClear(); $('resumeBox').hidden = true; toast('Đã bỏ video xuất dở.'); });
+  // Mở lại app sau khi bị tắt giữa lúc xuất: hiện nút Tiếp tục xuất ở bước 4
+  setTimeout(() => checkExportJob().then(j => { if (j && !exporting) { showStep(4); toast(`Video đang xuất dở ${Math.round(100 * j.nextFrame / j.frames)}%. Bấm "Tiếp tục xuất" để làm tiếp.`, 6000); } }), 1200);
   // Các bước
   // Link cũ "Thử với căn ví dụ" đã thay bằng khung "Thử ngay" (#sampleBox, trySample)
   $('stepper').addEventListener('click', e => { const b = e.target.closest('[data-go]'); if (b) showStep(+b.dataset.go); });
