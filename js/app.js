@@ -467,8 +467,38 @@ function frame(now) {
   }
 }
 
+// ---------- Mở khoá âm thanh trên iPhone ----------
+// Safari chỉ cho Web Audio chạy khi resume() được gọi NGAY trong lúc khách chạm (không qua await), và Web Audio
+// bị tắt tiếng khi gạt nút im lặng. Nên: gọi primeAudio() đồng bộ trong mọi thao tác chạm/bấm phát, đặt phiên âm thanh
+// kiểu "playback" (iOS 16.4+) và phát kèm một file <audio> im lặng lặp lại để iPhone bật loa cả khi đang để im lặng.
+let silentEl = null;
+function silentWavUrl() {
+  const n = 800, buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+  const w = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true); v.setUint32(24, 8000, true); v.setUint32(28, 8000, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true);
+  w(36, 'data'); v.setUint32(40, n, true);
+  for (let i = 0; i < n; i++) v.setUint8(44 + i, 128);
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+function primeAudio() {
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* trình duyệt cũ */ }
+  try {
+    audioCtx ||= new AudioContext();
+    if (audioCtx.state !== 'running') audioCtx.resume().catch(() => {});
+    const b = audioCtx.createBuffer(1, 1, audioCtx.sampleRate);
+    const s = audioCtx.createBufferSource();
+    s.buffer = b; s.connect(audioCtx.destination); s.start(0);
+  } catch { /* bỏ qua */ }
+  try {
+    if (!silentEl) { silentEl = new Audio(silentWavUrl()); silentEl.loop = true; silentEl.setAttribute('playsinline', ''); }
+    if (silentEl.paused) silentEl.play().catch(() => {});
+  } catch { /* bỏ qua */ }
+}
+
 async function play() {
   if (!tl) return;
+  primeAudio(); // phải chạy trước mọi await để còn trong lúc khách chạm
   if (editing) toggleEdit(false);
   if (t >= tl.duration - 0.05) t = 0;
   playing = true;
@@ -483,6 +513,7 @@ function pause() {
   $('playBtn').classList.remove('playing');
   $('playBtn').setAttribute('aria-label', 'Phát xem trước');
   stopAudio();
+  try { silentEl?.pause(); } catch { /* bỏ qua */ }
   updateBigPlay();
 }
 
@@ -495,7 +526,9 @@ async function startAudio() {
   const buf = await ensureMix();
   if (!buf || !playing || gen !== audioGen) return;
   audioCtx ||= new AudioContext();
-  if (audioCtx.state === 'suspended') await audioCtx.resume();
+  // Chưa được mở khoá (chưa chạm vào trang): đừng chờ mãi — để im, lần chạm sau primeAudio() mở rồi phát lại đúng chỗ
+  if (audioCtx.state !== 'running') await Promise.race([audioCtx.resume().catch(() => {}), new Promise(r => setTimeout(r, 400))]);
+  if (audioCtx.state !== 'running') return;
   if (!playing || gen !== audioGen) return;
   const src = audioCtx.createBufferSource();
   src.buffer = buf;
@@ -763,13 +796,21 @@ function autoPlaySample() {
   const snd = $('sampleSound');
   const active = navigator.userActivation ? navigator.userActivation.hasBeenActive : false;
   if (snd) snd.hidden = active;
+  // iPhone chỉ tính là "chạm" ở touchend/click (touchstart, kéo cuộn không mở được âm thanh) → nghe nhiều sự kiện,
+  // mở khoá đồng bộ ngay trong sự kiện, chỉ gỡ lắng nghe khi âm thanh đã thật sự chạy.
+  const EVS = ['touchend', 'pointerup', 'click', 'keydown'];
+  let started = false;
   const unlock = () => {
-    if (snd) snd.hidden = true;
-    for (const ev of ['pointerdown', 'keydown', 'touchstart']) document.removeEventListener(ev, unlock, true);
-    if (playing) startAudio(); // đang phát: bật tiếng đúng chỗ đang chạy (không tự bấm phát/dừng để khỏi đè nút Phát)
+    primeAudio();
+    if (playing && !started) { started = true; startAudio(); } // đang phát: bật tiếng đúng chỗ đang chạy
+    setTimeout(() => {
+      if (!audioCtx || audioCtx.state !== 'running') { started = false; return; }
+      if (snd) snd.hidden = true;
+      for (const ev of EVS) document.removeEventListener(ev, unlock, true);
+    }, 450);
   };
   if (snd) snd.onclick = () => { if (!playing) play(); };
-  if (!active) for (const ev of ['pointerdown', 'keydown', 'touchstart']) document.addEventListener(ev, unlock, true);
+  if (!active) for (const ev of EVS) document.addEventListener(ev, unlock, true);
   t = 0; updateTimeUi();
   setTimeout(() => { if (!playing && !editing && state.sample) play(); }, 350);
   toast('Video mẫu đang phát. Dán toạ độ căn của anh/chị để làm video thật.', 5000);
