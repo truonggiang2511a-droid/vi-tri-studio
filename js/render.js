@@ -629,7 +629,9 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   const INTRO_FLY = 5.0, INTRO_REST = AREA ? 1.0 : 0.4;
   // 24/10 tối (Giang): có video thực tế thì MỞ ĐẦU bằng đoạn đầu (mặt tiền) chiếu TRỌN đoạn (2,6–12 s, không co theo nhịp),
   // thẻ giá hiện đè lên, câu mở đầu đọc khớp trên video; xong mới bay vào bản đồ (cảnh bay không còn lời đọc riêng).
-  const frontClip = (scene.clips || []).filter(c => c && c.el && c.dur > 0.3)[0] || null;
+  // Chỉ đoạn gắn nhãn "Mặt tiền" (hoặc chưa có nhãn — bản cũ) mới mở đầu video; khách gắn phòng khác thì mọi đoạn dồn xuống cuối.
+  const clip0 = (scene.clips || []).filter(c => c && c.el && c.dur > 0.3)[0] || null;
+  const frontClip = clip0 && (!clip0.room || clip0.room === 'mattien') ? clip0 : null;
   if (frontClip) raw.push({ type: 'front', d: Math.max(2.6, Math.min(12, frontClip.dur)) * sp, hold: 0, hookLen: HOOK_LEN, to: camRegion, move: 1, vkey: 'intro' });
   raw.push({ type: 'intro', d: INTRO_FLY + INTRO_REST, hold: 0, hookLen: frontClip ? 0 : HOOK_LEN, to: camMid, move: INTRO_FLY / (INTRO_FLY + INTRO_REST), drift: 0.02, vkey: frontClip ? 'introMap' : 'intro' });
   if (camProv) raw.push({ type: 'province', d: 4.4, to: camProv, move: 0.75, drift: 0.015, vkey: 'province' });
@@ -640,11 +642,12 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   // 24/10 tối (Giang): đoạn ĐẦU (khách quay mặt tiền) hiện 2–3 s đầu video (nền thẻ giá, hoặc toàn khung nếu không có giá);
   // các đoạn còn lại dồn xuống CUỐI, sau khi bản đồ đã vẽ xong (sau cảnh tổng kết, trước ảnh thực tế) — giống kịch bản của ảnh.
   const clips = (scene.clips || []).filter(c => c && c.el && c.dur > 0.3).slice(0, CLIP_MAX);
-  const CLIP_SLOTS = clips.map((c, i) => (i ? 'after' : 'open'));
-  let clipNext = clips.length ? 1 : 0;
+  const clipStart = frontClip && clips.length ? 1 : 0;
+  const CLIP_SLOTS = clips.map((c, i) => (i < clipStart ? 'open' : 'after'));
+  let clipNext = clipStart;
   const pushClips = slot => {
     while (clipNext < clips.length && CLIP_SLOTS[clipNext] === slot) {
-      raw.push({ type: 'clip', d: CLIP_D, clip: clipNext, to: raw[raw.length - 1].to, move: 1, vkey: clipNext === 1 ? 'reel' : 'clip' + clipNext });
+      raw.push({ type: 'clip', d: CLIP_D, clip: clipNext, to: raw[raw.length - 1].to, move: 1, vkey: clipNext === clipStart ? 'reel' : 'clip' + clipNext });
       clipNext++;
     }
   };
@@ -765,13 +768,16 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   while (clipNext < clips.length && CLIP_SLOTS[clipNext] === 'mid') CLIP_SLOTS[clipNext] = 'sum';
   pushClips('sum');
   if (pois.length || boundary) raw.push({ type: 'summary', d: 5.4, to: camSummary, move: 0.5, push: 0.14, side: 1, arc: 1.0, vkey: 'summary' });
-  pushClips('after');
-  // Ảnh thực tế căn nhà: phủ kín khung, camera bản đồ phía dưới bay dần về căn nhà để nối vào cảnh kết
-  const photos = (scene.photos || []).filter(im => im && im.width && im.height).slice(0, 6);
-  if (photos.length) raw.push({ type: 'photos', d: Math.max(3.2, photos.length * 2.4 + 0.6), to: camEnd, move: 1, vkey: 'photos' });
-  for (let i = clipNext; i < clips.length; i++) CLIP_SLOTS[i] = 'end';
-  pushClips('end');
+  // 24/10 tối (Giang): cảnh kết (kêu gọi đi xem nhà) đứng NGAY sau tổng kết; video + ảnh thực tế dồn hết xuống CUỐI video,
+  // chiếu liền nhau (không chen bản đồ): video phụ (đoạn đầu có câu mời xem) → ảnh. Khách gắn nhãn phòng, app xếp
+  // mặt tiền → phòng khách → bếp → phòng ngủ → toilet.
   raw.push({ type: 'outro', d: 3.4, to: camEnd, move: 0.65, push: 0.2, side: -1, arc: 1.0, vkey: 'outro' });
+  for (let i = clipNext; i < clips.length; i++) CLIP_SLOTS[i] = 'after';
+  pushClips('after');
+  const photoLabels = scene.photoLabels || [];
+  const photoItems = (scene.photos || []).map((im, i) => ({ im, label: photoLabels[i] || '' })).filter(x => x.im && x.im.width && x.im.height).slice(0, 6);
+  const photos = photoItems.map(x => x.im);
+  if (photos.length) raw.push({ type: 'photos', d: Math.max(3.2, photos.length * 2.4 + 0.6), to: camEnd, move: 1, vkey: 'photos' });
 
   let total = raw.reduce((s, p) => s + p.d, 0) / sp;
   let k = 1 / sp;
@@ -807,7 +813,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     fmt: fmtKey, LW, LH, safe, duration: t, phases, scene, panelH,
     G: groundDims(LW, LH),
     intro: first('intro'), house: first('house'), overview: first('overview'), boundaryPh: first('boundary'),
-    summary: first('summary'), outro: first('outro'), photosPh: first('photos'), isoPh: first('iso'), regionPh: first('region'), infraPh: first('infra'), anchors, infra, photos, radarPh: first('radar'), provPh: first('province'), flow: radar ? 'radar' : 'lanluot',
+    summary: first('summary'), outro: first('outro'), photosPh: first('photos'), isoPh: first('iso'), regionPh: first('region'), infraPh: first('infra'), anchors, infra, photos, photoLabels: photoItems.map(x => x.label), radarPh: first('radar'), provPh: first('province'), flow: radar ? 'radar' : 'lanluot',
     roadPhases: phases.filter(p => p.type === 'road'), poiPhases: phases.filter(p => p.type === 'poi'),
     clips, clipWins: phases.filter(p => p.type === 'clip').map(p => ({ clip: p.clip, t0: p.t0, t1: p.t1 })),
     pois, roads, boundary, captions, hook, lot, lotArea: lot ? lotAreaM2(lot) : 0,
@@ -2210,14 +2216,18 @@ export function clipTime(c, w, t) {
 const clipReady = el => el && (el.readyState === undefined || el.readyState >= 2) && (el.videoWidth || el.width);
 function drawClips(ctx, tl, t, logo) {
   if (!tl.clipWins || !tl.clipWins.length) return;
-  const w = tl.clipWins.find(x => !x.hook && t >= x.t0 && t < x.t1);
+  const w = tl.clipWins.find(x => !x.hook && t >= x.t0 && (t < x.t1 || x.t1 >= tl.duration - 0.05));
   if (!w) return;
   const el = tl.clips[w.clip] && tl.clips[w.clip].el;
   if (!clipReady(el)) return;
   const { LW, LH, safe } = tl;
   const D = w.t1 - w.t0, lt = t - w.t0;
   const fade = Math.min(0.35, D * 0.18);
-  const A = Math.min(w.open ? 1 : clamp01(lt / fade), clamp01((w.t1 - t) / (w.open ? 0.5 : fade)));
+  // Các đoạn video/ảnh cuối chiếu liền nhau: đoạn nối tiếp đoạn khác thì không mờ (không lộ bản đồ), đoạn cuối video giữ tới hết
+  const ph = tl.photosPh;
+  const adjIn = tl.clipWins.some(x => x !== w && Math.abs(x.t1 - w.t0) < 0.06);
+  const adjOut = tl.clipWins.some(x => x !== w && Math.abs(x.t0 - w.t1) < 0.06) || (ph && Math.abs(ph.t0 - w.t1) < 0.06) || w.t1 >= tl.duration - 0.05;
+  const A = Math.min(w.open || adjIn ? 1 : clamp01(lt / fade), adjOut ? 1 : clamp01((w.t1 - t) / (w.open ? 0.5 : fade)));
   if (A <= 0) return;
   ctx.save();
   ctx.globalAlpha = A;
@@ -2237,7 +2247,7 @@ function drawClips(ctx, tl, t, logo) {
   const la = Math.min(A, clamp01((1.8 - lt) / 0.35 + 1) * clamp01(lt / 0.25));
   if (la > 0.01) {
     ctx.globalAlpha = la;
-    const label = 'VIDEO THỰC TẾ';
+    const label = tl.clips[w.clip]?.label ? String(tl.clips[w.clip].label).toUpperCase() : 'VIDEO THỰC TẾ';
     ctx.font = `800 13px ${FONT}`;
     const lw = spacedWidth(ctx, label, 1.2) + 40;
     const top = safe.top + 6, lx = safe.x;
@@ -2289,12 +2299,16 @@ function photoLayer(ctx, tl, img, x, y, w, h, k, dir, alpha) {
 }
 function drawPhotos(ctx, tl, t, logo) {
   const ph = tl.photosPh;
-  if (!ph || t < ph.t0 || t >= ph.t1) return 0;
+  // Ảnh là cảnh cuối video: khung cuối cùng (t = tổng thời lượng) vẫn là ảnh, không lộ bản đồ
+  if (!ph || t < ph.t0 || (t >= ph.t1 && ph.t1 < tl.duration - 0.05)) return 0;
   const { LW, LH, safe } = tl;
   const n = tl.photos.length;
   const D = ph.t1 - ph.t0;
   const fade = 0.55;
-  const A = Math.min(clamp01((t - ph.t0) / fade), clamp01((ph.t1 - t) / fade));
+  // Liền sau video thực tế thì không mờ vào (khỏi lộ bản đồ); ảnh là cảnh cuối video thì giữ tới hết
+  const adjIn = (tl.clipWins || []).some(w => Math.abs(w.t1 - ph.t0) < 0.06);
+  const adjOut = ph.t1 >= tl.duration - 0.05;
+  const A = Math.min(adjIn ? 1 : clamp01((t - ph.t0) / fade), adjOut ? 1 : clamp01((ph.t1 - t) / fade));
   if (A <= 0) return 0;
   const slot = (D - 0.4) / n;
   const lt = t - ph.t0;
@@ -2323,7 +2337,7 @@ function drawPhotos(ctx, tl, t, logo) {
   ctx.fillStyle = bg; ctx.fillRect(0, LH - safe.bottom - 120, LW, safe.bottom + 120);
   // Nhãn "Hình ảnh thực tế" + số thứ tự ảnh
   const top = safe.top + 6;
-  const label = 'HÌNH ẢNH THỰC TẾ';
+  const label = String((tl.photoLabels || [])[i] || 'HÌNH ẢNH THỰC TẾ').toUpperCase();
   ctx.font = `800 13px ${FONT}`;
   const lw = spacedWidth(ctx, label, 1.2) + 26;
   const maxX = logo ? logo.x - 10 : LW - safe.x;
@@ -3317,7 +3331,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   const infoTop = infoEndA > 0 ? infoBox(tl, 'top', logo) : null;
 
   // Những thẻ đang chiếm đáy khung -> phụ đề nằm phía trên
-  const sumEnd = tl.photosPh ? tl.photosPh.t0 + 0.6 : ou.t0 + 0.4;
+  const sumEnd = ou.t0 + 0.4; // ảnh/video thực tế nay nằm sau cảnh kết
   const sumP = sm ? (t < sm.t0 ? 0 : (t < sumEnd ? clamp01((t - sm.t0 - 0.3 * (sm.t1 - sm.t0)) / 0.9) : Math.max(0, 1 - (t - sumEnd) / 0.4))) : 0;
   const brandA = fadeWin(t, ou.t0 + 0.8, T + 10, 0.5, 0.4);
   const occ = { top: Infinity, rightPanel: 0 };
