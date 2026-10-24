@@ -45,6 +45,10 @@ export function sfxEvents(tl) {
       case 'photos':
         add(p.t0, 'whoosh', 0.6, 1.2);
         break;
+      case 'clip': // video thực tế lồng vào giữa: lướt vào, lướt ra (khớp drawClips trong render.js)
+        add(p.t0, 'whoosh', 0.55, 1.1);
+        add(p.t1 - 0.25, 'whoosh', 0.35, 0.9);
+        break;
       case 'boundary':
         add(p.t0, 'whoosh', 0.65, 1.4);
         add(p.t0 + 0.16 * d, 'shimmer', 0.42, 0.44 * d);

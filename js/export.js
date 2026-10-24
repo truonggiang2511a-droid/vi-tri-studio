@@ -141,7 +141,7 @@ export function canEncodeMp4() {
   return typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
 }
 
-export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffer, onProgress, signal }) {
+export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffer, onProgress, signal, prepFrame = null }) {
   const scale = width / tl.LW;
   const pv = await pickVideoCodec(width, height, fps);
   if (!pv) throw new Error('Máy này không mã hoá được video ở độ phân giải ' + width + 'x' + height + '. Thử chất lượng 720p.');
@@ -182,6 +182,9 @@ export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffe
     for (let i = 0; i < frames; i++) {
       if (signal?.aborted) throw new DOMException('Đã huỷ', 'AbortError');
       if (encErr) throw encErr;
+      // Video thực tế: tua đúng khung hình trong file trước khi vẽ (chỉ ở các cảnh có video)
+      const pf = prepFrame && prepFrame(i / fps);
+      if (pf) await pf;
       gr.draw(tl, i / fps, { cache, scale, request: false });
       const frame = new VideoFrame(canvas, { timestamp: Math.round(i * us), duration: Math.round(us) });
       venc.encode(frame, { keyFrame: i % (fps * 2) === 0 });
@@ -242,7 +245,7 @@ function hasAudioTrack(b) {
 }
 
 // Dự phòng: phát thời gian thực và ghi lại canvas
-export async function exportRealtime({ tl, width, height, fps = 30, cache, audioBuffer, audioCtx = null, onProgress, signal }) {
+export async function exportRealtime({ tl, width, height, fps = 30, cache, audioBuffer, audioCtx = null, onProgress, signal, onTick = null }) {
   const scale = width / tl.LW;
   const gr = gradedRenderer(width, height);
   const canvas = gr.canvas;
@@ -278,6 +281,7 @@ export async function exportRealtime({ tl, width, height, fps = 30, cache, audio
       const tick = () => {
         if (signal?.aborted) { reject(new DOMException('Đã huỷ', 'AbortError')); return; }
         const t = (performance.now() - t0) / 1000;
+        onTick?.(Math.min(t, tl.duration));
         gr.draw(tl, Math.min(t, tl.duration), { cache, scale });
         onProgress?.('frames', Math.min(t, tl.duration), tl.duration);
         if (t >= tl.duration) resolve(); else requestAnimationFrame(tick);

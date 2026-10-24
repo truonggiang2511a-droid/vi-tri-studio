@@ -594,6 +594,18 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   // Có lô đất / đường quanh nhà: giữ cảnh cận lâu hơn cho khách nhìn kỹ rồi mới lùi ra bán kính
   const hasStreets = !!(scene.streets && scene.streets.lines && scene.streets.lines.length);
   raw.push({ type: 'house', d: lot ? 7.4 : 6.0, to: camHouse, move: camProv ? 0.5 : 0.6, drift: 0.02, orbit: true, vkey: 'house' });
+  // Video thực tế căn nhà (khách quay, không MC): mỗi đoạn một cảnh ~2,8 s lồng vào giữa các cảnh bản đồ.
+  // Thứ tự chèn theo số đoạn: sau cảnh căn nhà → giữa các tiện ích → trước cảnh tổng kết → trước cảnh kết.
+  const clips = (scene.clips || []).filter(c => c && c.el && c.dur > 0.3).slice(0, CLIP_MAX);
+  const CLIP_SLOTS = [[], ['house'], ['house', 'sum'], ['house', 'mid', 'sum'], ['house', 'house', 'mid', 'sum'], ['house', 'house', 'mid', 'sum', 'end']][clips.length];
+  let clipNext = 0;
+  const pushClips = slot => {
+    while (clipNext < clips.length && CLIP_SLOTS[clipNext] === slot) {
+      raw.push({ type: 'clip', d: CLIP_D, clip: clipNext, to: raw[raw.length - 1].to, move: 1, vkey: 'clip' + clipNext });
+      clipNext++;
+    }
+  };
+  pushClips('house');
   raw.push({ type: 'overview', d: lot ? 4.2 : 3.6, to: camOverview, move: lot ? 0.9 : 0.8, drift: 0.02, vkey: 'overview' });
   roads.forEach((r, i) => raw.push({ type: 'road', d: (r.cam ? 3.6 : 3.1) + (r.hi ? 1.0 : 0), to: r.cam || camRoads, move: i === 0 || r.cam ? 0.6 : 1, drift: i === 0 ? 0 : 0.02, road: i, vkey: 'road:' + r.id }));
   if (boundary) raw.push({ type: 'boundary', d: 7.6, to: camBoundary, move: 0.42, drift: 0.015, vkey: 'boundary' });
@@ -625,6 +637,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
       const cam = fitCam([H, p], LW, LH,
         { left: safe.x + 70, right: safe.x + 70, top: safe.top + 120, bottom: safe.bottom + 110 }, PITCH.poi, 12, 17.6);
       raw.push({ type: 'poi', d: 3.4, to: cam, move: 1, drift: 0.02, poi: i, vkey: 'poi:' + p.id, radar: true });
+      if (i === Math.ceil(pois.length / 2) - 1 && pois.length >= 2) pushClips('mid');
     });
   }
   if (!radar && !spokes) pois.forEach((p, i) => {
@@ -636,11 +649,17 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     const cam = fitCam(pts, LW, LH,
       { left: safe.x + 56, right: safe.x + 56, top: safe.top + 110, bottom: safe.bottom + 60 }, PITCH.poi, 11, 17.6);
     raw.push({ type: 'poi', d: 3.5, to: cam, move: 0.6, drift: 0.02, poi: i, vkey: 'poi:' + p.id });
+    if (i === Math.ceil(pois.length / 2) - 1 && pois.length >= 2) pushClips('mid');
   });
+  // Không đủ tiện ích để chèn giữa: dời đoạn "giữa" xuống trước cảnh tổng kết
+  while (clipNext < clips.length && CLIP_SLOTS[clipNext] === 'mid') CLIP_SLOTS[clipNext] = 'sum';
+  pushClips('sum');
   if (pois.length || boundary) raw.push({ type: 'summary', d: 5.6, to: camSummary, move: 0.5, drift: 0.012, vkey: 'summary' });
   // Ảnh thực tế căn nhà: phủ kín khung, camera bản đồ phía dưới bay dần về căn nhà để nối vào cảnh kết
   const photos = (scene.photos || []).filter(im => im && im.width && im.height).slice(0, 6);
   if (photos.length) raw.push({ type: 'photos', d: Math.max(3.2, photos.length * 2.4 + 0.6), to: camEnd, move: 1, vkey: 'photos' });
+  for (let i = clipNext; i < clips.length; i++) CLIP_SLOTS[i] = 'end';
+  pushClips('end');
   raw.push({ type: 'outro', d: 3.4, to: camEnd, move: 0.7, drift: 0.02, vkey: 'outro' });
 
   let total = raw.reduce((s, p) => s + p.d, 0) / sp;
@@ -679,9 +698,12 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     intro: first('intro'), house: first('house'), overview: first('overview'), boundaryPh: first('boundary'),
     summary: first('summary'), outro: first('outro'), photosPh: first('photos'), photos, radarPh: first('radar'), provPh: first('province'), flow: radar ? 'radar' : 'lanluot',
     roadPhases: phases.filter(p => p.type === 'road'), poiPhases: phases.filter(p => p.type === 'poi'),
+    clips, clipWins: phases.filter(p => p.type === 'clip').map(p => ({ clip: p.clip, t0: p.t0, t1: p.t1 })),
     pois, roads, boundary, captions, hook, lot, lotArea: lot ? lotAreaM2(lot) : 0,
   };
   tl.hookEnd = hook ? tl.intro.t0 + tl.intro.hookLen : 0;
+  // Có video thực tế: đoạn đầu làm nền chuyển động cho thẻ giá mở đầu (ưu tiên hơn ảnh tĩnh)
+  if (clips.length && hook) tl.clipWins.unshift({ clip: 0, t0: tl.intro.t0, t1: tl.hookEnd + 0.4, hook: true });
   tl.roadsEnd = tl.roadPhases.length ? tl.roadPhases[tl.roadPhases.length - 1].t1 : tl.overview.t1;
   tl.roadLabels = camRoads ? placeRoadLabels(tl, camRoads, gi => !tl.roads[gi].cam) : [];
   tl.roads.forEach((r, gi) => { if (r.cam) tl.roadLabels.push(...placeRoadLabels(tl, r.cam, g => g === gi)); });
@@ -1801,10 +1823,71 @@ function drawCaption(ctx, L, alpha) {
   });
   ctx.restore();
 }
+// ---------- Video thực tế căn nhà ----------
+export const CLIP_MAX = 5;
+const CLIP_D = 2.8;
+// Thời điểm trong file video ứng với giây t của cửa sổ chiếu w. Lấy đoạn giữa file (bỏ lúc bắt đầu/kết thúc quay hay rung),
+// file ngắn hơn cảnh thì chiếu chậm lại (≥ 0,5×) cho đủ thời lượng. Cửa sổ nền thẻ giá lấy đoạn sau (~62%) để không trùng.
+export function clipTime(c, w, t) {
+  const D = Math.max(0.1, w.t1 - w.t0), lt = Math.max(0, t - w.t0);
+  let start, rate = 1;
+  if (c.dur >= D + 0.6) {
+    start = w.hook ? Math.min(c.dur - D - 0.3, c.dur * 0.62) : Math.min(c.dur - D - 0.2, Math.max(0.4, (c.dur - D) * 0.45));
+    start = Math.max(0, start);
+  } else { start = 0; rate = Math.max(0.5, Math.min(1, (c.dur - 0.1) / D)); }
+  return { time: Math.max(0, Math.min(c.dur - 0.05, start + lt * rate)), rate };
+}
+const clipReady = el => el && (el.readyState === undefined || el.readyState >= 2) && (el.videoWidth || el.width);
+function drawClips(ctx, tl, t, logo) {
+  if (!tl.clipWins || !tl.clipWins.length) return;
+  const w = tl.clipWins.find(x => !x.hook && t >= x.t0 && t < x.t1);
+  if (!w) return;
+  const el = tl.clips[w.clip] && tl.clips[w.clip].el;
+  if (!clipReady(el)) return;
+  const { LW, LH, safe } = tl;
+  const D = w.t1 - w.t0, lt = t - w.t0;
+  const fade = Math.min(0.35, D * 0.18);
+  const A = Math.min(clamp01(lt / fade), clamp01((w.t1 - t) / fade));
+  if (A <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = A;
+  ctx.fillStyle = '#0c1513';
+  ctx.fillRect(0, 0, LW, LH);
+  ctx.restore();
+  photoLayer(ctx, tl, el, safe.x, safe.top + 46, LW - safe.x * 2, LH - safe.top - safe.bottom - 70, clamp01(lt / D), w.clip % 2 ? -1 : 1, A);
+  // Lớp tối trên/dưới + nhãn "VIDEO THỰC TẾ" (1,8 s đầu mỗi đoạn)
+  ctx.save();
+  ctx.globalAlpha = A;
+  const tg = ctx.createLinearGradient(0, 0, 0, safe.top + 110);
+  tg.addColorStop(0, 'rgba(0,0,0,0.55)'); tg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = tg; ctx.fillRect(0, 0, LW, safe.top + 110);
+  const bg = ctx.createLinearGradient(0, LH - safe.bottom - 120, 0, LH);
+  bg.addColorStop(0, 'rgba(0,0,0,0)'); bg.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = bg; ctx.fillRect(0, LH - safe.bottom - 120, LW, safe.bottom + 120);
+  const la = Math.min(A, clamp01((1.8 - lt) / 0.35 + 1) * clamp01(lt / 0.25));
+  if (la > 0.01) {
+    ctx.globalAlpha = la;
+    const label = 'VIDEO THỰC TẾ';
+    ctx.font = `800 13px ${FONT}`;
+    const lw = spacedWidth(ctx, label, 1.2) + 40;
+    const top = safe.top + 6, lx = safe.x;
+    roundRect(ctx, lx, top, lw, 30, 15);
+    ctx.fillStyle = GOLD; ctx.fill();
+    ctx.fillStyle = '#e8322b';
+    ctx.beginPath(); ctx.arc(lx + 15, top + 15, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#10161d'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    fillSpaced(ctx, label, lx + 7 + lw / 2, top + 15.5, 1.2);
+  }
+  ctx.restore();
+}
+
 // ---------- Ảnh thực tế căn nhà ----------
 // Mỗi ảnh chạy chậm (phóng/trượt nhẹ), chuyển ảnh mờ dần. Ảnh lệch khung nhiều thì đặt trên nền chính ảnh đó làm mờ.
 function photoLayer(ctx, tl, img, x, y, w, h, k, dir, alpha) {
   const { LW, LH } = tl;
+  // Ảnh hoặc khung video (video dùng videoWidth/videoHeight)
+  if (img.videoWidth) img = { src: img, width: img.videoWidth, height: img.videoHeight };
+  else img = { src: img, width: img.width, height: img.height };
   const ar = img.width / img.height, fr = LW / LH;
   const close = Math.max(ar, fr) / Math.min(ar, fr) < 1.3;
   ctx.save();
@@ -1814,7 +1897,7 @@ function photoLayer(ctx, tl, img, x, y, w, h, k, dir, alpha) {
     // Nền: ảnh phủ kín, làm mờ + tối
     const cw = img.width * cover * 1.08, ch = img.height * cover * 1.08;
     try { ctx.filter = 'blur(18px) brightness(0.55)'; } catch { /* trình duyệt không hỗ trợ */ }
-    ctx.drawImage(img, (LW - cw) / 2, (LH - ch) / 2, cw, ch);
+    ctx.drawImage(img.src, (LW - cw) / 2, (LH - ch) / 2, cw, ch);
     ctx.filter = 'none';
     ctx.fillStyle = 'rgba(6,12,14,0.35)';
     ctx.fillRect(0, 0, LW, LH);
@@ -1824,13 +1907,13 @@ function photoLayer(ctx, tl, img, x, y, w, h, k, dir, alpha) {
     ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 6;
     roundRect(ctx, ix, iy, iw, ih, 14);
     ctx.save(); ctx.clip(); ctx.shadowColor = 'transparent';
-    ctx.drawImage(img, ix, iy, iw, ih);
+    ctx.drawImage(img.src, ix, iy, iw, ih);
     ctx.restore();
   } else {
     const z = cover * (1.04 + 0.1 * k);
     const iw = img.width * z, ih = img.height * z;
     const ox = (iw - LW) / 2, oy = (ih - LH) / 2;
-    ctx.drawImage(img, -ox + dir * ox * (k - 0.5), -oy - oy * 0.4 * (k - 0.5), iw, ih);
+    ctx.drawImage(img.src, -ox + dir * ox * (k - 0.5), -oy - oy * 0.4 * (k - 0.5), iw, ih);
   }
   ctx.restore();
 }
@@ -1901,8 +1984,10 @@ function drawHook(ctx, tl, t) {
   const A = t < tl.hookEnd - 0.45 ? clamp01(lt / 0.25 + 0.6) : clamp01((tl.hookEnd + 0.4 - t) / 0.85);
   if (A <= 0) return;
   // Nền: ảnh đẹp nhất của căn (ảnh đầu tiên), không có ảnh thì làm tối bản đồ
-  if (tl.photos && tl.photos.length) {
-    photoLayer(ctx, tl, tl.photos[0], 0, 0, LW, LH, clamp01(lt / (tl.hookEnd - t0 + 0.4)), 1, A);
+  const hw = tl.clipWins && tl.clipWins.find(x => x.hook);
+  const hookClip = hw && tl.clips[hw.clip] && clipReady(tl.clips[hw.clip].el) ? tl.clips[hw.clip].el : null;
+  if (hookClip || (tl.photos && tl.photos.length)) {
+    photoLayer(ctx, tl, hookClip || tl.photos[0], 0, 0, LW, LH, clamp01(lt / (tl.hookEnd - t0 + 0.4)), 1, A);
     ctx.save(); ctx.globalAlpha = A * 0.42; ctx.fillStyle = '#000'; ctx.fillRect(0, 0, LW, LH); ctx.restore();
   } else {
     // Làm tối vừa đủ để chữ nổi nhưng vẫn thấy bản đồ đang bay vào phía sau
@@ -2907,6 +2992,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   drawInfo(ctx, infoBottom, infoHouseA);
   drawInfo(ctx, infoTop, infoEndA);
   drawPhotos(ctx, tl, t, logo);
+  drawClips(ctx, tl, t, logo);
   drawHook(ctx, tl, t);
   drawBars(ctx, tl, t);
   drawLogo(ctx, tl, logo);

@@ -4,6 +4,7 @@ import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, g
 import { ICON_PATHS } from './icons.js';
 import {
   FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, HI_THEMES, STYLES, BASES,
+  CLIP_MAX, clipTime,
 } from './render.js';
 import { sfxEvents } from './sfx.js';
 import { stretchBuffer } from './stretch.js';
@@ -89,7 +90,7 @@ const state = {
   useBoundary: true,
   scannedAt: null,
 };
-const media = { music: null, voice: null, musicName: '', voiceName: '', mixed: null, mixKey: '', voiceSegs: new Map(), logo: null, photos: [] };
+const media = { music: null, voice: null, musicName: '', voiceName: '', mixed: null, mixKey: '', voiceSegs: new Map(), logo: null, photos: [], clips: [] };
 const LOGO_STORE = 'vitri.logo.v1';
 const ai = { tts: false, ttsProvider: null, script: false, gated: true, voices: null };
 
@@ -290,6 +291,7 @@ function buildScene() {
     logo: media.logo,
     logoBg: state.logoBg,
     photos: media.photos.map(p => p.img),
+    clips: media.clips.map(c => ({ el: c.el, dur: c.dur })),
     info: { price: state.price, area: state.area, thoCu: state.thoCu, beds: state.beds, legal: state.legal },
     radiusKm: state.radiusKm,
     speed: state.speed,
@@ -384,6 +386,7 @@ window.__vitri = { get tl() { return tl; }, get t() { return t; }, state, scanAr
 
 function rebuild() {
   if (photoKey(state.house) !== photoHouse) { restorePhotos(); showPageResult(); }
+  if (photoKey(state.house) !== clipHouse) restoreClips();
   if (!state.house) return;
   tl = buildTimeline(buildScene(), state.fmt, timelineOpts());
   if (t > tl.duration) t = 0;
@@ -458,6 +461,7 @@ function frame(now) {
   if (playing || dirty) {
     // Đang dừng ở đầu video: hiện khung có tiêu đề làm ảnh bìa thay vì khung trống
     const rt = !playing && t === 0 && tl.intro ? Math.min(1.6, (tl.intro.t1 - tl.intro.t0) * 0.35) : t;
+    if (!exporting) syncClips(tl, rt, playing);
     render(ctx, tl, rt, { cache, scale, request: true });
     dirty = false;
   }
@@ -701,8 +705,9 @@ function autoPlaySample() {
   const unlock = () => {
     if (snd) snd.hidden = true;
     for (const ev of ['pointerdown', 'keydown', 'touchstart']) document.removeEventListener(ev, unlock, true);
-    if (playing) startAudio(); else play();
+    if (playing) startAudio(); // đang phát: bật tiếng đúng chỗ đang chạy (không tự bấm phát/dừng để khỏi đè nút Phát)
   };
+  if (snd) snd.onclick = () => { if (!playing) play(); };
   if (!active) for (const ev of ['pointerdown', 'keydown', 'touchstart']) document.addEventListener(ev, unlock, true);
   t = 0; updateTimeUi();
   setTimeout(() => { if (!playing && !editing && state.sample) play(); }, 350);
@@ -1622,15 +1627,15 @@ async function doExport() {
     };
     if (canEncodeMp4()) {
       try {
-        blob = await exportMp4({ tl: xtl, width, height, fps: 30, cache, audioBuffer: audio, onProgress, signal });
+        blob = await exportMp4({ tl: xtl, width, height, fps: 30, cache, audioBuffer: audio, onProgress, signal, prepFrame: tt => seekClipsExact(xtl, tt) });
       } catch (e) {
         if (e.code !== 'NO_AUDIO_ENCODER' && e.code !== 'NO_MUXER') throw e;
         progress(30, 'Đang quay theo thời gian thực để giữ nhạc và giọng đọc — giữ màn hình mở, đừng chuyển app…');
-        blob = await exportRealtime({ tl: xtl, width, height, fps: 30, cache, audioBuffer: audio, audioCtx: exportAudioCtx, onProgress, signal });
+        blob = await exportRealtime({ tl: xtl, width, height, fps: 30, cache, audioBuffer: audio, audioCtx: exportAudioCtx, onProgress, signal, onTick: tt => syncClips(xtl, tt, true) });
       }
     } else {
       progress(30, 'Máy này không hỗ trợ dựng nhanh, đang quay theo thời gian thực — giữ màn hình mở, đừng chuyển app…');
-      blob = await exportRealtime({ tl: xtl, width, height, fps: 30, cache, audioBuffer: audio, audioCtx: exportAudioCtx, onProgress, signal });
+      blob = await exportRealtime({ tl: xtl, width, height, fps: 30, cache, audioBuffer: audio, audioCtx: exportAudioCtx, onProgress, signal, onTick: tt => syncClips(xtl, tt, true) });
     }
     const ext = blob.type.includes('webm') ? 'webm' : 'mp4';
     if (ext === 'webm') toast('Trình duyệt này chỉ xuất được WebM (iPhone có thể không phát được). Nên xuất bằng Chrome trên Android/máy tính hoặc Safari trên iPhone.', 7000);
@@ -1653,6 +1658,7 @@ async function doExport() {
     else { console.error(e); lastIssue = 'Xuất video lỗi: ' + (e.message || e); toast('Xuất video lỗi: ' + (e.message || e) + keep + ' Bấm Hỗ trợ (Zalo) để nhắn Giang.', 8000); pulseSupport(); }
   } finally {
     exporting = false;
+    for (const c of media.clips) { try { c.el.pause(); } catch { /* bỏ qua */ } }
     dirty = true;
     updateBigPlay();
     $('exportBtn').disabled = false; $('stepNext').disabled = false;
@@ -2067,6 +2073,206 @@ function showPhotos() {
     row.insertBefore(d, add);
   });
   add.hidden = media.photos.length >= PHOTO_MAX;
+}
+
+// ---------- Video thực tế căn nhà (khách tự quay, không MC) ----------
+// Mỗi đoạn là một <video> ẩn (tắt tiếng); bộ dựng vẽ khung hình của nó ở các cảnh "VIDEO THỰC TẾ" lồng giữa bản đồ.
+// Lưu file gốc trong IndexedDB theo toạ độ căn (như ảnh) để mở lại vẫn còn. Không tải lên máy chủ.
+const CLIP_MB = 400;
+let clipHouse = '';
+function clipDb(mode, key, value) {
+  return new Promise(resolve => {
+    try {
+      const req = indexedDB.open('vitri-clips', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('house');
+      req.onerror = () => resolve(null);
+      req.onsuccess = () => {
+        try {
+          const tx = req.result.transaction('house', mode === 'get' ? 'readonly' : 'readwrite');
+          const st = tx.objectStore('house');
+          const r = mode === 'get' ? st.get(key) : mode === 'del' ? st.delete(key) : st.put(value, key);
+          r.onsuccess = () => resolve(mode === 'get' ? r.result || null : true);
+          r.onerror = () => resolve(null);
+        } catch { resolve(null); }
+      };
+    } catch { resolve(null); }
+  });
+}
+// Thẻ <video> nằm ngay sau khung xem trước (bị canvas che): Chrome tự dừng video tắt tiếng nằm ngoài màn hình
+function clipHolder() {
+  let h = document.getElementById('clipHolder');
+  if (!h) {
+    h = document.createElement('div');
+    h.id = 'clipHolder';
+    h.setAttribute('aria-hidden', 'true');
+    h.style.cssText = 'position:absolute;inset:0;overflow:hidden;z-index:-1;pointer-events:none';
+    ($('canvasWrap') || document.body).prepend(h);
+  }
+  return h;
+}
+// Mở một file video thành phần tử phát được; trả null nếu trình duyệt không đọc được (vd. HEVC trên máy không hỗ trợ)
+function openClip(blob, name = '') {
+  return new Promise(resolve => {
+    const url = URL.createObjectURL(blob);
+    const el = document.createElement('video');
+    el.muted = true; el.defaultMuted = true; el.playsInline = true; el.setAttribute('playsinline', ''); el.setAttribute('muted', '');
+    el.preload = 'auto';
+    let done = false;
+    const fail = () => { if (done) return; done = true; URL.revokeObjectURL(url); el.remove(); resolve(null); };
+    const tm = setTimeout(fail, 20000);
+    el.addEventListener('error', fail, { once: true });
+    el.addEventListener('loadeddata', () => {
+      if (done) return;
+      if (!el.videoWidth || !isFinite(el.duration) || el.duration <= 0.3) { clearTimeout(tm); fail(); return; }
+      // Ảnh đại diện: khung hình ở giây ~0,5
+      const snap = () => {
+        if (done) return;
+        done = true; clearTimeout(tm);
+        let thumb = '';
+        try {
+          const c = document.createElement('canvas');
+          const k = 160 / Math.max(el.videoWidth, el.videoHeight);
+          c.width = Math.round(el.videoWidth * k); c.height = Math.round(el.videoHeight * k);
+          c.getContext('2d').drawImage(el, 0, 0, c.width, c.height);
+          thumb = c.toDataURL('image/jpeg', 0.7);
+        } catch { /* bỏ qua */ }
+        resolve({ el, url, blob, name, dur: el.duration, w: el.videoWidth, h: el.videoHeight, thumb });
+      };
+      el.addEventListener('seeked', snap, { once: true });
+      setTimeout(snap, 2500);
+      el.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover';
+      el.currentTime = Math.min(0.5, el.duration / 2);
+    }, { once: true });
+    clipHolder().appendChild(el);
+    el.src = url;
+    el.load();
+  });
+}
+function dropClip(c) {
+  try { c.el.pause(); c.el.removeAttribute('src'); c.el.load(); c.el.remove(); URL.revokeObjectURL(c.url); } catch { /* bỏ qua */ }
+}
+function saveClips() {
+  const k = photoKey(state.house);
+  if (!k) return;
+  if (media.clips.length) clipDb('put', k, media.clips.map(c => ({ blob: c.blob, name: c.name })));
+  else clipDb('del', k);
+}
+async function restoreClips() {
+  const k = photoKey(state.house);
+  if (k === clipHouse) return;
+  clipHouse = k;
+  media.clips.forEach(dropClip);
+  media.clips = [];
+  showClips();
+  if (!k) return;
+  const list = await clipDb('get', k);
+  if (!Array.isArray(list) || clipHouse !== k) return;
+  const out = [];
+  for (const it of list) { const c = it && it.blob ? await openClip(it.blob, it.name) : null; if (c) out.push(c); }
+  if (clipHouse !== k) { out.forEach(dropClip); return; }
+  media.clips = out;
+  for (const c of out) c.el.addEventListener('seeked', () => { dirty = true; });
+  showClips();
+  scheduleRebuild();
+}
+async function pickClips(files) {
+  const list = Array.from(files || []).filter(f => /^video\//.test(f.type) || /\.(mp4|mov|m4v|webm|3gp)$/i.test(f.name));
+  $('clipFile').value = '';
+  if (!list.length) return;
+  if (!state.house) { toast('Dán vị trí căn nhà trước rồi thêm video.', 3000); return; }
+  const room = CLIP_MAX - media.clips.length;
+  if (room <= 0) { toast(`Tối đa ${CLIP_MAX} đoạn video. Bỏ bớt đoạn cũ để thêm đoạn mới.`, 3000); return; }
+  $('clipAdd').classList.add('busy');
+  let bad = 0, big = 0;
+  for (const f of list.slice(0, room)) {
+    if (f.size > CLIP_MB * 1048576) { big++; continue; }
+    const c = await openClip(f, f.name).catch(() => null);
+    if (c) { c.el.addEventListener('seeked', () => { dirty = true; }); media.clips.push(c); } else bad++;
+  }
+  $('clipAdd').classList.remove('busy');
+  if (list.length > room) toast(`Chỉ lấy ${room} đoạn đầu (tối đa ${CLIP_MAX} đoạn).`, 3000);
+  else if (big) toast(`Video quá lớn (trên ${CLIP_MB} MB). Quay ngắn 5–15 giây mỗi đoạn là đẹp nhất.`, 4500);
+  else if (bad) { lastIssue = 'Không đọc được video thực tế tải lên'; toast('Máy này không đọc được video đó. Trên iPhone chọn Cài đặt › Camera › Định dạng › "Tương thích nhất" rồi quay lại, hoặc dùng file MP4.', 7000); }
+  saveClips();
+  showClips();
+  scheduleRebuild();
+  if (media.clips.length && !bad && !big) toast('Đã lồng video thực tế vào video. Bấm ▶ Xem để xem thử.', 3500);
+}
+function removeClip(i) {
+  const [c] = media.clips.splice(i, 1);
+  if (c) dropClip(c);
+  saveClips();
+  showClips();
+  scheduleRebuild();
+}
+function showClips() {
+  const row = $('clipRow');
+  if (!row) return;
+  for (const el of row.querySelectorAll('.photo-th')) el.remove();
+  const add = $('clipAdd');
+  media.clips.forEach((c, i) => {
+    const d = document.createElement('div');
+    d.className = 'photo-th clip-th';
+    d.innerHTML = `<img alt="Video ${i + 1}"><span class="ord">▶ ${Math.round(c.dur)}s</span><button type="button" aria-label="Bỏ video ${i + 1}" data-rm="${i}">×</button>`;
+    if (c.thumb) d.querySelector('img').src = c.thumb;
+    row.insertBefore(d, add);
+  });
+  add.hidden = media.clips.length >= CLIP_MAX;
+}
+// Xem trước: đang phát thì cho video chạy theo thời gian thực (lệch > 0,25 s mới tua lại); đang dừng/tua thì tua tới đúng khung
+function syncClips(T, tt, live) {
+  if (!T || !T.clipWins || !T.clipWins.length) return;
+  const active = new Set();
+  for (const w of T.clipWins) {
+    if (tt < w.t0 - 0.05 || tt >= w.t1) continue;
+    const c = T.clips[w.clip];
+    if (!c || !c.el) continue;
+    const el = c.el;
+    active.add(el);
+    const { time, rate } = clipTime(c, w, tt);
+    if (live && (el._noLive || 0) < 2) {
+      if (el.playbackRate !== rate) el.playbackRate = rate;
+      if (el.paused && !el._starting) {
+        if (Math.abs(el.currentTime - time) > 0.05) el.currentTime = time;
+        el._starting = true;
+        el.play().then(() => { el._noLive = 0; }, () => { el._noLive = (el._noLive || 0) + 1; }).finally(() => { el._starting = false; });
+      } else if (!el.paused && Math.abs(el.currentTime - time) > 0.25) el.currentTime = time;
+    } else if (live) {
+      // Trình duyệt không cho phát: tua theo từng khung (giật hơn nhưng vẫn thấy video)
+      if (!el.seeking && Math.abs(el.currentTime - time) > 0.06) el.currentTime = time;
+    } else {
+      if (!el.paused) el.pause();
+      if (!el.seeking && Math.abs(el.currentTime - time) > 0.04) el.currentTime = time;
+    }
+  }
+  for (const c of T.clips) if (c.el && !active.has(c.el) && !c.el.paused) c.el.pause();
+  // Tua sẵn tới khung đầu của đoạn sắp chiếu (0,8 s trước) để vào cảnh không bị khựng chờ tải
+  for (const w of T.clipWins) {
+    if (tt < w.t0 - 0.8 || tt >= w.t0 - 0.05) continue;
+    const c = T.clips[w.clip];
+    if (!c || !c.el || active.has(c.el) || c.el.seeking) continue;
+    const { time } = clipTime(c, w, w.t0);
+    if (Math.abs(c.el.currentTime - time) > 0.05) c.el.currentTime = time;
+  }
+}
+// Xuất video từng khung: tua video tới đúng thời điểm rồi mới vẽ khung đó
+function seekClipsExact(T, tt) {
+  if (!T || !T.clipWins || !T.clipWins.length) return null;
+  const w = T.clipWins.find(x => tt >= x.t0 && tt < x.t1);
+  if (!w) return null;
+  const c = T.clips[w.clip];
+  if (!c || !c.el) return null;
+  const el = c.el;
+  const { time } = clipTime(c, w, tt);
+  if (!el.paused) el.pause();
+  if (Math.abs(el.currentTime - time) < 0.002 && el.readyState >= 2) return null;
+  return new Promise(res => {
+    let done = false;
+    const fin = () => { if (done) return; done = true; el.removeEventListener('seeked', fin); res(); };
+    el.addEventListener('seeked', fin);
+    setTimeout(fin, 4000);
+    el.currentTime = time;
+  });
 }
 
 // ---------- Trang web căn nhà ----------
@@ -2547,6 +2753,8 @@ function init() {
   $('logoBg').addEventListener('change', e => { state.logoBg = e.target.checked; scheduleRebuild(); });
   $('logoFile').addEventListener('change', e => pickLogo(e.target.files[0]));
   $('photoFile').addEventListener('change', e => pickPhotos(e.target.files));
+  $('clipFile').addEventListener('change', e => pickClips(e.target.files));
+  $('clipRow').addEventListener('click', e => { const b = e.target.closest('button[data-rm]'); if (b) removeClip(Number(b.dataset.rm)); });
   $('pageVideo').value = state.pageVideo || '';
   $('pageDesc').value = state.pageDesc || '';
   $('pageVideo').addEventListener('input', e => { state.pageVideo = e.target.value; save(); });
