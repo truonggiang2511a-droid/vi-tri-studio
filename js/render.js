@@ -142,9 +142,11 @@ const ESRI = svc => (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/se
 // ---------- Nền bản đồ ----------
 // src: nguồn ô ảnh; maxz: mức phóng to cao nhất nguồn có; tint/tintA/dark: phủ màu; fx: lọc màu cho rõ nét
 export const BASES = {
-  vetinh: { label: 'Vệ tinh rõ nét', desc: 'Ảnh thật, màu tươi, sắc nét — mặc định', src: 'img', maxz: 18,
+  // Ảnh vệ tinh Esri có z19 ở hầu hết đô thị VN (ảnh chụp riêng, nét hơn hẳn z18 phóng to); nơi chưa có z19 thì
+  // máy chủ trả ô "Map data not yet available" → TileCache nhận ra và lấy ô z18 thay (isPlaceholder)
+  vetinh: { label: 'Vệ tinh rõ nét', desc: 'Ảnh thật, màu tươi, sắc nét — mặc định', src: 'img', maxz: 19,
     tint: '#ffffff', tintA: 0, dark: 0, fx: 'saturate(1.28) contrast(1.12) brightness(1.04)', bg: '#3c5a3a' },
-  phim: { label: 'Vệ tinh tông phim', desc: 'Tông xanh trầm điện ảnh, chữ và line nổi bật', src: 'img', maxz: 18,
+  phim: { label: 'Vệ tinh tông phim', desc: 'Tông xanh trầm điện ảnh, chữ và line nổi bật', src: 'img', maxz: 19,
     tint: null, tintA: 0.75, dark: null, fx: 'saturate(1.1) contrast(1.1)', bg: '#22332e' },
   duongpho: { label: 'Bản đồ đường phố', desc: 'Có tên đường, dễ nhìn hướng đi', src: 'street', maxz: 18,
     tint: '#ffffff', tintA: 0, dark: 0, fx: 'saturate(1.1) contrast(1.05)', bg: '#efe9df' },
@@ -163,6 +165,21 @@ export function useBase(key) { BASE = BASES[key] || BASES.vetinh; }
 const KEYED_TILE = (z, x, y) =>
   `https://ibasemaps-api.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}?token=${encodeURIComponent(IMG_TOKEN)}`;
 
+// Ô "Map data not yet available" của Esri: gần như một màu xám sáng (đo: trung bình ~205, lệch chuẩn ~3 ở 16×16)
+let phCanvas = null;
+function isPlaceholder(img) {
+  try {
+    phCanvas ||= Object.assign(document.createElement('canvas'), { width: 16, height: 16 });
+    const g = phCanvas.getContext('2d', { willReadFrequently: true });
+    g.clearRect(0, 0, 16, 16);
+    g.drawImage(img, 0, 0, 16, 16);
+    const d = g.getImageData(0, 0, 16, 16).data;
+    let s = 0, s2 = 0;
+    for (let i = 0; i < d.length; i += 4) { const l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; s += l; s2 += l * l; }
+    const m = s / 256, sd = Math.sqrt(Math.max(0, s2 / 256 - m * m));
+    return m > 180 && sd < 7;
+  } catch { return false; }
+}
 export class TileCache {
   constructor(onLoad) {
     this.map = new Map();
@@ -202,7 +219,17 @@ export class TileCache {
       img.crossOrigin = 'anonymous';
       img.decoding = 'async';
       const keyed = src === 'img' && !!IMG_TOKEN && !e.publicOnly;
-      img.onload = () => { if (keyed) keyedOk++; e.img = img; e.ok = true; e.resolve(true); this.onLoad?.(); done(); };
+      img.onload = () => {
+        if (keyed) keyedOk++;
+        // Ô ảnh vệ tinh z ≥ 19 nơi chưa có ảnh: dùng ô cha (z thấp hơn) — chờ ô cha tải xong mới báo xong
+        if (src === 'img' && z >= 19 && isPlaceholder(img)) {
+          e.failed = true; e.missing = true;
+          this.request(z - 1, x >> 1, y >> 1, true).then(() => e.resolve(false));
+          done();
+          return;
+        }
+        e.img = img; e.ok = true; e.resolve(true); this.onLoad?.(); done();
+      };
       img.onerror = () => {
         if (keyed) {
           e.publicOnly = true;
@@ -268,8 +295,10 @@ function groundCanvas(tl, gs) {
 }
 
 // ---------- Ô ảnh ----------
+// Xuất video (gs ≥ 1,5 — 1080p): lấy ô ảnh mức cao hơn sớm hơn (+0,4) rồi thu nhỏ khi vẽ → ảnh nét hơn hẳn phóng to
+// ô mức thấp (đo 24/10: cảnh tiện ích gần nhà độ sắc nét +70% khi dùng z19 thay z18). Xem trước giữ +0,1 cho nhẹ máy.
 function tileZoomFor(zoom, gs) {
-  return Math.max(1, Math.min(BASE.maxz || MAXZ, Math.round(zoom + Math.log2(gs) + 0.1)));
+  return Math.max(1, Math.min(BASE.maxz || MAXZ, Math.round(zoom + Math.log2(gs) + (gs >= 1.5 ? 0.4 : 0.1))));
 }
 function tileSpan(cam, rect, gs) {
   const tz = tileZoomFor(cam.zoom, gs);
