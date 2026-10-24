@@ -628,6 +628,7 @@ function setHouse(h) {
     if (state.pois.length) toast('Đã đổi vị trí. Bấm Quét tiện ích để tìm lại quanh căn nhà mới.');
     state.pois = []; state.roads = []; state.streets = null; state.adminArea = null; state.selected = []; state.selectedRoads = []; state.routes = {}; state.admin = null;
     state.cloudId = null; state.projName = '';
+    { const lp = $('lookPick'); if (lp) lp.hidden = true; }
     renderLists();
   } else if (moved > 0.001) {
     for (const p of state.pois) p.km = p.zone ? Math.max(0.05, haversineKm(h, p) - (p.inset || 0)) : haversineKm(h, p);
@@ -706,6 +707,7 @@ function autoPlaySample() {
   t = 0; updateTimeUi();
   setTimeout(() => { if (!playing && !editing && state.sample) play(); }, 350);
   toast('Video mẫu đang phát. Dán toạ độ căn của anh/chị để làm video thật.', 5000);
+  setTimeout(showLooks, 2500);
 }
 async function trySample() {
   // Có dữ liệu mẫu quét sẵn: ghi vào máy rồi mở lại trang → phát ngay (nhanh hơn quét thật ~20 s)
@@ -810,6 +812,7 @@ async function scan() {
     const b = res.admin?.boundary;
     toast(`Tìm thấy ${res.pois.length} tiện ích, ${res.roads.length} tuyến đường lớn` + (b ? `, ranh ${b.short} cách ${formatKm(b.km)}` : '') + `. Đã chọn sẵn ${state.selected.length} điểm.`, 4000);
     showStep(2);
+    setTimeout(showLooks, 700);
   } catch (e) {
     if (e.name !== 'AbortError') toast(e.message || 'Không quét được. Kiểm tra mạng rồi thử lại.', 5000);
   } finally {
@@ -1465,6 +1468,66 @@ function renderStyles() {
     fontsReady().then(() => { dirty = true; });
     scheduleRebuild();
   };
+}
+// ---------- 3 kiểu video xem trước (sau khi quét) ----------
+// Mỗi kiểu = phong cách chữ + nền bản đồ + màu line trục đường ★. Ảnh xem trước vẽ bằng chính bộ dựng video,
+// tại cảnh trục đường điểm nhấn của căn đang làm. Bấm một kiểu: áp dụng + phát lại từ đầu.
+const LOOKS = [
+  { id: 'neon', label: 'Neon đêm', style: 'neon', base: 'phim', hiTheme: 'dien' },
+  { id: 'sang', label: 'Sang trọng', style: 'sangtrong', base: 'vetinh', hiTheme: 'vang' },
+  { id: 'gian', label: 'Tối giản', style: 'toigian', base: 'duongpho', hiTheme: 'do' },
+];
+const isLook = L => state.style === L.style && state.base === L.base && state.hiTheme === L.hiTheme;
+function lookState(L) {
+  const st = STYLES[L.style];
+  return { style: L.style, base: L.base, hiTheme: L.hiTheme, roadTheme: st.road, routeTheme: st.route };
+}
+let lookTimer = null;
+function showLooks() {
+  const box = $('lookPick'), row = $('lookRow');
+  if (!box || !row || !state.house || !state.pois.length) return;
+  const F = FORMATS[state.fmt];
+  row.innerHTML = LOOKS.map(L => `<button type="button" role="radio" class="look-card" data-look="${L.id}" aria-checked="${isLook(L)}">
+    <canvas aria-hidden="true"></canvas><strong>${esc(L.label)}</strong></button>`).join('');
+  box.hidden = false;
+  const cvs = row.querySelectorAll('canvas');
+  const items = LOOKS.map((L, i) => {
+    const keep = Object.fromEntries(Object.keys(lookState(L)).map(k => [k, state[k]]));
+    Object.assign(state, lookState(L));
+    const ltl = buildTimeline(buildScene(), state.fmt, timelineOpts());
+    Object.assign(state, keep);
+    // Cảnh tổng kết: thấy cùng lúc chữ/khung thông tin của phong cách, nền bản đồ, line ★ và các tiện ích
+    const ph = ltl.summary || ltl.roadPhases.find(p => ltl.roads[p.road]?.hi) || ltl.house;
+    const cv = cvs[i];
+    cv.width = 240; cv.height = Math.round(240 * F.LH / F.LW);
+    return { cv, ltl, at: ph ? ph.t0 + (ph.t1 - ph.t0) * 0.7 : ltl.duration * 0.4 };
+  });
+  // Ô ảnh bản đồ tải dần: vẽ lại vài lần cho tới khi đủ ảnh
+  let n = 0;
+  clearInterval(lookTimer);
+  const draw = () => {
+    if (box.hidden) { clearInterval(lookTimer); return; }
+    for (const it of items) render(it.cv.getContext('2d'), it.ltl, it.at, { cache, scale: it.cv.width / F.LW, request: true });
+    if (++n >= 10) clearInterval(lookTimer);
+  };
+  fontsReady().then(draw);
+  lookTimer = setInterval(draw, 800);
+}
+function pickLook(id) {
+  const L = LOOKS.find(x => x.id === id);
+  if (!L) return;
+  Object.assign(state, lookState(L));
+  renderStyles();
+  renderBases();
+  renderSwatches('roadThemeRow', 'roadTheme', true);
+  renderSwatches('routeThemeRow', 'routeTheme', false);
+  renderSwatches('hiThemeRow', 'hiTheme', false, HI_THEMES);
+  for (const b of $('lookRow').querySelectorAll('[data-look]')) b.setAttribute('aria-checked', String(b.dataset.look === id));
+  fontsReady().then(() => { dirty = true; });
+  rebuild();
+  save();
+  t = 0; updateTimeUi();
+  play();
 }
 function renderBases() {
   const el = $('baseRow');
@@ -2525,6 +2588,8 @@ function init() {
   renderSwatches('roadThemeRow', 'roadTheme', true);
   renderSwatches('routeThemeRow', 'routeTheme', false);
   renderSwatches('hiThemeRow', 'hiTheme', false, HI_THEMES);
+  $('lookRow').addEventListener('click', e => { const b = e.target.closest('[data-look]'); if (b) pickLook(b.dataset.look); });
+  $('lookClose').addEventListener('click', () => { $('lookPick').hidden = true; clearInterval(lookTimer); });
   setSeg('labelFaceSeg', state.roadLabelFace || 'line');
   bindSeg('labelFaceSeg', v => { state.roadLabelFace = v; save(); scheduleRebuild(); });
   renderStyles();

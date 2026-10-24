@@ -475,6 +475,19 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
   .panel { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
 }
 
+/* 3 kiểu video xem trước sau khi quét (mục "Chọn kiểu video") */
+.look-pick { margin: 10px 0 4px; padding: 10px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, .14); background: rgba(255, 255, 255, .06); color: #fff; }
+.look-pick .hint { color: rgba(255, 255, 255, .7); }
+.look-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin-bottom: 8px; }
+.look-head strong { font-size: 14.5px; }
+.look-head .link-btn { margin-left: auto; }
+.look-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.look-card { display: grid; gap: 6px; padding: 5px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, .16); background: transparent; color: #fff; cursor: pointer; text-align: center; }
+.look-card canvas { width: 100%; height: auto; border-radius: 8px; background: #111; display: block; }
+.look-card strong { font-size: 13px; }
+.look-card[aria-checked="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }
+@media (min-width: 980px) { .look-row { grid-template-columns: repeat(3, minmax(0, 120px)); } }
+
 /* Ảnh thực tế căn nhà */
 .photo-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .photo-th { position: relative; width: 74px; height: 74px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: var(--surface); }
