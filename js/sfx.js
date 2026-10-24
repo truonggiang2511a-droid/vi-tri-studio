@@ -35,7 +35,7 @@ export function sfxEvents(tl) {
         add(p.t0, 'whoosh', 0.7, 1.5);
         break;
       case 'road':
-        if (p.road === 0) add(p.t0, 'whoosh', 0.42, 1.2);
+        add(p.t0, 'whoosh', p.road === 0 ? 0.42 : 0.32, 1.1); // mỗi trục một cú máy riêng (24/10 tối)
         add(p.t0 + 0.12 * d, 'shimmer', 0.42, 0.68 * d);
         add(p.t0 + 0.5 * d, 'pop', 0.5);
         break;

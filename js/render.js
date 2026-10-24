@@ -573,6 +573,15 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     for (let i = 0; i < near.length; i += Math.max(1, Math.floor(near.length / 10))) pts.push(near[i]);
     r.cam = fitCam(pts, LW, LH, roadPad, PITCH.roads, 8, 14.8);
   }
+  // 24/10 tối (Giang: tiết tấu cảnh cũ còn chậm): trục gần nhà cũng có khung máy riêng (trước đây mọi trục gần dùng chung
+  // 1 khung camRoads nên máy gần như đứng yên ~10 s). Khung = nhà + đoạn trục gần nhà, cận hơn, góc nghiêng xen kẽ.
+  roads.forEach((r, i) => {
+    if (r.cam) return;
+    const near = r.samples.filter(q => q.dist <= r.nearKm + 1.1);
+    const pts = [H, r.P];
+    for (let j = 0; j < near.length; j += Math.max(1, Math.floor(near.length / 12))) pts.push(near[j]);
+    r.cam = fitCam(pts, LW, LH, roadPad, i % 2 ? 48 : 38, 11.5, 15.4);
+  });
   const cardH = 104;
   const camBoundary = boundary
     ? fitCam([H, boundary.P, boundary.across, boundary.own], LW, LH,
@@ -635,7 +644,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     }
   };
   pushClips('house');
-  raw.push({ type: 'overview', d: lot ? 4.2 : 3.6, to: camOverview, move: lot ? 0.9 : 0.8, drift: 0.02, vkey: 'overview' });
+  raw.push({ type: 'overview', d: lot ? 3.9 : 3.3, to: camOverview, move: lot ? 0.75 : 0.65, push: 0.22, side: 1, vkey: 'overview' });
   // Kết nối vùng (24/10): máy lùi ra cấp vùng, đường đi thật tới từng điểm mốc lớn (trung tâm, sân bay, cảng, ga) lần lượt
   // chạy ra kèm thẻ "km · phút"; rồi cảnh hạ tầng đang thi công gần nhà (nét đứt vàng cam, chạy ra từ điểm gần nhà nhất).
   const RG = scene.region || null;
@@ -701,10 +710,10 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     const big = ISO.areas[ISO.areas.length - 1];
     const camIso = fitCam([H, ...ringPtsOf(big.rings, 140)], LW, LH,
       { left: safe.x + 24, right: safe.x + 24, top: safe.top + 96, bottom: safe.bottom + 70 }, PITCH.boundary, 9, 16);
-    if (camIso) raw.push({ type: 'iso', d: 5.4, to: camIso, move: 0.5, drift: 0.012, vkey: 'iso' });
+    if (camIso) raw.push({ type: 'iso', d: 5.0, to: camIso, move: 0.5, push: 0.22, side: 1, vkey: 'iso' });
   }
-  roads.forEach((r, i) => raw.push({ type: 'road', d: (r.cam ? 3.6 : 3.1) + (r.hi ? 1.0 : 0), to: r.cam || camRoads, move: i === 0 || r.cam ? 0.6 : 1, drift: i === 0 ? 0 : 0.02, road: i, vkey: 'road:' + r.id }));
-  if (boundary) raw.push({ type: 'boundary', d: 7.6, to: camBoundary, move: 0.42, drift: 0.015, vkey: 'boundary' });
+  roads.forEach((r, i) => raw.push({ type: 'road', d: 3.2 + (r.hi ? 0.9 : 0), to: r.cam || camRoads, move: 0.55, push: 0.3, side: i % 2 ? 1 : -1, arc: 1.4, road: i, vkey: 'road:' + r.id }));
+  if (boundary) raw.push({ type: 'boundary', d: 7.0, to: camBoundary, move: 0.42, push: 0.3, side: -1, arc: 1.6, vkey: 'boundary' });
   // Chế độ "Quét vòng tròn": một khung cố định thấy cả vòng bán kính và mọi tiện ích, line lần lượt chạy ra rồi giữ lại
   // 2 kiểu hiện tiện ích:
   // - lanluot: bay tới từng tiện ích, line đường đi chạy ra (mặc định)
@@ -744,19 +753,19 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     // trông nhỏ xíu giữa khung rộng ~1 km). Nay khung ôm sát nhà + tiện ích + đường đi; xa bao nhiêu thì lùi ra bấy nhiêu.
     const cam = fitCam(pts, LW, LH,
       { left: safe.x + 56, right: safe.x + 56, top: safe.top + 110, bottom: safe.bottom + 60 }, PITCH.poi, 11, 17.6);
-    raw.push({ type: 'poi', d: 3.5, to: cam, move: 0.6, drift: 0.02, poi: i, vkey: 'poi:' + p.id });
+    raw.push({ type: 'poi', d: 3.2, to: cam, move: 0.55, push: 0.28, side: i % 2 ? 1 : -1, arc: 1.6, poi: i, vkey: 'poi:' + p.id });
     if (i === Math.ceil(pois.length / 2) - 1 && pois.length >= 2) pushClips('mid');
   });
   // Không đủ tiện ích để chèn giữa: dời đoạn "giữa" xuống trước cảnh tổng kết
   while (clipNext < clips.length && CLIP_SLOTS[clipNext] === 'mid') CLIP_SLOTS[clipNext] = 'sum';
   pushClips('sum');
-  if (pois.length || boundary) raw.push({ type: 'summary', d: 5.6, to: camSummary, move: 0.5, drift: 0.012, vkey: 'summary' });
+  if (pois.length || boundary) raw.push({ type: 'summary', d: 5.0, to: camSummary, move: 0.45, push: 0.2, side: 1, arc: 1.2, vkey: 'summary' });
   // Ảnh thực tế căn nhà: phủ kín khung, camera bản đồ phía dưới bay dần về căn nhà để nối vào cảnh kết
   const photos = (scene.photos || []).filter(im => im && im.width && im.height).slice(0, 6);
   if (photos.length) raw.push({ type: 'photos', d: Math.max(3.2, photos.length * 2.4 + 0.6), to: camEnd, move: 1, vkey: 'photos' });
   for (let i = clipNext; i < clips.length; i++) CLIP_SLOTS[i] = 'end';
   pushClips('end');
-  raw.push({ type: 'outro', d: 3.4, to: camEnd, move: 0.7, drift: 0.02, vkey: 'outro' });
+  raw.push({ type: 'outro', d: 3.4, to: camEnd, move: 0.6, push: 0.3, side: -1, arc: 1.2, vkey: 'outro' });
 
   let total = raw.reduce((s, p) => s + p.d, 0) / sp;
   let k = 1 / sp;
@@ -942,6 +951,22 @@ function camAtPhase(ph, t) {
   const e = smooth(clamp01((t - ph.t0 - hold) / ((d - hold) * (ph.move || 1))));
   const cam = lerpCam(ph.from, ph.to, e);
   if (ph.drift) cam.zoom += ph.drift * Math.max(0, t - ph.t0);
+  // Bay vòng cung khi 2 khung xa nhau (lùi lên giữa chặng rồi hạ xuống), giới hạn theo ph.arc
+  if (ph.arc) {
+    if (ph._arc === undefined) {
+      const a = project(ph.from.lat, ph.from.lng, 0), b = project(ph.to.lat, ph.to.lng, 0);
+      const dpx = Math.hypot(b.x - a.x, b.y - a.y) * Math.pow(2, Math.min(ph.from.zoom, ph.to.zoom));
+      ph._arc = Math.max(0, Math.min(ph.arc, Math.log2(dpx / 520)));
+    }
+    cam.zoom -= ph._arc * Math.sin(Math.PI * e);
+  }
+  // Tới nơi: đẩy máy vào chậm + lia ngang nhẹ (đổi chiều theo cảnh) để khung không đứng yên
+  if (ph.push) {
+    const mv = (d - hold) * (ph.move || 1);
+    const hs = smooth(clamp01((t - ph.t0 - hold - mv) / Math.max(1e-6, d - hold - mv)));
+    cam.zoom += ph.push * hs;
+    if (ph.side) cam.lng += ph.side * 34 * hs * metersPerPixel(cam.lat, cam.zoom) / (111320 * Math.cos(cam.lat * Math.PI / 180));
+  }
   // Máy lượn quanh bất động sản: tâm khung đi theo vòng cung nhỏ quanh điểm đích sau khi đã bay tới
   if (ph.orbit) {
     const k = smooth(clamp01((t - ph.t0) / (ph.t1 - ph.t0)));
