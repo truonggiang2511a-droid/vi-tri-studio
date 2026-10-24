@@ -460,6 +460,12 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
   backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); cursor: pointer; box-shadow: 0 8px 24px rgba(0, 0, 0, .35); white-space: nowrap; }
 .big-play svg { width: 26px; height: 26px; color: var(--accent); }
 .canvas-wrap { position: relative; }
+/* Video mẫu tự phát cho khách mới: nhãn góc trên + nút bật tiếng (trình duyệt chặn tiếng khi chưa chạm) */
+.sample-tag { position: absolute; left: 8px; top: 8px; right: 8px; display: flex; flex-wrap: nowrap; white-space: nowrap; align-items: center; gap: 8px; pointer-events: none; z-index: 2; }
+.sample-tag > span { padding: 4px 8px; border-radius: 999px; background: rgba(0, 0, 0, .58); color: #FFD166; font: 800 10px/1 var(--font); letter-spacing: .06em; }
+.sample-sound { pointer-events: auto; margin-left: auto; padding: 7px 11px; border-radius: 999px; border: 0; background: var(--accent); color: #1b1405; font: 800 12px/1 var(--font);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .35); cursor: pointer; animation: soundPulse 1.6s ease-in-out infinite; }
+@keyframes soundPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.07); } }
 
 /* Điện thoại: nút Zalo gọn lại thành hình tròn, chừa chỗ cuối trang để nút không che nội dung */
 @media (max-width: 600px) {

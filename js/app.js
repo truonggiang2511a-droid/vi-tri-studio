@@ -380,7 +380,7 @@ let audioSrc = null;
 let exporting = false;
 
 // Cho phép soát lỗi từ bảng điều khiển trình duyệt
-window.__vitri = { get tl() { return tl; }, get t() { return t; }, state, scanArea };
+window.__vitri = { get tl() { return tl; }, get t() { return t; }, state, scanArea, SAMPLE_KEYS: () => SAMPLE_KEYS };
 
 function rebuild() {
   if (photoKey(state.house) !== photoHouse) { restorePhotos(); showPageResult(); }
@@ -623,7 +623,7 @@ function setHouse(h) {
   // Căn MỚI (dời xa hơn 300 m): xoá mọi thứ thuộc về căn cũ — tên xã/tỉnh khách sửa tay, dòng phụ, chữ trên lô,
   // bề rộng đường, kịch bản và giọng đã tạo. Tránh lỗi đọc nhầm tên xã/tỉnh của căn làm trước đó.
   // Xã/tỉnh của căn mới tự nhận diện khi quét (ranh hành chính theo toạ độ).
-  if (moved > 0.3 && prev) resetHouseScoped();
+  if (moved > 0.3 && prev) { leaveSample(); resetHouseScoped(); }
   if (moved > 0.5) {
     if (state.pois.length) toast('Đã đổi vị trí. Bấm Quét tiện ích để tìm lại quanh căn nhà mới.');
     state.pois = []; state.roads = []; state.streets = null; state.adminArea = null; state.selected = []; state.selectedRoads = []; state.routes = {}; state.admin = null;
@@ -646,7 +646,78 @@ function autoHiRoads() {
   return sel.slice().sort((a, b) => rank(a) - rank(b)).slice(0, 2).map(r => r.id);
 }
 const SAMPLE = { coord: '10.7285, 106.6185', price: '3,2 tỷ', area: '5x20m', beds: '3', legal: 'Sổ hồng riêng', floors: '1 trệt 2 lầu' };
+// Dữ liệu căn mẫu đã quét sẵn (sample.json, dựng 1 lần bằng tools/make_sample.py): mở ra là phát ngay, không phải quét,
+// không tốn lượt gọi Vietmap/chỉ đường cho mỗi khách mới. Chỉ các mục thuộc CĂN NHÀ — giữ nguyên logo/SĐT/thương hiệu của khách.
+const SAMPLE_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'price', 'area', 'beds', 'legal', 'floors', 'thoCu',
+  'pois', 'roads', 'streets', 'adminArea', 'admin', 'areaWard', 'areaProv', 'areaFor', 'selected', 'selectedRoads', 'routes',
+  'roadStars', 'roadFills', 'scannedAt', 'useBoundary'];
+const SAMPLE_PLAY = 'vitri.samplePlay';
+async function fetchSample(ms = 4000) {
+  const ctl = new AbortController();
+  const tm = setTimeout(() => ctl.abort(), ms);
+  try {
+    const r = await fetch('/sample.json', { signal: ctl.signal });
+    return r.ok ? await r.json() : null;
+  } catch { return null; } finally { clearTimeout(tm); }
+}
+// Ghi căn mẫu vào bộ nhớ máy (ngoài state) để lần mở trang kế tiếp dựng UI từ đầu như một căn bình thường
+function writeSampleStore(d, base = {}) {
+  const o = { ...base };
+  for (const k of SAMPLE_KEYS) if (k in d) o[k] = d[k];
+  Object.assign(o, { sample: true, coordSet: true, cloudId: null, projName: '', musicLib: 'hung-hon', musicV: 2, labelV: 3, speedV: 2,
+    scriptEdits: {}, scriptAi: false, voSig: '', lot: [] });
+  localStorage.setItem(STORE, JSON.stringify(o));
+}
+// Khách MỚI (máy chưa từng mở app): nạp căn mẫu TRƯỚC khi dựng giao diện → vào là thấy video mẫu tự phát.
+// Chạy trước init(); quá 2,5 s chưa tải được thì bỏ qua (app mở như cũ, vẫn có nút "Thử ngay").
+async function bootSample() {
+  try {
+    if (sessionStorage.getItem(SAMPLE_PLAY)) return true; // vừa bấm "Thử ngay" (đã ghi căn mẫu rồi tải lại trang)
+    if (localStorage.getItem(STORE) || localStorage.getItem('vitri.sampleSeen')) return false;
+    localStorage.setItem('vitri.sampleSeen', '1');
+  } catch { return false; }
+  const d = await fetchSample(2500);
+  if (!d || !d.pois?.length) return false;
+  try { writeSampleStore(d); return true; } catch { return false; }
+}
+// Khách đổi sang căn của mình: bỏ thông tin mẫu (giá, diện tích…) để không lọt vào video căn thật
+function leaveSample() {
+  if (!state.sample) return;
+  state.sample = false;
+  for (const [k, id] of [['price', 'priceInput'], ['area', 'areaInput'], ['beds', 'bedsInput'], ['legal', 'legalInput'], ['floors', 'floorsInput']]) {
+    if (state[k] === SAMPLE[k]) { state[k] = ''; const el = $(id); if (el) el.value = ''; }
+  }
+  const tg = $('sampleTag'); if (tg) tg.hidden = true;
+}
+// Phát video mẫu. Trình duyệt chặn tiếng khi khách chưa chạm vào trang → phát hình trước, nút "Bật tiếng" nháy;
+// chạm bất kỳ đâu là có nhạc ngay đúng chỗ đang phát.
+function autoPlaySample() {
+  const tg = $('sampleTag');
+  if (tg) tg.hidden = false;
+  const snd = $('sampleSound');
+  const active = navigator.userActivation ? navigator.userActivation.hasBeenActive : false;
+  if (snd) snd.hidden = active;
+  const unlock = () => {
+    if (snd) snd.hidden = true;
+    for (const ev of ['pointerdown', 'keydown', 'touchstart']) document.removeEventListener(ev, unlock, true);
+    if (playing) startAudio(); else play();
+  };
+  if (!active) for (const ev of ['pointerdown', 'keydown', 'touchstart']) document.addEventListener(ev, unlock, true);
+  t = 0; updateTimeUi();
+  setTimeout(() => { if (!playing && !editing && state.sample) play(); }, 350);
+  toast('Video mẫu đang phát. Dán toạ độ căn của anh/chị để làm video thật.', 5000);
+}
 async function trySample() {
+  // Có dữ liệu mẫu quét sẵn: ghi vào máy rồi mở lại trang → phát ngay (nhanh hơn quét thật ~20 s)
+  const d = await fetchSample();
+  if (d && d.pois?.length) {
+    try {
+      writeSampleStore(d, JSON.parse(localStorage.getItem(STORE) || '{}'));
+      sessionStorage.setItem(SAMPLE_PLAY, '1');
+      location.reload();
+      return;
+    } catch { /* hết chỗ lưu → quét thật như cũ */ }
+  }
   $('coordInput').value = SAMPLE.coord;
   if (!applyCoords(SAMPLE.coord)) return;
   for (const [k, id] of [['price', 'priceInput'], ['area', 'areaInput'], ['beds', 'bedsInput'], ['legal', 'legalInput'], ['floors', 'floorsInput']]) {
@@ -1719,7 +1790,7 @@ async function openProject(id) {
   try {
     const r = await rpc('vt_project_get', { p_token: account.token, p_id: id });
     const d = r.data || {};
-    Object.assign(state, { pois: [], roads: [], selected: [], selectedRoads: [], routes: {}, admin: null, scriptEdits: {}, roadFills: {} }, fixSpeed(d));
+    Object.assign(state, { pois: [], roads: [], selected: [], selectedRoads: [], routes: {}, admin: null, scriptEdits: {}, roadFills: {}, sample: false }, fixSpeed(d));
     if (state.roadLabelFace === 'vangkim') state.roadLabelFace = 'vang';
     state.cloudId = r.id;
     state.projName = r.name;
@@ -2622,6 +2693,13 @@ function init() {
   if (state.roads.length && state.selectedRoads.length) setTimeout(() => fillRoadGaps(), 1500);
   requestAnimationFrame(frame);
   queueRoutes();
+  if (state.sample) {
+    let fresh = false;
+    try { fresh = !!sessionStorage.getItem(SAMPLE_PLAY) || bootFresh; sessionStorage.removeItem(SAMPLE_PLAY); } catch { /* bỏ qua */ }
+    if (fresh && state.pois.length) autoPlaySample();
+    else { const tg = $('sampleTag'); if (tg) tg.hidden = false; }
+  }
 }
 
-init();
+let bootFresh = false;
+bootSample().then(ok => { bootFresh = !!ok; }).finally(init);

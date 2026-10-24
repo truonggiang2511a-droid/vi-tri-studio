@@ -631,8 +631,10 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     const pts = [H, p];
     const L = p.line;
     for (let j = 0; j < L.xs.length; j += Math.max(1, Math.floor(L.xs.length / 24))) pts.push(unproject(L.xs[j], L.ys[j], 0));
+    // 24/10 (Giang): tiện ích cách nhà vài trăm mét thì máy phải zoom SÁT lại (trước đây trần zoom 16 nên điểm gần
+    // trông nhỏ xíu giữa khung rộng ~1 km). Nay khung ôm sát nhà + tiện ích + đường đi; xa bao nhiêu thì lùi ra bấy nhiêu.
     const cam = fitCam(pts, LW, LH,
-      { left: safe.x + 50, right: safe.x + 50, top: safe.top + 120, bottom: safe.bottom + 50 }, PITCH.poi, 11, 16);
+      { left: safe.x + 56, right: safe.x + 56, top: safe.top + 110, bottom: safe.bottom + 60 }, PITCH.poi, 11, 17.6);
     raw.push({ type: 'poi', d: 3.5, to: cam, move: 0.6, drift: 0.02, poi: i, vkey: 'poi:' + p.id });
   });
   if (pois.length || boundary) raw.push({ type: 'summary', d: 5.6, to: camSummary, move: 0.5, drift: 0.012, vkey: 'summary' });
