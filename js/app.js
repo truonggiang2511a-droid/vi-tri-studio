@@ -126,6 +126,27 @@ function load() {
 
 // ---------- Tiện ích giao diện ----------
 let toastTimer;
+// ---------- Hỗ trợ: mục "Hỗ trợ" (Zalo Giang) ----------
+// Bấm mục Hỗ trợ: mở Zalo của Giang và tự chép sẵn thông tin căn + lỗi gần nhất để khách dán vào tin nhắn (Giang hỗ trợ nhanh, khỏi hỏi lại)
+let lastIssue = '';
+function supportText() {
+  const p = account.profile;
+  const h = state.house;
+  return [
+    'Chào Giang, mình cần hỗ trợ Vị Trí Studio.',
+    p?.login ? 'Tài khoản: ' + p.login : '',
+    h ? `Toạ độ căn: ${h.lat.toFixed(6)}, ${h.lng.toFixed(6)}` : '',
+    lastIssue ? 'Lỗi gặp: ' + lastIssue : '',
+    'Máy: ' + (navigator.userAgent.match(/iPhone|iPad|Android[^;)]*|Windows NT [\d.]+|Mac OS X [\d_]+/)?.[0] || 'khác'),
+    'Nội dung: ',
+  ].filter(Boolean).join('\n');
+}
+function pulseSupport() {
+  for (const f of document.querySelectorAll('#zaloFab')) {
+    if (f.hidden || !f.offsetParent) continue;
+    f.classList.remove('pulse'); void f.offsetWidth; f.classList.add('pulse');
+  }
+}
 function toast(msg, ms = 2600) {
   const el = $('toast');
   // Hộp thoại mở dạng modal nằm trên cùng: đưa thông báo vào trong hộp thoại để vẫn thấy
@@ -1495,7 +1516,7 @@ async function doExport() {
   } catch (e) {
     const keep = gate?.charged || gate?.mode === 'unlimited' ? ` Lượt đã trừ vẫn giữ: căn này còn ${gate.redo?.exports_left ?? 0} lần xuất lại không trừ lượt.` : '';
     if (e.name === 'AbortError') toast('Đã huỷ xuất video.' + keep, keep ? 5000 : 2600);
-    else { console.error(e); toast('Xuất video lỗi: ' + (e.message || e) + keep, 7000); }
+    else { console.error(e); lastIssue = 'Xuất video lỗi: ' + (e.message || e); toast('Xuất video lỗi: ' + (e.message || e) + keep + ' Bấm Hỗ trợ (Zalo) để nhắn Giang.', 8000); pulseSupport(); }
   } finally {
     exporting = false;
     dirty = true;
@@ -2442,6 +2463,9 @@ function init() {
   $('sfxOn').checked = state.sfxOn;
   $('sfxVol').value = state.sfxVol;
   $('aiVoiceOn').checked = state.aiVoiceOn;
+  for (const el of document.querySelectorAll('#zaloFab')) el.addEventListener('click', () => {
+    try { navigator.clipboard?.writeText(supportText()).then(() => toast('Đã chép sẵn thông tin căn. Dán vào Zalo rồi gửi Giang nhé.', 4000)).catch(() => {}); } catch { /* bỏ qua */ }
+  });
   bindSeg('voiceSeg', v => { state.voiceId = v; syncVoiceUi(); renderScript(); save(); });
   $('vbeeVoice').addEventListener('change', e => {
     const v = e.target.value;
