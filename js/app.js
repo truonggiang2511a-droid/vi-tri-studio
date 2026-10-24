@@ -1,6 +1,6 @@
 // Điều khiển giao diện: nhập toạ độ → quét → chọn → xem trước → xuất video.
 import { parseCoords, haversineKm, formatKm } from './geo.js';
-import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, guessCategory } from './data.js';
+import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, guessCategory, stitchWays, localFrame } from './data.js';
 import { ICON_PATHS } from './icons.js';
 import {
   FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, HI_THEMES, STYLES, BASES,
@@ -170,9 +170,23 @@ function selectedPois() {
     .map(p => ({ ...p, route: state.routes[p.id] || null, star: (state.stars || []).includes(p.id) }))
     .sort((a, b) => a.km - b.km);
 }
+// Nối lại chỗ hở giữa các đoạn của cùng tuyến (cả căn đã quét/lưu trước bản sửa 24/10), nhớ kết quả theo tuyến
+const stitchCache = new Map();
+function stitchedWays(r) {
+  const H = state.house;
+  if (!H || !r.ways || r.ways.length < 2) return r.ways;
+  const key = r.id + ':' + r.ways.length + ':' + r.ways.reduce((s, w) => s + w.length, 0) + ':' + H.lat.toFixed(4) + ',' + H.lng.toFixed(4);
+  let w = stitchCache.get(key);
+  if (!w) {
+    try { w = stitchWays(r.ways, localFrame(H), r.level >= 3 ? 3 : 0.6); } catch { w = r.ways; }
+    if (stitchCache.size > 60) stitchCache.clear();
+    stitchCache.set(key, w);
+  }
+  return w;
+}
 function selectedRoads() {
   const hi = state.roadStars || [];
-  return state.roads.filter(r => state.selectedRoads.includes(r.id)).map(r => ({ ...r, hi: hi.includes(r.id) }));
+  return state.roads.filter(r => state.selectedRoads.includes(r.id)).map(r => ({ ...r, ways: stitchedWays(r), hi: hi.includes(r.id) }));
 }
 function buildScene() {
   return {

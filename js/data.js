@@ -51,7 +51,7 @@ function cleanName(s) {
 }
 
 // Toạ độ phẳng cục bộ (km) quanh một điểm gốc, để đo khoảng cách nhanh
-function localFrame(c) {
+export function localFrame(c) {
   const kx = 111.32 * Math.cos(c.lat * Math.PI / 180), ky = 110.57;
   return {
     xy: p => [(p[1] - c.lng) * kx, (p[0] - c.lat) * ky],
@@ -553,7 +553,8 @@ function isDuplicate(chain, kept) {
     for (const k of kept) {
       let hit = false;
       for (let j = 1; j < k.xy.length; j++) {
-        if (segNearestXY(px, py, k.xy[j - 1][0], k.xy[j - 1][1], k.xy[j][0], k.xy[j][1]).d < 0.07) { hit = true; break; }
+        // 0,12 km: hai làn tách nhau qua dải phân cách/kênh (vd. Võ Văn Kiệt) vẫn tính là một tuyến, chỉ vẽ một line
+        if (segNearestXY(px, py, k.xy[j - 1][0], k.xy[j - 1][1], k.xy[j][0], k.xy[j][1]).d < 0.12) { hit = true; break; }
       }
       if (hit) { near++; break; }
     }
@@ -561,13 +562,44 @@ function isDuplicate(chain, kept) {
   return n > 0 && near / n > 0.6;
 }
 
+// Cắt bỏ phần của chuỗi nằm sát (< 0,12 km) các chuỗi đã giữ, trả các phần còn lại { pts, xy }
+function trimNearKept(chain, kept) {
+  const out = [];
+  let cur = null;
+  for (let i = 0; i < chain.xy.length; i++) {
+    const [px, py] = chain.xy[i];
+    let near = false;
+    for (const k of kept) {
+      for (let j = 1; j < k.xy.length; j++) {
+        if (segNearestXY(px, py, k.xy[j - 1][0], k.xy[j - 1][1], k.xy[j][0], k.xy[j][1]).d < 0.12) { near = true; break; }
+      }
+      if (near) break;
+    }
+    if (near) { if (cur && cur.pts.length > 1) out.push(cur); cur = null; continue; }
+    if (!cur) cur = { pts: [], xy: [] };
+    cur.pts.push(chain.pts[i]); cur.xy.push(chain.xy[i]);
+  }
+  if (cur && cur.pts.length > 1) out.push(cur);
+  return out;
+}
+
 // Nối các đoạn của cùng một tuyến bị hở (thiếu cầu, nút giao, đoạn chưa có tên trên OSM) để line không đứt quãng:
 // hai đầu mút cách nhau dưới gapKm và hướng đi thuận nhau thì ghép thành một đường liền.
-function stitchWays(ways, F, gapKm = 0.3) {
+// 24/10 (Giang báo line điểm nhấn đứt đoạn): đo trên 2 căn thực tế còn hở 0,12–0,44 km chưa nối vì
+// hướng đầu mút lấy theo 3 điểm cuối (hay bị cong ở nút giao) và ngưỡng 0,3 km → lấy hướng theo đoạn ~0,3 km
+// cuối, nới ngưỡng 0,6 km. Xuất ra để app nối lại cả các căn đã quét/lưu trước đây (không cần quét lại).
+export function stitchWays(ways, F, gapKm = 0.6) {
+  if (!F) return ways;
   let list = ways.map(w => ({ pts: w, xy: w.map(F.xy) }));
   const dirAt = (xy, end) => {
-    const a = end ? xy[xy.length - 1] : xy[0];
-    const b = end ? xy[Math.max(0, xy.length - 4)] : xy[Math.min(xy.length - 1, 3)];
+    const n = xy.length;
+    const a = end ? xy[n - 1] : xy[0];
+    let b = end ? xy[Math.max(0, n - 2)] : xy[Math.min(n - 1, 1)];
+    for (let k = 1; k < n; k++) {
+      const q = end ? xy[n - 1 - k] : xy[k];
+      b = q;
+      if (Math.hypot(a[0] - q[0], a[1] - q[1]) >= 0.3) break; // nhìn lùi ~0,3 km, bỏ qua móc cong ở đầu mút
+    }
     const d = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1;
     return [(a[0] - b[0]) / d, (a[1] - b[1]) / d]; // hướng đi ra khỏi đầu mút
   };
@@ -583,7 +615,10 @@ function stitchWays(ways, F, gapKm = 0.3) {
         const da = dirAt(A, ei), db = dirAt(B, ej);
         const c = [(pb[0] - pa[0]) / d, (pb[1] - pa[1]) / d];
         // đi ra từ A về phía B, và B đi ra ngược về phía A
-        const ok = d < 0.04 || (da[0] * c[0] + da[1] * c[1] > 0.55 && -(db[0] * c[0] + db[1] * c[1]) > 0.55);
+        // hở ngắn (< 0,25 km) chỉ cần đi tiếp gần cùng hướng; hở dài hơn phải thẳng hàng rõ ràng
+        // cao tốc (gapKm lớn): hở 0,6–3 km do dữ liệu thưa chỉ nối khi gần như thẳng hàng
+        const lim = d < 0.25 ? 0.3 : d < 0.6 ? 0.6 : 0.88;
+        const ok = d < 0.04 || (da[0] * c[0] + da[1] * c[1] > lim && -(db[0] * c[0] + db[1] * c[1]) > lim);
         if (!ok) continue;
         if (!best || d < best.d) best = { i, j, ei, ej, d };
       }
@@ -644,25 +679,43 @@ function buildRoads(raw, center, radiusKm) {
   for (const g of groups.values()) {
     const chains = chainPieces(g.pieces, F, 0.04)
       .map(c => ({ ...c, len: polyLenKm(c.pts), near: chainNear(c, F) }))
-      .filter(c => c.len > 0.25)
+      .filter(c => c.len > 0.06) // đoạn ngắn (cầu, nút giao) giữ lại để lấp chỗ hở, trước đây > 0,25 km nên line đứt
       .sort((a, b) => a.near - b.near);
     if (!chains.length) continue;
-    const kept = [];
-    for (const c of chains) {
-      if (c.near > radiusKm) continue;
-      if (kept.length && isDuplicate(c, kept)) continue;
-      kept.push(c);
-      if (kept.length >= 3) break;
+    // Bắt đầu từ đoạn gần nhà nhất, rồi nối dần các đoạn TIẾP NỐI (đầu mút cách phần đã giữ < 0,6 km), tối đa 10 đoạn.
+    // Đoạn chạy song song sát phần đã giữ (làn thứ hai của đường tách làn) bị cắt bỏ phần song song → không vẽ 2 line.
+    // Đường trùng tên ở khu khác (vd. "Đường số 1") không nối vào vì không tiếp nối.
+    if (chains[0].near > radiusKm) continue;
+    const kept = [chains[0]];
+    const rest = chains.slice(1);
+    const endsOf = c => [c.xy[0], c.xy[c.xy.length - 1]];
+    const touches = c => {
+      for (const e of endsOf(c)) for (const k of kept) {
+        for (const q of endsOf(k)) if (Math.hypot(e[0] - q[0], e[1] - q[1]) < 0.6) return true;
+        for (let j = 1; j < k.xy.length; j++) if (segNearestXY(e[0], e[1], k.xy[j - 1][0], k.xy[j - 1][1], k.xy[j][0], k.xy[j][1]).d < 0.08) return true;
+      }
+      return false;
+    };
+    for (let grew = true; grew && kept.length < 10;) {
+      grew = false;
+      for (let i = 0; i < rest.length && kept.length < 10; i++) {
+        const c = rest[i];
+        if (!touches(c)) continue;
+        rest.splice(i--, 1);
+        grew = true;
+        if (isDuplicate(c, kept)) continue;
+        for (const part of trimNearKept(c, kept)) if (polyLenKm(part.pts) > 0.06) kept.push(part);
+      }
     }
     if (!kept.length) continue;
     const ways = [];
     for (const c of kept) {
       for (const part of clipToRadius(c.pts, center, radiusKm * 1.6)) {
-        if (polyLenKm(part) > 0.2) ways.push(simplify(part, F, 0.004));
+        if (polyLenKm(part) > 0.06) ways.push(simplify(part, F, 0.004));
       }
     }
     if (!ways.length) continue;
-    const joined = stitchWays(ways, F);
+    const joined = stitchWays(ways, F, g.level >= 3 ? 3 : 0.6);
     ways.length = 0; ways.push(...joined);
     const ref = Object.entries(g.refs).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
     const name = Object.entries(g.names).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
@@ -684,7 +737,15 @@ function buildRoads(raw, center, radiusKm) {
   for (const r of list.sort((a, b) => a.score - b.score)) {
     const k = r.label.toLowerCase();
     const prev = byLabel.get(k);
-    if (prev) { prev.ways = stitchWays([...prev.ways, ...r.ways], localFrame(center)); prev.lenKm += r.lenKm; continue; }
+    if (prev) {
+      // Hai nhóm cùng tên thường là hai làn của cùng một đường (tách bởi dải phân cách/kênh): bỏ làn song song trùng
+      const Fc = localFrame(center);
+      const kept = prev.ways.map(w => ({ xy: w.map(Fc.xy) }));
+      const add = r.ways.filter(w => !isDuplicate({ xy: w.map(Fc.xy) }, kept));
+      if (add.length) prev.ways = stitchWays([...prev.ways, ...add], Fc, r.level >= 3 ? 3 : 0.6);
+      prev.lenKm += add.reduce((t, w) => t + polyLenKm(w), 0);
+      continue;
+    }
     byLabel.set(k, r);
   }
   return [...byLabel.values()].sort((a, b) => a.score - b.score).slice(0, 14);
