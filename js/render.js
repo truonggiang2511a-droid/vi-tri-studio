@@ -682,6 +682,8 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   tl.roadsEnd = tl.roadPhases.length ? tl.roadPhases[tl.roadPhases.length - 1].t1 : tl.overview.t1;
   tl.roadLabels = camRoads ? placeRoadLabels(tl, camRoads, gi => !tl.roads[gi].cam) : [];
   tl.roads.forEach((r, gi) => { if (r.cam) tl.roadLabels.push(...placeRoadLabels(tl, r.cam, g => g === gi)); });
+  // Tuyến điểm nhấn ★: thêm một chữ đặt theo khung cảnh tổng kết, để cảnh tổng kết vẫn thấy tên tuyến
+  if (tl.summary && tl.roads.some(r => r.hi)) tl.roadLabels.push(...placeRoadLabels(tl, tl.summary.to, g => !!tl.roads[g].hi, { x: 0, y: LH * 0.5, w: LW, h: LH * 0.5 }).map(L => ({ ...L, sum: true })));
   return tl;
 }
 
@@ -801,7 +803,7 @@ function roadFontSize(text) {
 
 // Chọn chỗ đặt chữ 3D cho từng trục đường: trên đường, trong khung, không đè nhau, không đè căn nhà.
 // Khung chữ tính theo góc xoay thật; không tìm được chỗ đẹp thì nới dần điều kiện để tuyến nào cũng có tên.
-function placeRoadLabels(tl, cam, only = () => true) {
+function placeRoadLabels(tl, cam, only = () => true, block = null) {
   const { LW, LH, safe } = tl;
   const P = proj(cam.pitch, LW, LH);
   const v = viewOf(cam);
@@ -809,14 +811,17 @@ function placeRoadLabels(tl, cam, only = () => true) {
   const hg = gLL(v, H.lat, H.lng);
   const hs = g2s(P, hg.x, hg.y);
   const house = { x: hs.x - 34, y: hs.y - 72, w: 68, h: 84 };
-  const placed = [house];
+  const placed = [house, ...(block ? [block] : [])];
   for (const r of tl.roads) {
     const pg = gLL(v, r.P.lat, r.P.lng), ps = g2s(P, pg.x, pg.y);
     placed.push({ x: (hs.x + ps.x) / 2 - 48, y: (hs.y + ps.y) / 2 - 14, w: 96, h: 28 });
   }
   const hit = (r, list) => list.some(p => r.x < p.x + p.w + 6 && r.x + r.w + 6 > p.x && r.y < p.y + p.h + 6 && r.y + r.h + 6 > p.y);
   const out = [];
-  tl.roads.forEach((g, gi) => {
+  // Tuyến điểm nhấn ★ được chọn chỗ đặt chữ TRƯỚC để chắc chắn có chữ 3D tên đường (Giang 24/10)
+  const order = tl.roads.map((g, gi) => gi).sort((a, b) => (tl.roads[b].hi ? 1 : 0) - (tl.roads[a].hi ? 1 : 0));
+  order.forEach(gi => {
+    const g = tl.roads[gi];
     if (!only(gi)) return;
     let text = labelText(g);
     if (text.length > 22 && text.startsWith('CAO TỐC ')) text = 'CT ' + text.slice(8);
@@ -847,8 +852,9 @@ function placeRoadLabels(tl, cam, only = () => true) {
     const passes = [
       { sizes: [base], margin: 0, avoid: placed },
       { sizes: [base * 0.85, base * 0.72], margin: 0, avoid: placed },
-      { sizes: [base * 0.72, base * 0.62], margin: 8, avoid: [house] },
-      { sizes: [base * 0.62], margin: 40, avoid: [] },
+      { sizes: [base * 0.72, base * 0.62], margin: 8, avoid: block ? [house, block] : [house] },
+      ...(block ? [{ sizes: [base * 0.55, base * 0.48], margin: 30, avoid: [house, block] }] : [{ sizes: [base * 0.62], margin: 40, avoid: [] }]),
+      ...(g.hi && !block ? [{ sizes: [base * 0.55], margin: 120, avoid: [] }] : []),
     ];
     for (const ps of passes) {
       for (const size of ps.sizes) {
@@ -862,6 +868,7 @@ function placeRoadLabels(tl, cam, only = () => true) {
       }
       if (pick) break;
     }
+    if (!pick && g.hi && !block && cands.length) pick = { c: cands[0], size: base * 0.55, r: rectOf(cands[0], base * 0.55) };
     if (!pick) return;
     placed.push(pick.r);
     const q = pick.c.q;
@@ -2546,8 +2553,15 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
 
   // Chữ 3D tên trục đường lớn: vẽ TRÊN MÀN HÌNH (không vẽ vào canvas mặt đất nữa — chữ ra ngoài vùng canvas
   // mặt đất lúc máy lia sẽ bị cắt cụt). Dùng phép biến đổi phối cảnh cục bộ tại vị trí chữ nên vẫn trông in dẹt trên đường.
-  if (roadLabelA > 0) {
+  // Chữ tuyến điểm nhấn ★ ở lại suốt các cảnh sau (như line của nó), chỉ mờ đi ở cảnh kết
+  const hiLabelA = t < roadsEnd ? 1 : t < ou.t0 ? 0.9 : Math.max(0, 0.9 - (t - ou.t0) / 0.6);
+  if (roadLabelA > 0 || hiLabelA > 0) {
     for (const L of tl.roadLabels) {
+      const isHi = !!tl.roads[L.road]?.hi;
+      // chữ đặt cho cảnh tổng kết chỉ hiện trong cảnh tổng kết; chữ gốc của tuyến ★ nhường chỗ lúc đó
+      const inSum = sm && t >= sm.t0 - 0.3 && t < ou.t0 + 0.3;
+      const labA = L.sum ? (sm ? fadeWin(t, sm.t0 + 0.4, ou.t0 + 0.2, 0.6, 0.5) : 0) : isHi ? (inSum ? Math.max(0, hiLabelA * (1 - clamp01((t - sm.t0 + 0.3) / 0.5))) : hiLabelA) : roadLabelA;
+      if (labA <= 0) continue;
       const ph = tl.roadPhases[L.road];
       if (!ph || t < ph.t0) continue;
       const d = ph.t1 - ph.t0;
@@ -2560,7 +2574,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       if (s0.w <= 0.05) continue;
       ctx.save();
       ctx.transform(sx.x - s0.x, sx.y - s0.y, sy.x - s0.x, sy.y - s0.y, s0.x, s0.y);
-      groundText(ctx, v, L, st.core, Math.min(roadLabelA, clamp01(rise * 1.5)), easeOut(rise),
+      groundText(ctx, v, L, st.core, Math.min(labA, clamp01(rise * 1.5)), easeOut(rise),
         { local: true, yellow: scene.roadLabelFace === 'vang' || scene.roadLabelFace === 'vangkim', lineColor: !scene.roadLabelFace || scene.roadLabelFace === 'line' });
       ctx.restore();
     }
