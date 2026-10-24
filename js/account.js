@@ -253,7 +253,9 @@ export function requireLogin(reason = '', tab) {
     const dlg = $('authDlg');
     hideToast();
     if (!dlg.open) dlg.showModal();
-    setTimeout(() => (authTab === 'register' ? $('authName') : $('authLogin')).focus(), 60);
+    // Điện thoại: KHÔNG tự đặt con trỏ vào ô. iPhone (nhất là app cài ở màn hình chính) không bật bàn phím khi focus bằng code,
+    // ô bị "đã chọn mà không có bàn phím" → khách chạm vào ô cũng không hiện bàn phím. Để khách tự chạm.
+    if (!matchMedia('(pointer: coarse)').matches) setTimeout(() => (authTab === 'register' ? $('authName') : $('authLogin')).focus(), 60);
   });
 }
 

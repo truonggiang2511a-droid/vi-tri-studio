@@ -698,7 +698,7 @@ function startNewHouse() {
   scheduleRebuild();
   save();
   showStep(1);
-  setTimeout(() => $('coordInput').focus(), 350);
+  if (!matchMedia('(pointer: coarse)').matches) setTimeout(() => $('coordInput').focus(), 350);
   toast('Đã để trống thông tin. Dán toạ độ căn mới để bắt đầu.', 3500);
 }
 function updateNewHouseBtn() {
@@ -836,8 +836,11 @@ function autoPlaySample() {
   // iPhone chỉ tính là "chạm" ở touchend/click (touchstart, kéo cuộn không mở được âm thanh) → nghe nhiều sự kiện,
   // mở khoá đồng bộ ngay trong sự kiện, chỉ gỡ lắng nghe khi âm thanh đã thật sự chạy.
   const EVS = ['touchend', 'pointerup', 'click', 'keydown'];
-  let started = false;
-  const unlock = () => {
+  let started = false, tries = 0;
+  const unlock = e => {
+    // Chạm vào ô nhập (đăng ký, đăng nhập, toạ độ…) thì để yên cho iPhone bật bàn phím
+    if (e?.target?.closest?.('input, textarea, select, [contenteditable]')) return;
+    if (++tries > 8) { for (const ev of EVS) document.removeEventListener(ev, unlock, true); return; }
     primeAudio();
     if (playing && !started) { started = true; startAudio(); } // đang phát: bật tiếng đúng chỗ đang chạy
     setTimeout(() => {
@@ -2893,6 +2896,15 @@ function init() {
   $('logoBg').addEventListener('change', e => { state.logoBg = e.target.checked; scheduleRebuild(); });
   $('logoFile').addEventListener('change', e => pickLogo(e.target.files[0]));
   $('photoFile').addEventListener('change', e => pickPhotos(e.target.files));
+  // iPhone: ô đang được chọn mà bàn phím không hiện (bị focus bằng code, hoặc app cài ở màn hình chính) → chạm vào ô
+  // thì bỏ chọn rồi chọn lại NGAY trong cú chạm để Safari bật bàn phím. Chỉ làm khi bàn phím đang ẩn.
+  document.addEventListener('touchend', e => {
+    const el = e.target?.closest?.('input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=button]):not([type=submit]), textarea');
+    if (!el || el.readOnly || el.disabled || document.activeElement !== el) return;
+    const vv = window.visualViewport;
+    if (vv && vv.height < window.innerHeight * 0.85) return; // bàn phím đang hiện
+    el.blur(); el.focus();
+  }, true);
   $('clipFile').addEventListener('change', e => pickClips(e.target.files));
   $('newHouseBtn').addEventListener('click', startNewHouse);
   document.addEventListener('click', e => { if (e.target.closest('[data-act="newhouse"]')) startNewHouse(); });
