@@ -67,6 +67,9 @@ const state = {
   stars: [],         // id tiện ích được khoanh vùng nổi bật
   roadFills: {},     // id tuyến → các đoạn đường thật (lấy bằng chỉ đường) lấp chỗ hở dữ liệu
   roadStars: [],     // id trục đường "điểm nhấn" (line nổi có xung sáng), tối đa 2
+  iso: null,         // vùng lái xe 5–10–15 phút từ nhà {areas:[{min, rings}]} (ArcGIS), theo từng căn
+  isoFor: '',        // toạ độ căn đã lấy vùng (làm tròn) — đổi căn thì lấy lại
+  showIso: true,     // khách tắt/bật cảnh vùng lái xe
   hiTheme: 'dien',   // màu line trục đường điểm nhấn (HI_THEMES)
   pageVideo: '',     // link video đã đăng (gắn vào trang web căn nhà)
   pageDesc: '',
@@ -297,6 +300,7 @@ function buildScene() {
     speed: state.speed,
     pois: selectedPois(),
     roads: selectedRoads(),
+    iso: state.showIso && state.iso && state.iso.areas?.length ? state.iso : null,
     boundary: state.useBoundary && state.admin?.boundary ? { ...state.admin.boundary, route: state.routes.__ranh || null } : null,
     provinceShort: state.admin?.provinceShort || '',
     commune: state.admin?.commune || '',
@@ -642,7 +646,7 @@ function applyCoords(text, { silent = false } = {}) {
 
 function resetHouseScoped() {
   Object.assign(state, { areaWard: '', areaProv: '', areaFor: '', roadWidth: '', sub: '', lotText: '', lotArea: '',
-    scriptEdits: {}, scriptAi: false, voSig: '', adminArea: null, admin: null, roadStars: [], roadFills: {} });
+    scriptEdits: {}, scriptAi: false, voSig: '', adminArea: null, admin: null, roadStars: [], roadFills: {}, iso: null, isoFor: '' });
   media.voiceSegs.clear();
   media.mixKey = '';
   for (const [id, v] of [['areaWardInput', ''], ['areaProvInput', ''], ['roadWidthInput', ''], ['subInput', ''], ['lotText', ''], ['lotArea', '']]) { const el = $(id); if (el) el.value = v; }
@@ -909,6 +913,31 @@ function maybeNudge() {
 
 // ---------- Quét ----------
 let scanCtrl = null;
+// Vùng lái xe 5 – 10 – 15 phút từ nhà (máy chủ gọi ArcGIS Service Areas, nhớ đệm 30 ngày). Lỗi / chưa bật quyền thì bỏ qua.
+let isoJob = '';
+async function loadIso(force = false) {
+  const h = state.house;
+  if (!h || state.sample) return;
+  const k = `${h.lat.toFixed(4)},${h.lng.toFixed(4)}`;
+  if (!force && (state.isoFor === k || isoJob === k)) return;
+  isoJob = k;
+  try {
+    const r = await fetch(`/api/map/iso?lat=${h.lat}&lng=${h.lng}`);
+    const j = r.ok ? await r.json() : null;
+    if (!state.house || `${state.house.lat.toFixed(4)},${state.house.lng.toFixed(4)}` !== k) return;
+    state.isoFor = k;
+    state.iso = j && j.areas?.length ? { areas: j.areas } : null;
+    syncIsoUi();
+    save();
+    scheduleRebuild();
+  } catch { /* để lần sau */ } finally { if (isoJob === k) isoJob = ''; }
+}
+function syncIsoUi() {
+  const row = $('isoRow');
+  if (row) row.hidden = !(state.iso && state.iso.areas?.length);
+  const cb = $('isoOn');
+  if (cb) cb.checked = state.showIso !== false;
+}
 async function scan() {
   if (!state.house) { applyCoords($('coordInput').value); if (!state.house) return; }
   scanCtrl?.abort();
@@ -953,6 +982,7 @@ async function scan() {
     queueRoutes();
     scheduleRebuild();
     fillRoadGaps();
+    loadIso(true);
     const b = res.admin?.boundary;
     toast(`Tìm thấy ${res.pois.length} tiện ích, ${res.roads.length} tuyến đường lớn` + (b ? `, ranh ${b.short} cách ${formatKm(b.km)}` : '') + `. Đã chọn sẵn ${state.selected.length} điểm.`, 4000);
     showStep(2);
@@ -1234,6 +1264,11 @@ function scriptSegments() {
   add('overview', 'Toàn cảnh', list
     ? `Trong bán kính ${R} km có đủ ${list}${roads.length ? `, cùng ${roads.length} trục đường lớn` : ''}.`
     : roads.length ? `Cùng xem ${roads.length} trục đường lớn quanh ${twl}.` : `Cùng xem xung quanh ${twl} có gì nhé.`);
+  if (state.showIso && state.iso?.areas?.length) {
+    const mins = state.iso.areas.map(a => a.min).join(', ').replace(/, (\d+)$/, ' rồi $1');
+    add('iso', 'Vùng lái xe', pick([`Từ ${twl}, lái xe ${mins} phút, anh chị đi được tới đâu, nhìn bản đồ là thấy ngay.`,
+      `Đây là vùng lái xe ${mins} phút tính từ ${twl}, kết nối rất nhanh đi khắp khu vực.`], 3));
+  }
 
   const roadLines = [
     'Chỉ {d} là ra {n}.', 'Ra {n} chỉ khoảng {d}.', '{n} cũng chỉ cách {d}.', 'Từ nhà tới {n} chỉ khoảng {d}.',
@@ -1385,7 +1420,7 @@ async function aiRewrite() {
     };
     // KHÔNG gửi câu mẫu (AI sẽ chép lại y chang) — chỉ gửi hình đang hiện + dữ liệu của từng cảnh
     const SCENE = { intro: 'Mở đầu: trung cảnh ghim bất động sản, xã/phường sáng lên', province: 'Cả tỉnh/thành phố hiện lên', house: 'Cận cảnh bất động sản, máy lượn quanh',
-      overview: 'Toàn cảnh vòng bán kính quanh nhà', boundary: 'Ranh giới sang tỉnh/thành bên cạnh', summary: 'Tổng kết tất cả tiện ích', photos: 'Ảnh thực tế của bất động sản', outro: 'Kết video, kêu gọi đi xem nhà' };
+      overview: 'Toàn cảnh vòng bán kính quanh nhà', iso: 'Vùng lái xe 5, 10, 15 phút quanh nhà sáng lên lần lượt', boundary: 'Ranh giới sang tỉnh/thành bên cạnh', summary: 'Tổng kết tất cả tiện ích', photos: 'Ảnh thực tế của bất động sản', outro: 'Kết video, kêu gọi đi xem nhà' };
     const roadById = Object.fromEntries(selectedRoads().map(r => [r.id, r]));
     const poiById = Object.fromEntries(selectedPois().map(p => [p.id, p]));
     const segments = Object.fromEntries(segs.map(sg => {
@@ -1940,7 +1975,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'stars', 'roadStars', 'roadFills', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -2732,6 +2767,9 @@ function init() {
   });
   $('labelInput').addEventListener('input', e => { state.label = e.target.value; scheduleRebuild(); });
   $('subInput').addEventListener('input', e => { state.sub = e.target.value.trim(); scheduleRebuild(); });
+  syncIsoUi();
+  $('isoOn').addEventListener('change', e => { state.showIso = e.target.checked; save(); scheduleRebuild(); });
+  if (state.scannedAt && state.house && !state.sample) setTimeout(() => loadIso(), 2000);
   $('radiusInput').addEventListener('input', e => {
     state.radiusKm = parseFloat(e.target.value);
     updateScanLabel();

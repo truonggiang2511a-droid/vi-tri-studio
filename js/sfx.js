@@ -45,6 +45,10 @@ export function sfxEvents(tl) {
       case 'photos':
         add(p.t0, 'whoosh', 0.6, 1.2);
         break;
+      case 'iso': // 3 vùng lái xe lan ra lần lượt (khớp isoReveal trong render.js: 0,14 + 0,2 × thứ tự)
+        add(p.t0, 'whoosh', 0.6, 1.3);
+        for (let k = 0; k < 3; k++) { add(p.t0 + d * (0.14 + 0.2 * k), 'shimmer', 0.3, 0.9); add(p.t0 + d * (0.14 + 0.2 * k) + 0.5, 'pop', 0.35); }
+        break;
       case 'clip': // video thực tế lồng vào giữa: lướt vào, lướt ra (khớp drawClips trong render.js)
         add(p.t0, 'whoosh', 0.55, 1.1);
         add(p.t1 - 0.25, 'whoosh', 0.35, 0.9);

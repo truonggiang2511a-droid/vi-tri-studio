@@ -636,6 +636,14 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   };
   pushClips('house');
   raw.push({ type: 'overview', d: lot ? 4.2 : 3.6, to: camOverview, move: lot ? 0.9 : 0.8, drift: 0.02, vkey: 'overview' });
+  // Vùng lái xe 5 – 10 – 15 phút (ArcGIS): sau cảnh bán kính, máy ôm trọn vùng 15 phút, 3 vùng lần lượt lan ra từ nhà
+  const ISO = scene.iso && scene.iso.areas && scene.iso.areas.length ? scene.iso : null;
+  if (ISO) {
+    const big = ISO.areas[ISO.areas.length - 1];
+    const camIso = fitCam([H, ...ringPtsOf(big.rings, 140)], LW, LH,
+      { left: safe.x + 24, right: safe.x + 24, top: safe.top + 96, bottom: safe.bottom + 70 }, PITCH.boundary, 9, 16);
+    if (camIso) raw.push({ type: 'iso', d: 5.4, to: camIso, move: 0.5, drift: 0.012, vkey: 'iso' });
+  }
   roads.forEach((r, i) => raw.push({ type: 'road', d: (r.cam ? 3.6 : 3.1) + (r.hi ? 1.0 : 0), to: r.cam || camRoads, move: i === 0 || r.cam ? 0.6 : 1, drift: i === 0 ? 0 : 0.02, road: i, vkey: 'road:' + r.id }));
   if (boundary) raw.push({ type: 'boundary', d: 7.6, to: camBoundary, move: 0.42, drift: 0.015, vkey: 'boundary' });
   // Chế độ "Quét vòng tròn": một khung cố định thấy cả vòng bán kính và mọi tiện ích, line lần lượt chạy ra rồi giữ lại
@@ -725,7 +733,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     fmt: fmtKey, LW, LH, safe, duration: t, phases, scene, panelH,
     G: groundDims(LW, LH),
     intro: first('intro'), house: first('house'), overview: first('overview'), boundaryPh: first('boundary'),
-    summary: first('summary'), outro: first('outro'), photosPh: first('photos'), photos, radarPh: first('radar'), provPh: first('province'), flow: radar ? 'radar' : 'lanluot',
+    summary: first('summary'), outro: first('outro'), photosPh: first('photos'), isoPh: first('iso'), photos, radarPh: first('radar'), provPh: first('province'), flow: radar ? 'radar' : 'lanluot',
     roadPhases: phases.filter(p => p.type === 'road'), poiPhases: phases.filter(p => p.type === 'poi'),
     clips, clipWins: phases.filter(p => p.type === 'clip').map(p => ({ clip: p.clip, t0: p.t0, t1: p.t1 })),
     pois, roads, boundary, captions, hook, lot, lotArea: lot ? lotAreaM2(lot) : 0,
@@ -1852,6 +1860,21 @@ function drawCaption(ctx, L, alpha) {
   });
   ctx.restore();
 }
+// ---------- Vùng lái xe 5 – 10 – 15 phút ----------
+const ISO_COL = { 5: '#4BE38A', 10: '#2FD3E6', 15: '#A585FF' };
+const isoColor = m => ISO_COL[m] || '#A585FF';
+// Mỗi vùng lan ra từ nhà lần lượt (vùng nhỏ trước): trả về hệ số lan 0..1
+function isoReveal(tl, idx, t) {
+  const ph = tl.isoPh;
+  if (!ph) return 0;
+  const st = ph.t0 + (ph.t1 - ph.t0) * (0.14 + 0.2 * idx);
+  return smooth(clamp01((t - st) / 0.9));
+}
+function isoAlpha(tl, t) {
+  const ph = tl.isoPh;
+  return ph ? fadeWin(t, ph.t0, ph.t1 + 0.3, 0.4, 0.7) : 0;
+}
+
 // ---------- Video thực tế căn nhà ----------
 export const CLIP_MAX = 5;
 const CLIP_D = 2.8;
@@ -2391,6 +2414,33 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     }
   }
 
+  // Vùng lái xe 5 – 10 – 15 phút: phủ màu nhạt + viền sáng, mỗi vùng lan ra từ căn nhà (thu phóng quanh nhà)
+  if (tl.isoPh && scene.iso && scene.iso.areas) {
+    const aIso = isoAlpha(tl, t);
+    if (aIso > 0.01) {
+      const areas = scene.iso.areas;
+      g.save();
+      g.lineJoin = 'round';
+      for (let idx = areas.length - 1; idx >= 0; idx--) {
+        const ar = areas[idx];
+        const k = isoReveal(tl, idx, t);
+        if (k <= 0.001) continue;
+        const pth = new Path2D();
+        for (const r of ar.rings) r.forEach((p, i) => {
+          const q = gLL(v, p[0], p[1]);
+          const x = hg.x + (q.x - hg.x) * k, y = hg.y + (q.y - hg.y) * k;
+          i ? pth.lineTo(x, y) : pth.moveTo(x, y);
+        });
+        const col = isoColor(ar.min);
+        g.globalAlpha = aIso * k * 0.16; g.fillStyle = col; g.fill(pth, 'evenodd');
+        g.globalAlpha = aIso * k * 0.45; g.strokeStyle = col; g.lineWidth = 9; g.stroke(pth);
+        g.globalAlpha = aIso * k; g.strokeStyle = '#ffffff'; g.lineWidth = 2.4; g.shadowColor = col; g.shadowBlur = 12; g.stroke(pth);
+        g.shadowBlur = 0;
+      }
+      g.restore();
+    }
+  }
+
   // Khoanh vùng hành chính ở cảnh mở đầu: xã/phường sáng lên ở trung cảnh, rồi lùi ra vẽ nổi cả tỉnh/thành phố.
   // Ngoài vùng tối lại; ghim bất động sản luôn hiện.
   const AR = scene.adminArea, PV = tl.provPh;
@@ -2910,6 +2960,43 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   const cap = captionAt(tl, t);
   const capL = cap ? captionLayout(ctx, tl, cap, occ) : null;
   const capA = cap ? Math.min(clamp01((t - cap.t0) / 0.12), clamp01((cap.t1 - t) / 0.12)) : 0;
+
+  // Nhãn "5 phút / 10 phút / 15 phút lái xe" ở mép trên mỗi vùng (vị trí trên màn hình, kẹp trong khung an toàn)
+  if (tl.isoPh && scene.iso && scene.iso.areas) {
+    const aIso = isoAlpha(tl, t);
+    if (aIso > 0.01) {
+      const areas = scene.iso.areas;
+      const used = [];
+      areas.forEach((ar, idx) => {
+        const k = isoReveal(tl, idx, t);
+        if (k < 0.6) return;
+        // Điểm cao nhất của vùng trên màn hình (sau khi lan xong)
+        let best = null;
+        for (const r of ar.rings) for (let i = 0; i < r.length; i += Math.max(1, Math.floor(r.length / 60))) {
+          const sp = S(r[i][0], r[i][1]);
+          if (sp.x < safe.x + 40 || sp.x > LW - safe.x - 40 || sp.y < safe.top + 40 || sp.y > LH - safe.bottom - 30) continue;
+          if (!best || sp.y < best.y) best = sp;
+        }
+        if (!best) return;
+        const text = `${ar.min} phút lái xe`;
+        ctx.save();
+        ctx.globalAlpha = aIso * clamp01((k - 0.6) / 0.4);
+        ctx.font = `800 13px ${FONT}`;
+        const w = ctx.measureText(text).width + 22, h = 26;
+        let x = Math.max(safe.x + 4, Math.min(LW - safe.x - 4 - w, best.x - w / 2)), y = best.y - h - 6;
+        for (const u of used) if (Math.abs(u.y - y) < h + 4 && x < u.x + u.w && x + w > u.x) y = u.y - h - 6;
+        used.push({ x, y, w });
+        roundRect(ctx, x, y, w, h, 13);
+        ctx.fillStyle = 'rgba(8,12,18,0.78)'; ctx.fill();
+        ctx.strokeStyle = isoColor(ar.min); ctx.lineWidth = 1.6; ctx.stroke();
+        ctx.fillStyle = isoColor(ar.min);
+        ctx.beginPath(); ctx.arc(x + 12, y + h / 2, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+        ctx.fillText(text, x + 21, y + h / 2 + 0.5);
+        ctx.restore();
+      });
+    }
+  }
 
   // Thẻ tiện ích (tránh ghim nhà, logo, phụ đề)
   const avoid = [{ x: hs.x - 26, y: hs.y - 64, w: 52, h: 68 }];

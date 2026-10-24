@@ -783,3 +783,5 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 @keyframes navPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.15); } }
 @media (prefers-reduced-motion: reduce) { .appnav .zalo-link.pulse { animation: none; } }
 .vo-skip { font-size: 14px; font-weight: 700; white-space: normal; line-height: 1.3; }
+.check-row { display: flex; align-items: flex-start; gap: 8px; font-size: 13.5px; line-height: 1.4; margin: 6px 0 4px; cursor: pointer; }
+.check-row input { margin-top: 3px; }
