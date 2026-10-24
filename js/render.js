@@ -2595,25 +2595,61 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   // Chữ tuyến điểm nhấn ★ ở lại suốt các cảnh sau (như line của nó), chỉ mờ đi ở cảnh kết
   const hiLabelA = t < roadsEnd ? 1 : t < ou.t0 ? 0.9 : Math.max(0, 0.9 - (t - ou.t0) / 0.6);
   if (roadLabelA > 0 || hiLabelA > 0) {
-    for (const L of tl.roadLabels) {
+    // 24/10 (Giang báo chữ đè nhau): tính chỗ chiếm trên màn hình của từng chữ, chữ ưu tiên thấp hơn đè lên chữ khác thì
+    // mờ đi (chuyển êm theo thời gian, không nháy). Ưu tiên: tuyến đang được giới thiệu > chữ cảnh tổng kết > tuyến ★ > còn lại.
+    const curRoad = tl.roadPhases.findIndex(ph => t >= ph.t0 && t < ph.t1);
+    const inSum = sm && t >= sm.t0 - 0.3 && t < ou.t0 + 0.3;
+    const items = [];
+    tl.roadLabels.forEach((L, li) => {
       const isHi = !!tl.roads[L.road]?.hi;
       // chữ đặt cho cảnh tổng kết chỉ hiện trong cảnh tổng kết; chữ gốc của tuyến ★ nhường chỗ lúc đó
-      const inSum = sm && t >= sm.t0 - 0.3 && t < ou.t0 + 0.3;
       const labA = L.sum ? (sm ? fadeWin(t, sm.t0 + 0.4, ou.t0 + 0.2, 0.6, 0.5) : 0) : isHi ? (inSum ? Math.max(0, hiLabelA * (1 - clamp01((t - sm.t0 + 0.3) / 0.5))) : hiLabelA) : roadLabelA;
-      if (labA <= 0) continue;
+      if (labA <= 0) return;
       const ph = tl.roadPhases[L.road];
-      if (!ph || t < ph.t0) continue;
+      if (!ph || t < ph.t0) return;
       const d = ph.t1 - ph.t0;
       const rise = clamp01((t - ph.t0 - 0.5 * d) / 0.7);
-      if (rise <= 0) continue;
+      if (rise <= 0) return;
+      const q = gLL(v, L.at.lat, L.at.lng);
+      const s0 = g2s(P, q.x, q.y);
+      if (s0.w <= 0.05) return;
+      // các điểm dọc thân chữ (toạ độ mặt đất) → màn hình, mỗi điểm một bán kính theo phối cảnh
+      const a = gLL(v, L.a[0], L.a[1]), b = gLL(v, L.b[0], L.b[1]);
+      const ang = Math.atan2(b.y - a.y, b.x - a.x);
+      const half = L.text.length * L.size * 0.36, rad = L.size * 0.62;
+      const pts = [];
+      for (let k = -4; k <= 4; k++) {
+        const u = half * k / 4;
+        const sp = g2s(P, q.x + Math.cos(ang) * u, q.y + Math.sin(ang) * u);
+        if (sp.w > 0.05) pts.push({ x: sp.x, y: sp.y, r: rad / sp.w });
+      }
+      const prio = L.road === curRoad && !L.sum ? 0 : L.sum && inSum ? 0.5 : isHi ? 1 : 2 + L.road;
+      items.push({ L, li, labA, rise, q, s0, pts, prio });
+    });
+    const hitPts = (A, B) => A.pts.some(p => B.pts.some(q => Math.hypot(p.x - q.x, p.y - q.y) < (p.r + q.r) * 0.92));
+    const shown = [];
+    for (const it of items.slice().sort((x, y) => x.prio - y.prio)) {
+      it.ok = !shown.some(o => hitPts(it, o));
+      if (it.ok) shown.push(it);
+    }
+    tl._labVis ||= new Map();
+    for (const it of items) {
+      const target = it.ok ? 1 : 0;
+      const prev = tl._labVis.get(it.li);
+      let k = target;
+      if (prev && t >= prev.t && t - prev.t < 0.3) k = prev.k + Math.max(-1, Math.min(1, target - prev.k)) * Math.min(1, (t - prev.t) * 5);
+      tl._labVis.set(it.li, { k, t });
+      it.vis = k;
+    }
+    for (const it of items) {
+      if (it.vis <= 0.02) continue;
+      const { L, q, s0 } = it;
       const st = roadStyleOf(scene, tl.roads[L.road]);
       // Kiểu cũ (Giang chốt 23/10): chữ 3D in đậm, mặt trắng hoặc vàng, thân khối tối, viền đen dày; dâng khối khi hiện
-      const q = gLL(v, L.at.lat, L.at.lng);
-      const s0 = g2s(P, q.x, q.y), sx = g2s(P, q.x + 1, q.y), sy = g2s(P, q.x, q.y + 1);
-      if (s0.w <= 0.05) continue;
+      const sx = g2s(P, q.x + 1, q.y), sy = g2s(P, q.x, q.y + 1);
       ctx.save();
       ctx.transform(sx.x - s0.x, sx.y - s0.y, sy.x - s0.x, sy.y - s0.y, s0.x, s0.y);
-      groundText(ctx, v, L, st.core, Math.min(labA, clamp01(rise * 1.5)), easeOut(rise),
+      groundText(ctx, v, L, st.core, Math.min(it.labA, clamp01(it.rise * 1.5)) * it.vis, easeOut(it.rise),
         { local: true, yellow: scene.roadLabelFace === 'vang' || scene.roadLabelFace === 'vangkim', lineColor: !scene.roadLabelFace || scene.roadLabelFace === 'line' });
       ctx.restore();
     }

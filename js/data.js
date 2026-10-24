@@ -671,6 +671,26 @@ export function bridgeWays(ways, F, maxKm = 1.5) {
     list = list.filter((_, k) => k !== best.i && k !== best.j);
     list.push({ pts: merged, xy: merged.map(F.xy) });
   }
+  // Đầu mút nằm sát GIỮA một đoạn khác (ngã ba chữ T, thiếu một mẩu nối ≤ 0,3 km): kéo dài tới điểm gần nhất trên đoạn đó
+  for (let a = 0; a < list.length; a++) {
+    for (const atEnd of [false, true]) {
+      const A = list[a];
+      const p = atEnd ? A.xy[A.xy.length - 1] : A.xy[0];
+      let best = null;
+      for (let b = 0; b < list.length; b++) {
+        if (b === a) continue;
+        const B = list[b].xy;
+        for (let k = 1; k < B.length; k++) {
+          const q = segNearestXY(p[0], p[1], B[k - 1][0], B[k - 1][1], B[k][0], B[k][1]);
+          if (!best || q.d < best.d) best = q;
+        }
+      }
+      if (!best || best.d < 0.005 || best.d > 0.3) continue;
+      const ll = F.ll(best.x, best.y);
+      if (atEnd) { A.pts = [...A.pts, ll]; A.xy = [...A.xy, [best.x, best.y]]; }
+      else { A.pts = [ll, ...A.pts]; A.xy = [[best.x, best.y], ...A.xy]; }
+    }
+  }
   return list.map(x => x.pts);
 }
 
