@@ -96,8 +96,9 @@ function roadStyle(scene, level) {
   if (!th || !th.core) return base;
   return { core: level === 1 ? mixHex(th.core, '#FFFFFF', 0.25) : th.core, glow: th.glow, w: base.w };
 }
-// Trục đường "điểm nhấn" (khách bấm ★): vẽ kiểu ranh TP.HCM — hồng phát sáng, chấm sáng chạy, tường sáng dựng đứng
-const HI_ROAD = { core: '#FF5FAE', glow: '#FF2E7E', w: 5.4 };
+// Trục đường "điểm nhấn" (khách bấm ★): nổi như ranh TP.HCM nhưng KHÁC MÀU/KIỂU để phân biệt (Giang 24/10):
+// xanh điện phát sáng, xung sáng trắng chạy dọc line liên tục (như line neon hôm 23/10), tường sáng xanh dựng đứng.
+const HI_ROAD = { core: '#6CCBFF', glow: '#1E7BFF', w: 5.4, top: '#E3F4FF' };
 function roadStyleOf(scene, r) {
   return r && r.hi ? HI_ROAD : roadStyle(scene, r ? r.level : 1);
 }
@@ -2005,9 +2006,9 @@ function drawHiWall(ctx, P, v, W, t, LW, LH) {
       if (Math.max(a.x, b.x) < -40 || Math.min(a.x, b.x) > LW + 40 || Math.max(a.y, b.y) < -60 || Math.min(a.y, b.y) - Math.max(a.h, b.h) > LH + 40) continue;
       const hm = (a.h + b.h) / 2, ym = (a.y + b.y) / 2;
       const gr = ctx.createLinearGradient(0, ym, 0, ym - hm);
-      gr.addColorStop(0, `rgba(255,46,126,${0.62 * W.a * pulse})`);
-      gr.addColorStop(0.55, `rgba(255,95,174,${0.26 * W.a})`);
-      gr.addColorStop(1, 'rgba(255,95,174,0)');
+      gr.addColorStop(0, `rgba(30,123,255,${0.62 * W.a * pulse})`);
+      gr.addColorStop(0.55, `rgba(108,203,255,${0.26 * W.a})`);
+      gr.addColorStop(1, 'rgba(108,203,255,0)');
       ctx.fillStyle = gr;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(b.x, b.y - b.h); ctx.lineTo(a.x, a.y - a.h); ctx.closePath();
@@ -2016,10 +2017,17 @@ function drawHiWall(ctx, P, v, W, t, LW, LH) {
     // thanh sáng mép trên
     const top = new Path2D();
     run.forEach((q, i) => (i ? top.lineTo(q.x, q.y - q.h) : top.moveTo(q.x, q.y - q.h)));
-    ctx.globalAlpha = W.a * 0.35; ctx.strokeStyle = PINK; ctx.lineWidth = 7; ctx.stroke(top);
-    ctx.globalAlpha = W.a; ctx.strokeStyle = '#FFE3F1'; ctx.lineWidth = 1.8;
-    ctx.shadowColor = PINK; ctx.shadowBlur = 10; ctx.stroke(top);
-    ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+    ctx.globalAlpha = W.a * 0.35; ctx.strokeStyle = HI_ROAD.glow; ctx.lineWidth = 7; ctx.stroke(top);
+    ctx.globalAlpha = W.a; ctx.strokeStyle = HI_ROAD.top; ctx.lineWidth = 1.8;
+    ctx.shadowColor = HI_ROAD.glow; ctx.shadowBlur = 10; ctx.stroke(top);
+    ctx.shadowBlur = 0;
+    // xung sáng chạy trên mép tường, cùng nhịp với line dưới đất
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.setLineDash([12, 60]); ctx.lineDashOffset = -t * 80;
+    ctx.globalAlpha = W.a; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.stroke(top);
+    ctx.restore();
+    ctx.globalAlpha = 1;
   }
   ctx.restore();
 }
@@ -2114,13 +2122,16 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       const a = Math.max(roadAlpha, t >= roadsEnd && t < ou.t0 ? 0.62 : 0);
       g.lineCap = 'round'; g.lineJoin = 'round';
       for (const path of paths) {
-        g.globalAlpha = a * 0.16; g.strokeStyle = CYAN; g.lineWidth = 22; g.stroke(path);
-        g.globalAlpha = a * 0.45; g.strokeStyle = PINK; g.lineWidth = 11; g.stroke(path);
+        g.globalAlpha = a * 0.18; g.strokeStyle = HI_ROAD.glow; g.lineWidth = 24; g.stroke(path);
+        g.globalAlpha = a * 0.5; g.strokeStyle = HI_ROAD.glow; g.lineWidth = 11; g.stroke(path);
         g.globalAlpha = a; g.strokeStyle = HI_ROAD.core; g.lineWidth = 5; g.stroke(path);
+        g.globalAlpha = a * 0.85; g.strokeStyle = '#ffffff'; g.lineWidth = 1.6; g.stroke(path);
+        // Xung sáng trắng chạy dọc line (cộng sáng), khác chấm chạy của ranh tỉnh
         g.save();
-        g.globalAlpha = a * 0.95; g.strokeStyle = '#ffffff'; g.lineWidth = 2.4;
-        g.setLineDash([0.1, 9]); g.lineDashOffset = -t * 16;
-        g.stroke(path);
+        g.globalCompositeOperation = 'lighter';
+        g.setLineDash([16, 74]); g.lineDashOffset = -t * 95;
+        g.globalAlpha = a * 0.55; g.strokeStyle = HI_ROAD.core; g.lineWidth = 12; g.stroke(path);
+        g.globalAlpha = a; g.strokeStyle = '#ffffff'; g.lineWidth = 4.2; g.stroke(path);
         g.restore();
       }
       g.globalAlpha = 1;
