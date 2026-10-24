@@ -838,6 +838,33 @@ function placeRoadLabels(tl, cam, only = () => true, block = null) {
       let ang = Math.atan2(sb.y - sa.y, sb.x - sa.x);
       cands.push({ q, s: sc, ang, steep: Math.abs(Math.sin(ang)), score: Math.abs(q.dist - target) + Math.abs(Math.sin(ang)) * 0.8 });
     }
+    // Chỗ line bị hở (dữ liệu bản đồ thiếu đoạn): ưu tiên đặt chữ tên đường ĐÚNG chỗ hở để che đi (Giang 24/10)
+    const ends = [];
+    for (const l of g.lines) {
+      const n = l.coords.length;
+      if (n < 2) continue;
+      ends.push({ p: l.coords[0], d: l.dist[0], nb: l.coords[Math.min(n - 1, 1)] });
+      ends.push({ p: l.coords[n - 1], d: l.dist[n - 1], nb: l.coords[Math.max(0, n - 2)] });
+    }
+    const ll = p => ({ lat: p[0], lng: p[1] });
+    for (let i = 0; i < ends.length; i++) for (let j = i + 1; j < ends.length; j++) {
+      const A = ends[i], B = ends[j];
+      if (Math.floor(i / 2) === Math.floor(j / 2)) continue; // hai đầu của cùng một đoạn
+      const gap = haversineKm(ll(A.p), ll(B.p));
+      if (gap < 0.03 || gap > 1.0) continue;
+      const d = (A.d + B.d) / 2;
+      if (d > g.rrMax * 0.9) continue;
+      const mid = { lat: (A.p[0] + B.p[0]) / 2, lng: (A.p[1] + B.p[1]) / 2 };
+      const gp = gLL(v, mid.lat, mid.lng);
+      const sc = g2s(P, gp.x, gp.y);
+      if (sc.x < 0 || sc.x > LW || sc.y < 0 || sc.y > LH) continue;
+      const ga = gLL(v, A.p[0], A.p[1]), gb = gLL(v, B.p[0], B.p[1]);
+      const sa = g2s(P, ga.x, ga.y), sb = g2s(P, gb.x, gb.y);
+      const ang = Math.atan2(sb.y - sa.y, sb.x - sa.x);
+      // khoảng hở trên màn hình phải đủ ngắn để chữ che được
+      if (Math.hypot(sb.x - sa.x, sb.y - sa.y) > base * text.length * 0.9) continue;
+      cands.push({ q: { lat: mid.lat, lng: mid.lng, dist: d, a: A.p, b: B.p }, s: sc, ang, steep: Math.abs(Math.sin(ang)), score: -2 + gap, gap: true });
+    }
     cands.sort((a, b) => a.score - b.score);
     const rectOf = (c, size) => {
       const pk = 1 / Math.max(0.4, c.s.w || 1); // gần đáy khung, phối cảnh làm chữ to ra trên màn hình
@@ -856,7 +883,18 @@ function placeRoadLabels(tl, cam, only = () => true, block = null) {
       ...(block ? [{ sizes: [base * 0.55, base * 0.48], margin: 30, avoid: [house, block] }] : [{ sizes: [base * 0.62], margin: 40, avoid: [] }]),
       ...(g.hi && !block ? [{ sizes: [base * 0.55], margin: 120, avoid: [] }] : []),
     ];
-    for (const ps of passes) {
+    // Che chỗ hở trước: thà chữ nhỏ hơn một chút mà nằm đúng chỗ line bị đứt
+    const gapC = cands.filter(c => c.gap);
+    for (const size of gapC.length ? [base, base * 0.85, base * 0.72, base * 0.62] : []) {
+      for (const c of gapC) {
+        const r = rectOf(c, size);
+        if (!inSafe(r, 10) || hit(r, placed)) continue;
+        pick = { c, size, r };
+        break;
+      }
+      if (pick) break;
+    }
+    for (const ps of pick ? [] : passes) {
       for (const size of ps.sizes) {
         for (const c of cands) {
           const r = rectOf(c, size);

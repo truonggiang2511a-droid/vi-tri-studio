@@ -994,7 +994,7 @@ async function checkAi() {
     ai.gated = a?.gated !== false;
     if (a?.voices?.length) renderVoices(a.voices);
   } catch { /* để mặc định */ }
-  const prov = { fpt: 'FPT.AI', google: 'Google' }[ai.ttsProvider] || '';
+  const prov = { fpt: 'FPT.AI', google: 'Google', vbee: 'Vbee' }[ai.ttsProvider] || '';
   $('aiStatus').textContent = ai.tts
     ? `Giọng AI sẵn sàng${prov ? ' (' + prov + ')' : ''}. Video tự giãn theo từng câu đọc.`
     : 'Giọng AI chưa bật trên máy chủ (cần khoá FPT.AI hoặc Google TTS). Kịch bản vẫn sửa và chép được để tự ghi âm.';
@@ -1002,15 +1002,36 @@ async function checkAi() {
   updateVoCard();
 }
 
+// Giọng FPT/Google: nút bấm như cũ. Giọng Vbee (id 'vb:…', khi máy chủ có VBEE_APP_ID + VBEE_TOKEN): ô chọn riêng + nghe thử.
 function renderVoices(list) {
   ai.voices = list;
+  const base = list.filter(v => v.provider !== 'vbee');
+  const vb = list.filter(v => v.provider === 'vbee').sort((a, b) => a.label.localeCompare(b.label, 'vi'));
   const seg = $('voiceSeg');
-  seg.innerHTML = list.map(v => `<button type="button" role="radio" data-v="${esc(v.id)}">${esc(v.label)}</button>`).join('');
+  seg.innerHTML = base.map(v => `<button type="button" role="radio" data-v="${esc(v.id)}">${esc(v.label)}</button>`).join('');
+  seg.hidden = !base.length;
+  const row = $('vbeeRow'), sel = $('vbeeVoice');
+  if (row && sel) {
+    row.hidden = !vb.length;
+    const g = { female: 'nữ', male: 'nam' };
+    sel.innerHTML = '<option value="">— Chọn giọng Vbee —</option>' + vb.map(v => `<option value="${esc(v.id)}">${esc(v.label)}${g[v.gender] ? ' · ' + g[v.gender] : ''}</option>`).join('');
+  }
   if (!list.some(v => v.id === state.voiceId)) {
     const male = /^(g-)?nam/.test(state.voiceId);
-    state.voiceId = (list.find(v => /^(g-)?nam/.test(v.id) === male) || list[0]).id;
+    const pool = base.length ? base : vb;
+    state.voiceId = (pool.find(v => /^(g-)?nam/.test(v.id) === male) || pool[0]).id;
   }
+  syncVoiceUi();
+}
+function syncVoiceUi() {
   setSeg('voiceSeg', state.voiceId);
+  const sel = $('vbeeVoice'), row = $('vbeeRow');
+  if (!sel) return;
+  const isVb = String(state.voiceId || '').startsWith('vb:');
+  sel.value = isVb ? state.voiceId : '';
+  row.classList.toggle('on', isVb);
+  const v = (ai.voices || []).find(x => x.id === state.voiceId);
+  $('vbeeDemo').hidden = !(isVb && v?.demo);
 }
 
 function altScript() {
@@ -2337,7 +2358,18 @@ function init() {
   $('sfxOn').checked = state.sfxOn;
   $('sfxVol').value = state.sfxVol;
   $('aiVoiceOn').checked = state.aiVoiceOn;
-  bindSeg('voiceSeg', v => { state.voiceId = v; renderScript(); save(); });
+  bindSeg('voiceSeg', v => { state.voiceId = v; syncVoiceUi(); renderScript(); save(); });
+  $('vbeeVoice').addEventListener('change', e => {
+    const v = e.target.value;
+    if (!v) return;
+    state.voiceId = v; syncVoiceUi(); renderScript(); save();
+  });
+  let demoAudio = null;
+  $('vbeeDemo').addEventListener('click', () => {
+    const v = (ai.voices || []).find(x => x.id === state.voiceId);
+    if (!v?.demo) return;
+    try { demoAudio?.pause(); demoAudio = new Audio(v.demo); demoAudio.play().catch(() => toast('Không phát được giọng mẫu.')); } catch { /* bỏ qua */ }
+  });
   // Đổi tốc độ đọc: giọng đã tạo tự co giãn theo (không mất giọng, không tốn lượt)
   bindSeg('vspeedSeg', async v => {
     state.voiceSpeed = Number(v);

@@ -328,6 +328,13 @@
             <button type="button" role="radio" data-v="nu-bac">Nữ miền Bắc</button>
             <button type="button" role="radio" data-v="nam-bac">Nam miền Bắc</button>
           </div>
+          <div class="vbee-row" id="vbeeRow" hidden>
+            <label class="field-label" for="vbeeVoice">Hoặc chọn giọng Vbee</label>
+            <div class="vbee-pick">
+              <select id="vbeeVoice" aria-label="Giọng Vbee"><option value="">— Chọn giọng Vbee —</option></select>
+              <button type="button" class="btn btn-quiet" id="vbeeDemo" hidden>▶ Nghe thử</button>
+            </div>
+          </div>
           <button id="ttsBtn" class="btn btn-primary btn-lg btn-block vo-go" type="button">🎙️ Tạo kịch bản &amp; giọng đọc</button>
           <button id="voVoiceOnly" class="link-btn vo-only" type="button" hidden>Đã sửa lời? Chỉ đọc lại giọng (giữ nguyên kịch bản)</button>
           <p id="ttsMsg" class="hint" aria-live="polite"></p>
