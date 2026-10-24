@@ -33,7 +33,8 @@ export async function mixAudio({ music, voice, voiceSegs = [], sfx = null, durat
     src.buffer = music;
     src.loop = true;
     const g = ctx.createGain();
-    const full = musicVol, duck = musicVol * 0.26;
+    // 24/10 (Giang: nhạc nền hơi nhỏ): dưới giọng đọc giữ 42% (trước 26%, ~+4 dB) — giọng vẫn rõ, nhạc vẫn có lực
+    const full = musicVol, duck = musicVol * 0.42;
     g.gain.setValueAtTime(0, 0);
     g.gain.linearRampToValueAtTime(voice ? duck : full, 0.6);
     // Giọng AI từng đoạn: nhạc nhỏ xuống khi đang đọc, to lên ở khoảng nghỉ
@@ -61,7 +62,12 @@ export async function mixAudio({ music, voice, voiceSegs = [], sfx = null, durat
     src.start(Math.max(0, v.t));
   }
   if (sfx && sfx.events?.length && sfx.vol > 0) scheduleSfx(ctx, sfx.events, sfx.vol * (hasVoice ? 0.75 : 1));
-  return await ctx.startRendering();
+  const out = await ctx.startRendering();
+  // Chống rè: đỉnh vượt 0,97 thì hạ cả bản trộn xuống cho vừa (nhạc to hơn + giọng + SFX có thể cộng quá 1)
+  let pk = 0;
+  for (let c = 0; c < out.numberOfChannels; c++) { const d = out.getChannelData(c); for (let i = 0; i < d.length; i++) { const a = d[i] < 0 ? -d[i] : d[i]; if (a > pk) pk = a; } }
+  if (pk > 0.97) { const k = 0.97 / pk; for (let c = 0; c < out.numberOfChannels; c++) { const d = out.getChannelData(c); for (let i = 0; i < d.length; i++) d[i] *= k; } }
+  return out;
 }
 
 export async function preloadTiles(tl, scale, cache, onProgress, signal) {
