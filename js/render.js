@@ -98,7 +98,20 @@ function roadStyle(scene, level) {
 }
 // Trục đường "điểm nhấn" (khách bấm ★): nổi như ranh TP.HCM nhưng KHÁC MÀU/KIỂU để phân biệt (Giang 24/10):
 // xanh điện phát sáng, xung sáng trắng chạy dọc line liên tục (như line neon hôm 23/10), tường sáng xanh dựng đứng.
-const HI_ROAD = { core: '#6CCBFF', glow: '#1E7BFF', w: 5.4, top: '#E3F4FF' };
+// 24/10 (Giang báo "có 2 đường line"): KHÔNG còn vẽ line dưới đất + thanh mép tường riêng. Chỉ còn MỘT line sáng
+// nâng nổi lên khỏi mặt đất (vẽ trên màn hình), dưới đất chỉ có bóng tối mờ + quầng màu nhạt. Khách chọn màu (`scene.hiTheme`).
+export const HI_THEMES = {
+  dien:  { label: 'Xanh điện', core: '#6CCBFF', glow: '#1E7BFF' },
+  vang:  { label: 'Vàng kim',  core: '#FFD54A', glow: '#FFA200' },
+  cam:   { label: 'Cam neon',  core: '#FF9A3D', glow: '#FF5A00' },
+  la:    { label: 'Xanh lá',   core: '#6BFF9E', glow: '#10C255' },
+  tim:   { label: 'Tím',       core: '#C9A2FF', glow: '#7C4DFF' },
+  do:    { label: 'Đỏ',        core: '#FF6A5E', glow: '#FF1E1E' },
+  trang: { label: 'Trắng bạc', core: '#FFFFFF', glow: '#9EC9FF' },
+  ngoc:  { label: 'Xanh ngọc', core: '#5EF5E0', glow: '#00C2B0' },
+};
+let HI_ROAD = { ...HI_THEMES.dien, w: 5.4 };
+function useHiTheme(key) { HI_ROAD = { ...(HI_THEMES[key] || HI_THEMES.dien), w: 5.4 }; }
 function roadStyleOf(scene, r) {
   return r && r.hi ? HI_ROAD : roadStyle(scene, r ? r.level : 1);
 }
@@ -1956,13 +1969,13 @@ function brandTop(tl) {
 // Vẽ tường sáng trên màn hình: chân tường bám mặt đường, đỉnh nâng lên theo phối cảnh (gần to, xa nhỏ),
 // mặt tường mờ dần lên trên, mép trên là thanh sáng. Chỉ phần đường đã chạy tới (dist ≤ rr) mới có tường.
 function drawHiWall(ctx, P, v, W, t, LW, LH) {
-  const H0 = 34 * W.k; // chiều cao tường (px màn hình ở độ sâu chuẩn)
+  const H0 = 11 * W.k; // độ nâng line (px màn hình ở độ sâu chuẩn); kẹp tối đa 18 px để line không tách xa con đường
   if (H0 < 0.5 || W.a < 0.02) return;
   const runs = [];
   for (const l of W.r.lines) {
     let cur = null;
     const n = l.xs.length;
-    const pt = (x, y) => { const q = gOf(v, x, y); const b = g2s(P, q.x, q.y); return b.w > 0.05 ? { x: b.x, y: b.y, h: H0 / b.w } : null; };
+    const pt = (x, y) => { const q = gOf(v, x, y); const b = g2s(P, q.x, q.y); return b.w > 0.05 ? { x: b.x, y: b.y, h: Math.min(18 * W.k, H0 / b.w) } : null; };
     for (let i = 0; i < n; i++) {
       if (l.dist[i] > W.rr) {
         if (cur && i > 0) {
@@ -1996,36 +2009,40 @@ function drawHiWall(ctx, P, v, W, t, LW, LH) {
     if (cur && cur.length > 1) runs.push(cur);
   }
   if (!runs.length) return;
-  const pulse = 0.85 + 0.15 * Math.sin(t * 3.2);
+  const C = HI_ROAD;
+  const rgb = hex => { const n = parseInt(hex.slice(1), 16); return `${n >> 16},${(n >> 8) & 255},${n & 255}`; };
+  const gl = rgb(C.glow);
   ctx.save();
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   for (const run of runs) {
-    // mặt tường: từng ô nhỏ có dải màu riêng (đậm ở chân, trong suốt ở đỉnh)
+    // Màn sáng mờ nối mặt đất lên line (rất nhạt, không có mép riêng) để line trông như đang nổi
     for (let i = 1; i < run.length; i++) {
       const a = run[i - 1], b = run[i];
       if (Math.max(a.x, b.x) < -40 || Math.min(a.x, b.x) > LW + 40 || Math.max(a.y, b.y) < -60 || Math.min(a.y, b.y) - Math.max(a.h, b.h) > LH + 40) continue;
       const hm = (a.h + b.h) / 2, ym = (a.y + b.y) / 2;
       const gr = ctx.createLinearGradient(0, ym, 0, ym - hm);
-      gr.addColorStop(0, `rgba(30,123,255,${0.62 * W.a * pulse})`);
-      gr.addColorStop(0.55, `rgba(108,203,255,${0.26 * W.a})`);
-      gr.addColorStop(1, 'rgba(108,203,255,0)');
+      gr.addColorStop(0, `rgba(${gl},0)`);
+      gr.addColorStop(1, `rgba(${gl},${0.32 * W.a})`);
       ctx.fillStyle = gr;
       ctx.beginPath();
       ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(b.x, b.y - b.h); ctx.lineTo(a.x, a.y - a.h); ctx.closePath();
       ctx.fill();
     }
-    // thanh sáng mép trên
+    // MỘT line sáng duy nhất, nâng lên khỏi mặt đất
     const top = new Path2D();
     run.forEach((q, i) => (i ? top.lineTo(q.x, q.y - q.h) : top.moveTo(q.x, q.y - q.h)));
-    ctx.globalAlpha = W.a * 0.35; ctx.strokeStyle = HI_ROAD.glow; ctx.lineWidth = 7; ctx.stroke(top);
-    ctx.globalAlpha = W.a; ctx.strokeStyle = HI_ROAD.top; ctx.lineWidth = 1.8;
-    ctx.shadowColor = HI_ROAD.glow; ctx.shadowBlur = 10; ctx.stroke(top);
+    ctx.globalAlpha = W.a * 0.18; ctx.strokeStyle = C.glow; ctx.lineWidth = 20; ctx.stroke(top);
+    ctx.globalAlpha = W.a * 0.5; ctx.strokeStyle = C.glow; ctx.lineWidth = 9; ctx.stroke(top);
+    ctx.globalAlpha = W.a; ctx.strokeStyle = C.core; ctx.lineWidth = 4.4;
+    ctx.shadowColor = C.glow; ctx.shadowBlur = 12; ctx.stroke(top);
     ctx.shadowBlur = 0;
-    // xung sáng chạy trên mép tường, cùng nhịp với line dưới đất
+    ctx.globalAlpha = W.a * 0.9; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.4; ctx.stroke(top);
+    // Xung sáng trắng chạy dọc line (cộng sáng)
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    ctx.setLineDash([12, 60]); ctx.lineDashOffset = -t * 80;
-    ctx.globalAlpha = W.a; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3; ctx.stroke(top);
+    ctx.setLineDash([16, 74]); ctx.lineDashOffset = -t * 95;
+    ctx.globalAlpha = W.a * 0.55; ctx.strokeStyle = C.core; ctx.lineWidth = 11; ctx.stroke(top);
+    ctx.globalAlpha = W.a; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4; ctx.stroke(top);
     ctx.restore();
     ctx.globalAlpha = 1;
   }
@@ -2034,6 +2051,7 @@ function drawHiWall(ctx, P, v, W, t, LW, LH) {
 
 export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   useStyle(tl.scene.style);
+  useHiTheme(tl.scene.hiTheme);
   useBase(tl.scene.base);
   const { LW, LH, safe, scene } = tl;
   const T = tl.duration;
@@ -2121,18 +2139,10 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       // Điểm nhấn: giữ sáng rõ hơn các tuyến khác cả ở cảnh tổng kết
       const a = Math.max(roadAlpha, t >= roadsEnd && t < ou.t0 ? 0.62 : 0);
       g.lineCap = 'round'; g.lineJoin = 'round';
+      // Dưới đất chỉ có bóng đổ + quầng màu nhạt (line sáng thật vẽ nổi lên trên màn hình ở drawHiWall)
       for (const path of paths) {
-        g.globalAlpha = a * 0.18; g.strokeStyle = HI_ROAD.glow; g.lineWidth = 24; g.stroke(path);
-        g.globalAlpha = a * 0.5; g.strokeStyle = HI_ROAD.glow; g.lineWidth = 11; g.stroke(path);
-        g.globalAlpha = a; g.strokeStyle = HI_ROAD.core; g.lineWidth = 5; g.stroke(path);
-        g.globalAlpha = a * 0.85; g.strokeStyle = '#ffffff'; g.lineWidth = 1.6; g.stroke(path);
-        // Xung sáng trắng chạy dọc line (cộng sáng), khác chấm chạy của ranh tỉnh
-        g.save();
-        g.globalCompositeOperation = 'lighter';
-        g.setLineDash([16, 74]); g.lineDashOffset = -t * 95;
-        g.globalAlpha = a * 0.55; g.strokeStyle = HI_ROAD.core; g.lineWidth = 12; g.stroke(path);
-        g.globalAlpha = a; g.strokeStyle = '#ffffff'; g.lineWidth = 4.2; g.stroke(path);
-        g.restore();
+        g.globalAlpha = a * 0.4; g.strokeStyle = '#000000'; g.lineWidth = 9; g.stroke(path);
+        g.globalAlpha = a * 0.22; g.strokeStyle = HI_ROAD.glow; g.lineWidth = 22; g.stroke(path);
       }
       g.globalAlpha = 1;
       hiWalls.push({ r, rr, a, k: easeOut(clamp01((t - ph.t0 - 0.12 * d) / 0.9)) });

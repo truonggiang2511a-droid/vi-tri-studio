@@ -3,7 +3,7 @@ import { parseCoords, haversineKm, formatKm } from './geo.js';
 import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, guessCategory } from './data.js';
 import { ICON_PATHS } from './icons.js';
 import {
-  FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, STYLES, BASES,
+  FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, HI_THEMES, STYLES, BASES,
 } from './render.js';
 import { sfxEvents } from './sfx.js';
 import { stretchBuffer } from './stretch.js';
@@ -64,7 +64,8 @@ const state = {
   voSig: '', // lựa chọn (cách viết + phong cách) của lần tạo giọng gần nhất
   lotArea: '',       // diện tích hiển thị (trống = tự tính)
   stars: [],         // id tiện ích được khoanh vùng nổi bật
-  roadStars: [],     // id trục đường "điểm nhấn" (vẽ kiểu ranh TP.HCM), tối đa 2
+  roadStars: [],     // id trục đường "điểm nhấn" (line nổi có xung sáng), tối đa 2
+  hiTheme: 'dien',   // màu line trục đường điểm nhấn (HI_THEMES)
   pageVideo: '',     // link video đã đăng (gắn vào trang web căn nhà)
   pageDesc: '',
   roadTheme: 'auto',
@@ -207,6 +208,7 @@ function buildScene() {
     roadWidth: (state.roadWidth || '').trim(),
     showStreets: state.showStreets !== false,
     roadTheme: state.roadTheme,
+    hiTheme: state.hiTheme,
     routeTheme: state.routeTheme,
     roadLabelFace: state.roadLabelFace,
   };
@@ -1273,9 +1275,10 @@ function renderBases() {
     scheduleRebuild();
   };
 }
-function renderSwatches(id, key, withAuto) {
+function renderSwatches(id, key, withAuto, themes = LINE_THEMES) {
   const el = $(id);
-  el.innerHTML = Object.entries(LINE_THEMES).filter(([k]) => withAuto || k !== 'auto').map(([k, th]) => {
+  if (!el) return;
+  el.innerHTML = Object.entries(themes).filter(([k]) => withAuto || k !== 'auto').map(([k, th]) => {
     const bg = th.core || 'conic-gradient(#FF8A1F 0 33%, #FFC93C 0 66%, #FFE59A 0)';
     return `<button type="button" role="radio" class="swatch" data-v="${k}" aria-checked="${state[key] === k}"><span class="sw" style="background:${bg};--glow:${th.glow || 'transparent'}"></span>${esc(th.label)}</button>`;
   }).join('');
@@ -1504,7 +1507,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'stars', 'roadStars', 'pageVideo', 'pageDesc', 'roadTheme', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'stars', 'roadStars', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -2310,6 +2313,7 @@ function init() {
   $('fitVoice').addEventListener('change', e => { state.fitVoice = e.target.checked; scheduleRebuild(); });
   renderSwatches('roadThemeRow', 'roadTheme', true);
   renderSwatches('routeThemeRow', 'routeTheme', false);
+  renderSwatches('hiThemeRow', 'hiTheme', false, HI_THEMES);
   setSeg('labelFaceSeg', state.roadLabelFace || 'line');
   bindSeg('labelFaceSeg', v => { state.roadLabelFace = v; save(); scheduleRebuild(); });
   renderStyles();

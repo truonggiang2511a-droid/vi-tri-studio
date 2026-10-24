@@ -750,3 +750,4 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .guide-dlg { width: min(400px, calc(100% - 24px)); }
 .guide-card { padding: 16px 14px 14px; }
 .guide-card video { width: 100%; max-height: calc(100dvh - 120px); aspect-ratio: 9 / 16; object-fit: contain; background: #000; border-radius: 12px; }
+.hi-theme { margin: 0 0 10px; }
