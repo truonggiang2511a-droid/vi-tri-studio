@@ -2130,7 +2130,11 @@ function renderLotStyles() {
   const dim = $('lotDimsOn');
   if (dim) {
     dim.checked = lotDimsOn();
-    $('lotDimsHint').textContent = state.lotSrc === 'so' ? 'Số đo tính từ toạ độ sổ đỏ.' : hasLot ? 'Lô vẽ tay: số đo ước lượng từ chỗ chạm, có thể lệch 1–2 m — chỉ bật khi đã chấm thật khớp.' : '';
+    const fs = state.streets && state.streets.front;
+    const roadNote = fs ? (String(state.roadWidth || '').trim()
+      ? ' Đường trước nhà (' + fs.name + ') được tô sáng, kèm vạch đo ' + String(state.roadWidth).trim() + '.'
+      : ' Đã dò được đường trước nhà (' + fs.name + ') và tô sáng trong video — nhập "Bề rộng đường trước nhà" ở mục Thông tin để hiện số mét.') : '';
+    $('lotDimsHint').textContent = (state.lotSrc === 'so' ? 'Số đo tính từ toạ độ sổ đỏ.' : hasLot ? 'Lô vẽ tay: số đo ước lượng từ chỗ chạm, có thể lệch 1–2 m — chỉ bật khi đã chấm thật khớp.' : '') + roadNote;
     dim.onchange = () => { state.lotDims = dim.checked ? 'on' : 'off'; renderLotStyles(); showLotMoment(); };
   }
   renderSwatches('lotColorRow', 'lotColor', true, LOT_COLORS);

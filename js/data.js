@@ -914,9 +914,19 @@ export async function loadStreets(center, signal, maxKm = 0.35) {
       const px = A[0] + dx * k, py = A[1] + dy * k, d = Math.hypot(px, py);
       if (!front || d < front.km) {
         const ll = F.ll(px, py);
-        front = { name: r.name, km: d, at: { lat: ll[0], lng: ll[1] }, a: r.pts[i], b: r.pts[i + 1], cls: r.cls };
+        front = { name: r.name, km: d, at: { lat: ll[0], lng: ll[1] }, a: r.pts[i], b: r.pts[i + 1], cls: r.cls, w: r.w, _r: r };
       }
     }
+  }
+  // Đoạn đường trước nhà (trong ~160 m quanh nhà) để đánh dấu sáng trong video
+  if (front) {
+    const seg = [];
+    for (const p of front._r.pts) {
+      const q = F.xy(p);
+      if (Math.hypot(q[0], q[1]) <= 0.16) seg.push([Math.round(p[0] * 1e6) / 1e6, Math.round(p[1] * 1e6) / 1e6]);
+    }
+    front.pts = seg.length >= 2 ? seg : [front.a, front.b];
+    delete front._r;
   }
   return { lines: lines.slice(0, 400), front: front && front.km < 0.12 ? front : null };
 }

@@ -2618,7 +2618,7 @@ function layoutLotLabel(xy, fr, hg, w1, w2, wj, P) {
 }
 // Ghi kích thước lô kiểu đường đo: mặt tiền "Ngang", cạnh sau "Hậu"/"Nở hậu", cạnh bên "Dài"
 const fmtLen = m => (Math.round(m * 10) / 10).toFixed(1).replace(/\.0$/, '').replace('.', ',') + ' m';
-function drawLotDims(g, xy, LOT, c, frontAt, alpha, accent, pin, P) {
+function drawLotDims(g, xy, LOT, c, frontAt, alpha, accent, pin, P, avoid = []) {
   const ps = g2s(P, pin.x, pin.y);
   const n = xy.length;
   const E = xy.map((a, i) => {
@@ -2626,37 +2626,49 @@ function drawLotDims(g, xy, LOT, c, frontAt, alpha, accent, pin, P) {
     const len = Math.hypot(b.x - a.x, b.y - a.y);
     return { i, a, b, len, m: haversineKm(LOT[i], LOT[(i + 1) % n]) * 1000, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
   });
-  const labels = []; // { e, text, hi }
-  if (n === 4) {
-    let f = -1;
+  // Gọn: CHỈ 1 nhãn ngang + 1 nhãn dài; đầu kia rộng hơn thì thêm 1 nhãn (biết mặt tiền → "Nở hậu").
+  // Áp dụng cho mọi hình lô (4 góc hay nhiều góc): ghi đúng độ dài một cạnh thật, không cộng dồn.
+  const labels = []; // { e, text, hi, front }
+  const big = Math.max(...E.map(e => e.len));
+  const fr = lotFrame(xy);
+  if (fr) {
+    const dir = e => ({ x: (e.b.x - e.a.x) / (e.len || 1), y: (e.b.y - e.a.y) / (e.len || 1) });
+    const sy = e => g2s(P, e.mx, e.my).y; // cạnh nằm thấp trên màn hình dễ thấy hơn
+    let front = null;
     if (frontAt) {
       let bd = Infinity;
-      for (const e of E) { const d = Math.hypot(e.mx - frontAt.x, e.my - frontAt.y); if (d < bd) { bd = d; f = e.i; } }
-      // chỉ tin là mặt tiền khi cạnh đó là một trong 2 cạnh ngắn của lô
-      const shortPair = E[0].m + E[2].m <= E[1].m + E[3].m ? [0, 2] : [1, 3];
-      if (!shortPair.includes(f)) f = -1;
+      for (const e of E) {
+        if (e.len < big * 0.12) continue;
+        const d = Math.hypot(e.mx - frontAt.x, e.my - frontAt.y);
+        if (d < bd) { bd = d; front = e; }
+      }
     }
-    if (f >= 0) {
-      const back = E[(f + 2) % 4], front = E[f];
-      labels.push({ e: front, text: 'Ngang ' + fmtLen(front.m), front: true });
-      if (back.m - front.m >= 0.1) labels.push({ e: back, text: 'Nở hậu ' + fmtLen(back.m), hi: true });
-      else if (Math.abs(back.m - front.m) >= 0.1) labels.push({ e: back, text: 'Hậu ' + fmtLen(back.m) });
-      const s1 = E[(f + 1) % 4], s2 = E[(f + 3) % 4];
-      if (Math.abs(s1.m - s2.m) < 0.15) labels.push({ e: s1.my >= s2.my ? s1 : s2, text: 'Dài ' + fmtLen((s1.m + s2.m) / 2) });
-      else { labels.push({ e: s1, text: 'Dài ' + fmtLen(s1.m) }); labels.push({ e: s2, text: 'Dài ' + fmtLen(s2.m) }); }
+    // hướng "ngang" = hướng mặt tiền (biết đường) hoặc trục ngắn của lô
+    const wd = front ? dir(front) : { x: -fr.uy, y: fr.ux };
+    const par = e => Math.abs(dir(e).x * wd.x + dir(e).y * wd.y);
+    const nx = -wd.y, ny = wd.x; // hướng "dài"
+    const proj = e => e.mx * nx + e.my * ny;
+    const ends = E.filter(e => e.len >= big * 0.2 && par(e) > 0.8);
+    let base = front, other = null;
+    if (front) {
+      const p0 = proj(front);
+      for (const e of ends) if (e !== front && (!other || Math.abs(proj(e) - p0) > Math.abs(proj(other) - p0))) other = e;
+      if (other && Math.abs(proj(other) - p0) < fr.W * 0.4) other = null;
     } else {
-      // Không biết mặt tiền: ghi số đo hai đầu ngắn + cạnh dài, không gán chữ "nở hậu"
-      const pair = E[0].m + E[2].m <= E[1].m + E[3].m ? [0, 2] : [1, 3];
-      const sides = pair[0] === 0 ? [1, 3] : [0, 2];
-      const [a1, a2] = pair.map(k => E[k]);
-      if (Math.abs(a1.m - a2.m) < 0.1) labels.push({ e: a1.my >= a2.my ? a1 : a2, text: 'Ngang ' + fmtLen((a1.m + a2.m) / 2) });
-      else { labels.push({ e: a1, text: 'Ngang ' + fmtLen(a1.m) }); labels.push({ e: a2, text: 'Ngang ' + fmtLen(a2.m) }); }
-      const [s1, s2] = sides.map(k => E[k]);
-      if (Math.abs(s1.m - s2.m) < 0.15) labels.push({ e: s1.my >= s2.my ? s1 : s2, text: 'Dài ' + fmtLen((s1.m + s2.m) / 2) });
-      else { labels.push({ e: s1, text: 'Dài ' + fmtLen(s1.m) }); labels.push({ e: s2, text: 'Dài ' + fmtLen(s2.m) }); }
+      // hai đầu lô: mỗi đầu lấy cạnh dài nhất
+      const pc = fr.cx * nx + fr.cy * ny;
+      const pick = side => ends.filter(e => (proj(e) - pc) * side > 0).sort((a, b) => b.m - a.m)[0] || null;
+      const A = pick(1), B = pick(-1);
+      // đầu nằm thấp trên màn hình (dễ thấy) là nhãn chính; đầu kia chỉ ghi thêm khi rộng hơn
+      if (A && B) [base, other] = sy(A) >= sy(B) ? [A, B] : [B, A];
+      else base = A || B;
     }
-  } else {
-    for (const e of E) if (e.len >= 30) labels.push({ e, text: fmtLen(e.m) });
+    if (base) labels.push({ e: base, text: 'Ngang ' + fmtLen(base.m), front: true });
+    if (base && other && other.m - base.m >= 0.1) labels.push({ e: other, text: (front ? 'Nở hậu ' : 'Ngang ') + fmtLen(other.m), hi: !!front });
+    // chiều dài: cạnh dài nhất vuông góc với hướng ngang (2 cạnh bằng nhau thì lấy cạnh thấp hơn trên màn hình)
+    const sides = E.filter(e => par(e) < 0.5 && e.len >= big * 0.2).sort((a, b) => (Math.abs(b.m - a.m) < 0.15 ? sy(b) - sy(a) : b.m - a.m));
+    // cạnh dài dự phòng: cạnh còn lại gần bằng (khi cạnh chính bị ghim che thì ghi ở cạnh kia)
+    if (sides[0]) labels.push({ e: sides[0], text: 'Dài ' + fmtLen(sides[0].m), alt: sides.slice(1).filter(e => e.m > sides[0].m * 0.6) });
   }
   g.save();
   g.globalAlpha = alpha;
@@ -2664,25 +2676,55 @@ function drawLotDims(g, xy, LOT, c, frontAt, alpha, accent, pin, P) {
   const fs = 17;
   g.font = `800 ${fs}px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
   const boxes = [];
-  const place = (e, text) => {
+  const avoidB = avoid.filter(Boolean);
+  const place = (e, text, loose = false) => {
     let nx = -(e.b.y - e.a.y) / e.len, ny = (e.b.x - e.a.x) / e.len;
     if ((e.mx - c.x) * nx + (e.my - c.y) * ny < 0) { nx = -nx; ny = -ny; }
     let ang = Math.atan2(e.b.y - e.a.y, e.b.x - e.a.x);
     if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI;
     const pw = g.measureText(text).width + 18, ph = fs + 10, off = 15;
     const ax = e.a.x + nx * off, ay = e.a.y + ny * off, bx = e.b.x + nx * off, by = e.b.y + ny * off;
-    for (const extra of [0, 26, 52]) for (const tt of [0.5, 0.3, 0.7, 0.15, 0.85]) {
+    for (const extra of [0, 24]) for (const tt of [0.5, 0.3, 0.7, 0.15, 0.85]) {
       const x = ax + (bx - ax) * tt + nx * (ph / 2 - 2 + extra), y = ay + (by - ay) * tt + ny * (ph / 2 - 2 + extra);
       const b = screenBox(P, x, y, ang, pw / 2, ph / 2);
-      if (!hitsPinZone(ps, b.x0, b.x1, b.y0, b.y1) && !boxes.some(o => o.x0 < b.x1 && b.x0 < o.x1 && o.y0 < b.y1 && b.y0 < o.y1)) return { x, y, b };
+      if (!hitsPinZone(ps, b.x0, b.x1, b.y0, b.y1) && ![...boxes, ...(loose ? [] : avoidB)].some(o => o.x0 < b.x1 && b.x0 < o.x1 && o.y0 < b.y1 && b.y0 < o.y1)) return { x, y, b };
     }
     return null;
   };
-  // Nhãn không có chỗ trống (bị ghim / bảng tên che) → gộp vào nhãn mặt tiền: "Ngang 5 m · Nở hậu 7 m"
+  // Nhãn không có chỗ trống (bị ghim / bảng tên che): cạnh dài thử cạnh kia; nở hậu gộp vào nhãn ngang
+  // ("Ngang 5 m · Nở hậu 7 m"); vẫn không có chỗ thì BỎ (không vẽ đè lên ghim)
   const fl = labels.find(l => l.front);
-  for (const l of labels) if (l !== fl) { l.pos = place(l.e, l.text); if (l.pos) boxes.push(l.pos.b); }
-  for (const l of labels) if (l !== fl && !l.pos && fl) { fl.text += ' · ' + l.text; fl.hi = fl.hi || l.hi; l.skip = true; }
-  if (fl) { fl.pos = place(fl.e, fl.text); if (fl.pos) boxes.push(fl.pos.b); }
+  const placeFront = () => {
+    fl.pos = place(fl.e, fl.text);
+    // nhãn ngang bị ghim che: chưa biết mặt tiền thì ghi ở đầu kia (số đo của chính cạnh đó)
+    if (!fl.pos && !frontAt) {
+      const alt = E.find(e => e !== fl.e && e.len >= big * 0.2 && Math.abs((e.b.x - e.a.x) * (fl.e.b.x - fl.e.a.x) + (e.b.y - e.a.y) * (fl.e.b.y - fl.e.a.y)) / (e.len * fl.e.len) > 0.8);
+      if (alt) { const tx = 'Ngang ' + fmtLen(alt.m); const p2 = place(alt, tx); if (p2) { fl.e = alt; fl.text = tx; fl.pos = p2; } }
+    }
+  };
+  if (fl) placeFront();
+  if (fl && fl.pos) boxes.push(fl.pos.b);
+  for (const l of labels) if (l !== fl) {
+    if (fl && l.text.startsWith('Ngang') && fl.e === l.e) { l.skip = true; continue; } // nhãn ngang đã dời sang cạnh này
+    for (const e of [l.e, ...(l.alt || [])]) {
+      const txt = e === l.e ? l.text : 'Dài ' + fmtLen(e.m);
+      const ps2 = place(e, txt);
+      if (ps2) { l.e = e; l.text = txt; l.pos = ps2; boxes.push(ps2.b); break; }
+    }
+  }
+  // Nở hậu không có chỗ riêng → gộp vào nhãn ngang ("Ngang 5 m · Nở hậu 7 m"); nhãn khác không có chỗ thì BỎ
+  for (const l of labels) if (l !== fl && !l.pos && !l.skip) {
+    l.skip = true;
+    if (fl && l.hi) {
+      if (fl.pos) boxes.splice(boxes.indexOf(fl.pos.b), 1);
+      const t0 = fl.text, e0 = fl.e;
+      fl.text += ' · ' + l.text; fl.hi = true; placeFront();
+      if (!fl.pos) fl.pos = place(fl.e, fl.text, true); // nở hậu quan trọng hơn: cho đè nhẹ lên chữ tên đường
+      if (!fl.pos) { fl.text = t0; fl.e = e0; fl.hi = false; placeFront(); }
+      if (fl.pos) boxes.push(fl.pos.b);
+    }
+  }
+  if (fl && !fl.pos) fl.skip = true;
   for (const { e, text, hi, skip, pos } of labels) {
     if (skip) continue;
     if (e.len < 1) continue;
@@ -3212,6 +3254,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
 
   // Đường quanh nhà kiểu đường nhựa (viền sáng, mặt nhựa, vạch giữa) ở cảnh giới thiệu căn nhà
   const STR = scene.showStreets === false ? null : scene.streets;
+  let streetLabBox = null;
   if (STR && STR.lines && STR.lines.length) {
     const hd0 = ho.t1 - ho.t0;
     const sA = fadeWin(t, ho.t0 + 0.12 * hd0, ov.t0 + 1.4, 0.7, 0.9);
@@ -3244,15 +3287,91 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
         g.lineWidth = Math.max(0.8, wpx * 0.07); g.setLineDash([wpx * 0.9, wpx * 0.9]); g.stroke(pth);
       }
       g.setLineDash([]);
+      // Đánh dấu ĐƯỜNG TRƯỚC NHÀ: line vàng sáng + xung sáng chạy dọc (dò được đường có tên < 120 m)
+      const FR = STR.front;
+      // Tên đường + vạch đo bề rộng đặt LỆCH sang bên cạnh lô (không nằm ngay dưới lô, chỗ nhãn "Ngang …")
+      let frontLabelAt = FR && FR.at, frontTick = null;
+      const frText = FR ? (() => {
+        const nm = String(FR.name || '');
+        const rw = String(scene.roadWidth || '').trim().replace(/^(\d+(?:[.,]\d+)?)\s*$/, '$1M');
+        return (/^(đường|hẻm|ngõ|kiệt|quốc lộ|tỉnh lộ|đại lộ)\b/i.test(nm) ? nm : 'Đường ' + nm).toUpperCase() + (rw ? ' · ' + rw.toUpperCase() : '');
+      })() : '';
+      const frSize = Math.min(30, Math.max(16, 360 / Math.max(8, frText.length)));
+      if (FR && FR.at && FR.a && FR.b) {
+        const A = gLL(v, FR.a[0], FR.a[1]), B = gLL(v, FR.b[0], FR.b[1]), P0 = gLL(v, FR.at.lat, FR.at.lng);
+        const AB = Math.hypot(B.x - A.x, B.y - A.y) || 1, ux = (B.x - A.x) / AB, uy = (B.y - A.y) / AB;
+        frontTick = { x: P0.x, y: P0.y, ux, uy };
+        if (tl.lot) {
+          const lxy = tl.lot.map(p => gLL(v, p.lat, p.lng));
+          const lc = lxy.reduce((o, q) => ({ x: o.x + q.x / lxy.length, y: o.y + q.y / lxy.length }), { x: 0, y: 0 });
+          const sgn = (lc.x - P0.x) * ux + (lc.y - P0.y) * uy > 0 ? -1 : 1; // đi về phía ít bị lô che
+          const ext = Math.max(0, ...lxy.map(q => sgn * ((q.x - P0.x) * ux + (q.y - P0.y) * uy)));
+          // tên đường dời sang BÊN KIA mặt đường (xa lô), vẫn canh giữa dưới lô nên không ra khỏi khung
+          let nx = -uy, ny = ux;
+          if ((lc.x - P0.x) * nx + (lc.y - P0.y) * ny > 0) { nx = -nx; ny = -ny; }
+          let off = Math.min(9, Math.max(3, ((FR.w || 6) * 0.45) / metersPerPixel(H.lat, cam.zoom))) / 2 + frSize * 1.15 + 8;
+          // lô sát đường: nhãn "Ngang …" nằm trên mặt đường → đẩy tên đường xa thêm cho khỏi đè
+          const gap = Math.min(...lxy.map(q => -((q.x - P0.x) * nx + (q.y - P0.y) * ny)));
+          if (gap < 64) off += 64 - Math.max(0, gap);
+          const e = 1e-4, Q1 = gLL(v, FR.at.lat + e, FR.at.lng), Q2 = gLL(v, FR.at.lat, FR.at.lng + e);
+          const j11 = (Q1.x - P0.x) / e, j21 = (Q1.y - P0.y) / e, j12 = (Q2.x - P0.x) / e, j22 = (Q2.y - P0.y) / e;
+          const det = j11 * j22 - j12 * j21;
+          if (Math.abs(det) > 1e-9) {
+            const dx = nx * off, dy = ny * off;
+            frontLabelAt = { lat: FR.at.lat + (j22 * dx - j12 * dy) / det, lng: FR.at.lng + (-j21 * dx + j11 * dy) / det };
+          }
+          frontTick = { x: P0.x + ux * sgn * (ext + 14), y: P0.y + uy * sgn * (ext + 14), ux, uy };
+        }
+      }
+      if (FR && FR.at) {
+        const fp = (FR.pts && FR.pts.length >= 2 ? FR.pts : [FR.a, FR.b]).filter(Boolean).map(p => gLL(v, p[0], p[1]));
+        if (fp.length >= 2) {
+          const hp = new Path2D();
+          fp.forEach((q, i) => (i ? hp.lineTo(q.x, q.y) : hp.moveTo(q.x, q.y)));
+          let plen = 0;
+          for (let i = 1; i < fp.length; i++) plen += Math.hypot(fp[i].x - fp[i - 1].x, fp[i].y - fp[i - 1].y);
+          const fw = Math.min(9, Math.max(3, ((FR.w || 6) * 0.45) * pxPerM));
+          const grow = easeOut(clamp01((t - ho.t0 - 0.2 * hd0) / 1.0));
+          g.globalAlpha = sA * 0.55; g.strokeStyle = 'rgba(255,209,102,0.9)'; g.lineWidth = fw + 10;
+          g.shadowColor = '#FFD166'; g.shadowBlur = 16;
+          g.setLineDash([plen * grow, plen + 1]); g.stroke(hp);
+          g.shadowBlur = 0;
+          g.globalAlpha = sA; g.strokeStyle = '#FFD166'; g.lineWidth = Math.max(2.4, fw * 0.5); g.stroke(hp);
+          if (grow >= 1) {
+            g.globalCompositeOperation = 'lighter';
+            g.setLineDash([Math.max(10, plen * 0.06), Math.max(30, plen * 0.22)]); g.lineDashOffset = -t * Math.max(60, plen * 0.25);
+            g.strokeStyle = '#ffffff'; g.lineWidth = Math.max(2, fw * 0.4); g.globalAlpha = sA * 0.9; g.stroke(hp);
+            g.globalCompositeOperation = 'source-over'; g.lineDashOffset = 0;
+          }
+          g.setLineDash([]);
+          // Bề rộng đường: CHỈ khi khách nhập (bản đồ không có số mét thật) → vạch đo ngang qua mặt đường
+          const rwm = parseFloat(String(scene.roadWidth || '').replace(',', '.'));
+          if (rwm > 0 && rwm < 80 && frontTick) {
+            const at = frontTick, px = -at.uy, py = at.ux, B = { x: at.ux, y: at.uy }, A = { x: 0, y: 0 }, L = 1;
+            const half = Math.max(6, (rwm * pxPerM) / 2);
+            const dA = sA * clamp01((t - ho.t0 - 0.35 * hd0) / 0.6);
+            g.globalAlpha = dA; g.lineCap = 'round';
+            for (const [col, lw] of [['rgba(0,0,0,0.6)', 4.4], ['#ffffff', 2]]) {
+              g.strokeStyle = col; g.lineWidth = lw; g.beginPath();
+              g.moveTo(at.x - px * half, at.y - py * half); g.lineTo(at.x + px * half, at.y + py * half);
+              for (const s of [-1, 1]) { const ex = at.x + px * half * s, ey = at.y + py * half * s; g.moveTo(ex - (B.x - A.x) / L * 7, ey - (B.y - A.y) / L * 7); g.lineTo(ex + (B.x - A.x) / L * 7, ey + (B.y - A.y) / L * 7); }
+              g.stroke();
+            }
+          }
+        }
+      }
       g.restore();
       // Tên đường trước nhà in nằm trên mặt đường
-      const fr = STR.front;
-      if (fr) {
-        const nm = String(fr.name || '');
-        const rw = String(scene.roadWidth || '').trim().replace(/^(\d+(?:[.,]\d+)?)\s*$/, '$1M');
-        const text = (/^(đường|hẻm|ngõ|kiệt|quốc lộ|tỉnh lộ|đại lộ)\b/i.test(nm) ? nm : 'Đường ' + nm).toUpperCase() + (rw ? ' · ' + rw.toUpperCase() : '');
+      if (FR) {
         const rise = clamp01((t - ho.t0 - 0.3 * hd0) / 0.8);
-        groundText(g, v, { text, size: Math.min(30, Math.max(16, 360 / Math.max(8, text.length))), at: fr.at, a: fr.a, b: fr.b }, '#FFD166', sA * clamp01(rise * 1.5), easeOut(rise));
+        groundText(g, v, { text: frText, size: frSize, at: frontLabelAt, a: FR.a, b: FR.b }, '#FFD166', sA * clamp01(rise * 1.5), easeOut(rise));
+        // ô chữ tên đường trên màn hình → chữ tên lô (khi nằm dưới lô) né ra
+        const q = gLL(v, frontLabelAt.lat, frontLabelAt.lng), A2 = gLL(v, FR.a[0], FR.a[1]), B2 = gLL(v, FR.b[0], FR.b[1]);
+        let ang = Math.atan2(B2.y - A2.y, B2.x - A2.x); if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI;
+        g.save(); g.font = `900 ${frSize}px ${FONT}`;
+        const tw = g.measureText(frText).width + frSize * 0.07 * frText.length;
+        g.restore();
+        streetLabBox = screenBox(P, q.x, q.y, ang, tw / 2, frSize * 0.9);
       }
     }
   }
@@ -3369,7 +3488,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     let dimBoxes = [];
     if (dimsOn && dimA > 0.02) {
       const frontAt = STR && STR.front && STR.front.at ? gLL(v, STR.front.at.lat, STR.front.at.lng) : null;
-      dimBoxes = drawLotDims(g, xy, LOT, c, frontAt, dimA, LC, hg, P) || [];
+      dimBoxes = drawLotDims(g, xy, LOT, c, frontAt, dimA, LC, hg, P, [streetLabBox]) || [];
     }
     const lbl = scene.lotLabel || {};
     const line1 = String(lbl.text || 'LÔ ĐẤT').trim().toUpperCase();
@@ -3388,7 +3507,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       if (!lay || lay.covered || tooSmall) {
         const sp = xy.map(q => g2s(P, q.x, q.y));
         let bottom = Math.max(...sp.map(q => q.y));
-        for (const b of dimBoxes) if (b.x1 > Math.min(...sp.map(q => q.x)) - 40 && b.x0 < Math.max(...sp.map(q => q.x)) + 40) bottom = Math.max(bottom, b.y1);
+        for (const b of [...dimBoxes, ...(streetLabBox ? [streetLabBox] : [])]) if (b.x1 > Math.min(...sp.map(q => q.x)) - 40 && b.x0 < Math.max(...sp.map(q => q.x)) + 40 && b.y0 < bottom + 60) bottom = Math.max(bottom, b.y1);
         const sx = sp.reduce((a, q) => a + q.x, 0) / sp.length, sy = bottom + 22;
         const q = s2g(P, sx, sy);
         lay = { x: q.x, y: q.y, rot: 0, size: 19 * q.w, lines: 3 };
