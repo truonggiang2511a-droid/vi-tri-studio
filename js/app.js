@@ -40,6 +40,8 @@ const state = {
   thoCu: '',         // diện tích đất thổ cư
   floors: '',        // số tầng (nhà)
   legal: '',
+  highlights: '', // điểm nổi bật môi giới tự ghi (mỗi dòng 1 ý) → kịch bản AI
+  buyer: '',      // khách nhắm tới: o | dau_tu | cho_thue
   subsOn: true,      // phụ đề chạy chữ theo giọng AI
   logoBg: true,      // nền trắng sau logo
   musicLib: 'hung-hon', // nhạc nền có sẵn đang chọn (khách mới mặc định nhạc hùng hồn; ai đã chọn/bỏ nhạc thì giữ lựa chọn cũ)
@@ -437,7 +439,7 @@ let audioSrc = null;
 let exporting = false;
 
 // Cho phép soát lỗi từ bảng điều khiển trình duyệt
-window.__vitri = { get tl() { return tl; }, get t() { return t; }, state, scanArea, SAMPLE_KEYS: () => SAMPLE_KEYS, pause: () => pause() };
+window.__vitri = { get tl() { return tl; }, get t() { return t; }, state, scanArea, SAMPLE_KEYS: () => SAMPLE_KEYS, pause: () => pause(), aiRewrite: () => aiRewrite() };
 
 function rebuild() {
   if (photoKey(state.house) !== photoHouse) { restorePhotos(); showPageResult(); }
@@ -735,6 +737,29 @@ function vnRead() {
   if (!block) { vnRes = { ...r, area: chk.area, move }; $('vnApply').disabled = false; }
 }
 // Diện tích khách nhập: "100m2", "1.200 m²", "120,5", "5x20m" → m²
+// Điểm nổi bật: mỗi dòng 1 ý, tối đa 5 ý
+function highlightLines() {
+  const l = String(state.highlights || '').split(/\n|;/).map(x => x.replace(/^[\s•\-–*+]+/, '').trim()).filter(Boolean).slice(0, 5);
+  return l.length ? l : null;
+}
+const hashStr = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); };
+// Giá (đồng) từ chữ khách nhập: "3,2 tỷ", "3 tỷ 200", "1.250 triệu", "850tr", "3.2 ty"
+function priceVnd(v) {
+  const t = String(v || '').toLowerCase().normalize('NFC').replace(/\s+/g, ' ');
+  const num = x => parseFloat(String(x).replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.'));
+  let m = t.match(/(\d+(?:[.,]\d+)?)\s*(tỷ|tỉ|ty)\s*(\d{1,3})?/);
+  if (m) return num(m[1]) * 1e9 + (m[3] ? +m[3] * (m[3].length === 1 ? 1e8 : m[3].length === 2 ? 1e7 : 1e6) : 0);
+  m = t.match(/(\d+(?:[.,]\d+)*)\s*(triệu|trieu|tr)\b/);
+  if (m) return num(m[1]) * 1e6;
+  return 0;
+}
+function pricePerM2() {
+  const p = priceVnd(state.price), a = areaFromText(state.area);
+  if (!p || !(a >= 10 && a <= 100000)) return null;
+  const tr = p / a / 1e6;
+  if (tr < 0.1 || tr > 2000) return null;
+  return 'khoảng ' + (tr >= 10 ? Math.round(tr) : Math.round(tr * 10) / 10).toString().replace('.', ',') + ' triệu một mét vuông';
+}
 function areaFromText(v) {
   const t = String(v || '').toLowerCase().replace(/\s/g, '');
   const num = x => parseFloat(x.replace(',', '.'));
@@ -946,7 +971,8 @@ function resetHouseScoped() {
 // Giữ lại thông tin của môi giới (tên, SĐT, logo), loại BĐS đang chọn và các lựa chọn phong cách/nhạc/giọng.
 const HOUSE_INFO = [['price', 'priceInput'], ['area', 'areaInput'], ['thoCu', 'thoCuInput'], ['floors', 'floorsInput'], ['beds', 'bedsInput'],
   ['legal', 'legalInput'], ['roadWidth', 'roadWidthInput'], ['sub', 'subInput'], ['lotText', 'lotText'], ['lotArea', 'lotArea'],
-  ['pageVideo', 'pageVideo'], ['pageDesc', 'pageDesc'], ['areaWard', 'areaWardInput'], ['areaProv', 'areaProvInput']];
+  ['pageVideo', 'pageVideo'], ['pageDesc', 'pageDesc'], ['areaWard', 'areaWardInput'], ['areaProv', 'areaProvInput'],
+  ['highlights', 'highlightsInput'], ['buyer', 'buyerInput']];
 // Nhớ thông tin căn vừa bị để trống: khách lỡ sửa toạ độ rồi dán lại đúng căn cũ (lệch < 30 m) thì tự điền lại
 const houseMemo = [];
 function resetHouseInfo(prev) {
@@ -1855,13 +1881,14 @@ async function aiRewrite() {
   if (!ai.script) { altScript(); return false; }
   const btn = $('aiScriptBtn');
   btn.disabled = true; $('aiScriptBig').disabled = true;
-  $('ttsMsg').textContent = 'AI đang viết kịch bản…';
+  $('ttsMsg').textContent = 'AI đang viết và biên tập kịch bản… (khoảng 20–40 giây)';
   try {
     const facts = {
       loai_bds: TYPE_WORD[state.typeLabel] || 'Căn nhà', tieu_de: state.title, dong_phu: state.sub, thuong_hieu: state.brand,
       so_dien_thoai_lien_he: phoneDisplay(state.phone) || null,
       thong_tin_nha: { gia: state.price || null, dien_tich: state.area || null, tho_cu: state.thoCu || null, so_tang: state.floors || null,
-        phong_ngu: state.beds || null, phap_ly: state.legal || null, duong_truoc_nha: state.roadWidth || null },
+        phong_ngu: state.beds || null, phap_ly: state.legal || null, duong_truoc_nha: state.roadWidth || null, gia_moi_m2: pricePerM2() },
+      diem_noi_bat: highlightLines(), khach_muc_tieu: state.buyer || null,
       ban_kinh_km: state.radiusKm, tinh_thanh: provName(), xa_phuong: wardName(),
       duong_lon: selectedRoads().map(r => ({ ten: r.label, ten_duong: r.alt || '', cach_km: +r.nearKm.toFixed(2) })),
       ranh_gioi: state.useBoundary && state.admin?.boundary ? { tinh: state.admin.boundary.short, chim_bay_km: +state.admin.boundary.km.toFixed(2), duong_di_km: state.routes.__ranh ? +state.routes.__ranh.km.toFixed(2) : null, phut_o_to: state.routes.__ranh?.min ? Math.round(state.routes.__ranh.min) : null } : null,
@@ -1911,7 +1938,8 @@ async function aiRewrite() {
 
 // ---------- Module Kịch bản & giọng đọc: một nút làm cả hai ----------
 const voMode = () => (state.scriptMode === 'mau' || !ai.script ? 'mau' : 'ai');
-const voChoice = () => voMode() === 'ai' ? 'ai|' + (state.aiTone || '') : 'mau';
+// Điểm nổi bật/khách nhắm tới đổi → kịch bản AI cần viết lại (chỉ thêm vào khi có, để căn cũ không bị coi là 'đã đổi')
+const voChoice = () => voMode() === 'ai' ? 'ai|' + (state.aiTone || '') + (state.highlights || state.buyer ? '|' + hashStr((state.highlights || '') + '#' + (state.buyer || '')) : '') : 'mau';
 const needTone = () => voMode() === 'ai' && !state.aiTone;
 function voStatus() {
   const segs = scriptSegments().filter(s => speakable(s.text));
@@ -2482,7 +2510,7 @@ async function stepNext() {
 }
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
-const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
+const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal', 'highlights', 'buyer',
   'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'lotStyle', 'lotColor', 'lotSrc', 'lotDims', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
@@ -3487,7 +3515,7 @@ function init() {
   $('musicLib').addEventListener('change', e => pickLibrary(e.target.value));
   if (state.musicLib) pickLibrary(state.musicLib);
   // Thông tin căn nhà
-  for (const [id, key] of [['priceInput', 'price'], ['areaInput', 'area'], ['thoCuInput', 'thoCu'], ['floorsInput', 'floors'], ['bedsInput', 'beds'], ['legalInput', 'legal']]) {
+  for (const [id, key] of [['priceInput', 'price'], ['areaInput', 'area'], ['thoCuInput', 'thoCu'], ['floorsInput', 'floors'], ['bedsInput', 'beds'], ['legalInput', 'legal'], ['highlightsInput', 'highlights'], ['buyerInput', 'buyer']]) {
     $(id).value = state[key] || '';
     $(id).addEventListener('input', e => { state[key] = e.target.value; renderScript(); scheduleRebuild(); });
   }
