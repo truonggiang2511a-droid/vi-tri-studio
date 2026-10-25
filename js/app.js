@@ -1817,7 +1817,7 @@ function renderVoices(list) {
     const g = { female: 'nữ', male: 'nam' };
     const opt = v => `<option value="${esc(v.id)}">${esc(v.label)}${g[v.gender] ? ' · ' + g[v.gender] : ''}</option>`;
     // Nhóm như trên Vbee: giọng riêng/nhân bản ⭐ → giọng Vbee → giọng cộng đồng
-    const groups = [['rieng', '⭐ Giọng riêng của anh/chị'], ['vbee', 'Giọng Vbee'], ['congdong', 'Giọng cộng đồng nhiều người dùng']];
+    const groups = [['dexuat', '🎙️ Đề xuất cho video BĐS'], ['rieng', '⭐ Giọng riêng của anh/chị'], ['vbee', 'Giọng Vbee'], ['congdong', 'Giọng cộng đồng nhiều người dùng']];
     sel.innerHTML = '<option value="">— Chọn giọng Vbee —</option>' + groups.map(([k, name]) => {
       const items = vb.filter(v => (v.group || (v.own ? 'rieng' : 'vbee')) === k);
       return items.length ? `<optgroup label="${esc(name)} (${items.length})">${items.map(opt).join('')}</optgroup>` : '';
