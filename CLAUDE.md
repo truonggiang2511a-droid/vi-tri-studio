@@ -25,6 +25,9 @@ Mỗi lần nhận yêu cầu:
    ghi rõ đã chọn hướng nào và vì sao.
 5. Nếu Giang vẫn chọn hướng của mình sau khi nghe phản biện → làm theo Giang, ghi quyết định vào nhật ký mục 5.
 
+**Giang cho phép tự bổ sung file này** (25/10): thấy chi tiết còn thiếu/sai so với code thật (route, biến môi trường, file, quy trình,
+nghiên cứu công nghệ) thì tự sửa/thêm vào đúng mục, kiểm chứng bằng code hoặc tài liệu trước khi ghi. Nghiên cứu công nghệ ghi ở mục 6.
+
 Ví dụ đã làm (25/10): master prompt "Next.js + Remotion + BullMQ + BDS Chat" → phản biện vì sai stack (repo là JS thuần +
 Cloudflare + render trên máy khách), tên trường BDS Chat không tồn tại (API thật: chỉ TP.HCM, giá nhà nước tra theo tên đường
 NQ 87/2025, rủi ro qua `/meta/risk/check`), cảnh rủi ro/giá trong video quảng cáo hại môi giới. Remotion: không nhanh hơn
@@ -39,7 +42,7 @@ NQ 87/2025, rủi ro qua `/meta/risk/check`), cảnh rủi ro/giá trong video q
 |---|---|---|
 | Giao diện (nguồn) | `js/`, `index.html`, `admin.html`, `styles.css`, `landing.css` | Sửa ở đây |
 | Giao diện (bản chạy) | `site/` | **Được commit vào git**. Cloudflare phục vụ thẳng thư mục này, không có bước build trên Cloudflare |
-| Máy chủ | `worker.js` (dạng Worker, đang dùng) + `functions/api/*.js` (dạng Pages, dự phòng) | Mọi route `/api/*` phải khai báo ở **cả hai** |
+| Máy chủ | `worker.js` (dạng Worker, đang dùng) + `functions/api/*.js` (dạng Pages, dự phòng) | Mọi route `/api/*` phải khai báo ở **cả hai** (thực tế 25/10: `functions/api/` chỉ có 6 route cũ — tts, script, sepay, resolve, config, capi; các route map/lead/page-event/telegram, `/can/*`, `/m/*`, `/goi/*` chỉ có trong `worker.js` → bản Pages dự phòng KHÔNG chạy đủ. Route mới: bắt buộc ở `worker.js`) |
 | Logic máy chủ | `lib/*.js` | `vt.js` = env + gọi Supabase RPC |
 | Cơ sở dữ liệu | Supabase, hàm `vt_*` trong `supabase/*.sql` | Mọi quyền nằm trong hàm SQL (security definer) |
 | Thanh toán | SePay webhook → `/api/sepay` → `vt_payment_in` | Mã đơn `VTxxxxxx` trong nội dung chuyển khoản |
@@ -51,6 +54,36 @@ Biến môi trường trên Cloudflare (Settings → Variables and Secrets). Kh�
 `META_PIXEL_ID` (đang có: tập dữ liệu "vitristudio"), `META_CAPI_TOKEN` (chưa có — chờ tạo), `META_TEST_CODE` (chỉ đặt khi kiểm tra, xoá ngay sau đó),
 `TIKTOK_PIXEL_ID`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_NAME`, `APP_URL`,
 `VBEE_APP_ID` + `VBEE_TOKEN` (giọng Vbee — studio.vbee.vn → Tích hợp API → Tạo ứng dụng; chọn hạn "Vĩnh viễn" để token không hết hạn).
+Còn dùng trong code (đối chiếu `grep env` 25/10): `VIETMAP_KEY` (đường đi, xã/tỉnh, tiện ích — lib/map.js), `TELEGRAM_SECRET`
+(khoá gọi hàm cron/telegram trong SQL; thiếu thì cron không chạy), `ANTHROPIC_MODEL`/`GEMINI_MODEL` (đổi model kịch bản),
+`VT_SUPABASE_URL`/`VT_SUPABASE_KEY` (ghi đè địa chỉ Supabase, mặc định project `crzinaydjgqepffatqoo`),
+`VT_ACCOUNTS=off` (tạm mở giọng AI không cần đăng nhập — chỉ dùng khi sự cố).
+
+### Bắt đầu nhanh (mỗi phiên mới)
+```bash
+npm ci && bash build.sh                      # dựng site/
+python3 -m http.server 8000 --directory site # mở http://127.0.0.1:8000 (KHÔNG chạy server bên trong site/)
+```
+Tài khoản thử nội bộ: `giang.test@vitristudio.com` (`no_limits`). Căn thử: Đoàn Nguyễn Tuấn, Bình Chánh `10.6700,106.5870`; căn mẫu An Lạc trong `sample.json`.
+
+### Bản đồ mã nguồn
+| File | Vai trò |
+|---|---|
+| `js/app.js` (~3.300 dòng) | Điều khiển giao diện: dán toạ độ → quét → chọn → xem trước → xuất; state, PROJECT_KEYS, video mẫu |
+| `js/render.js` (~3.600 dòng) | Dựng khung hình theo thời gian t (xem trước = xuất): timeline các pha, camera, phối cảnh, chữ 3D, thẻ |
+| `js/data.js` | Dữ liệu bản đồ: tiện ích (OSM/Overture/Vietmap), trục đường, nối đoạn (`stitchWays`/`bridgeWays`), điểm mốc vùng, hạ tầng |
+| `js/export.js` + `js/xuat-entry.js` | Xuất MP4 trên máy khách (WebCodecs H.264 + Mediabunny + AAC WebAssembly) |
+| `js/sfx.js` | Hiệu ứng âm thanh tổng hợp; thời điểm PHẢI khớp công thức pha trong render.js |
+| `js/account.js` / `js/admin.js` / `js/leads.js` | Tài khoản + lượt + VietQR / trang quản trị / CRM mini, trang web căn, Telegram |
+| `js/track.js` | Pixel Meta/TikTok + gửi CAPI (mục 3) |
+| `js/geo.js`, `js/hubs.js`, `js/icons.js`, `js/vinum.js`, `js/stretch.js`, `js/voicesplit.js`, `js/device.js`, `js/install.js`, `js/landing.js` | Toán bản đồ / điểm mốc vùng / icon Path2D / đọc số thành chữ / co giãn giọng / cắt giọng theo câu / chống lạm dụng dùng thử / cài PWA / trang giới thiệu |
+| `lib/map.js` | `/api/map/{route,reverse,search,lookup,vsearch,area,nearby,iso}` — chặn gọi từ trang khác, nhớ đệm Cloudflare |
+| `lib/pages.js` | `/can/<mã>` trang web căn, `/m/*` ảnh (Supabase Storage bucket `vt-pages`), `/api/lead`, `/api/page-event`, `/api/telegram`, `/goi/*`, cron |
+| `lib/tts.js`, `lib/script.js`, `lib/sepay.js`, `lib/capi.js`, `lib/config.js`, `lib/resolve.js`, `lib/vt.js` | Giọng / kịch bản AI / webhook tiền / Meta CAPI / cấu hình công khai / mở link rút gọn Google Maps / env + gọi RPC |
+| `supabase/*.sql` | Bảng + hàm `vt_*` (tài khoản, lượt, đơn, trang, lead, giới hạn làm lại, chống lạm dụng) |
+| `tools/` | `build_poi_tiles.py` (dựng `poi/` từ Overture, chạy hằng tháng), `make_music.py`, `make_sample.py`, `make_sample_voice.py` |
+
+Cron (`wrangler.jsonc`): `*/30 * * * *` nhắc Telegram khách chưa được gọi lại (chỉ 7h–21h giờ VN); `0 1 * * 1` báo cáo tuần 8h sáng thứ Hai.
 
 ### Các phần dễ hỏng (đọc trước khi sửa)
 - **Xuất video** (`js/export.js`): video H.264 bằng `VideoEncoder` (máy không có H.264 thì VP9), ghép MP4 + âm thanh bằng **Mediabunny** với bộ mã hoá **AAC WebAssembly** (`@mediabunny/aac-encoder`) — dùng trên MỌI máy, KHÔNG dùng `AudioEncoder` của trình duyệt (iPhone/Android thiếu AAC hoặc thiếu thông tin giải mã → file mất tiếng; lỗi khách báo nhiều lần 10/2026). Gói này tách riêng `site/xuat.js` (≈1,1 MB, dựng từ `js/xuat-entry.js`, chỉ tải khi bấm Xuất). Sau khi ghép tự kiểm tra có hộp `mp4a`, thiếu thì quay thời gian thực (`exportRealtime`). Kiểm thử: Chrome ở máy thử KHÔNG có AAC gốc = đúng trường hợp iPhone; `ffprobe` phải thấy `aac LC 48000 2ch` và `volumedetect` có tiếng.
@@ -253,3 +286,18 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 - 2026-10-24 tối (Giang: video thực tế xếp như kịch bản ảnh): đoạn ĐẦU (khách quay mặt tiền) chỉ hiện 2–3 s đầu video — làm nền thẻ giá (`clipWins` có `hook`, lớp tối 0,28 thay 0,42 để thấy rõ nhà) hoặc, khi không có thẻ mở đầu, chiếu toàn khung 2,6 s (`clipWins` có `open`, không mờ dần lúc vào, sfx whoosh khi chuyển sang bản đồ). Các đoạn còn lại dồn xuống CUỐI: pha `clip` chèn ngay sau `summary` (trước `photos`, `outro`) qua `pushClips('after')`; `CLIP_SLOTS` = `['open', 'after', …]`, `clipNext` bắt đầu từ 1. Không còn chèn video giữa cảnh căn nhà / tiện ích. Thử: scratchpad `test_clip_order.py` (3 clip webm trong `clips/`).
 - 2026-10-24 tối (Giang chốt thứ tự video thực tế): (1) Có video thì MỞ ĐẦU bằng pha `front` = đoạn đầu (mặt tiền) chiếu TRỌN đoạn toàn khung (2,6–12 s, `d × sp` để nhịp Nhanh/Chậm không cắt cụt), thẻ giá (hook) đè lên 2,2 s đầu (`tl.hookPh` = front, `drawHook` lấy nền từ cửa sổ `open`), câu mở đầu (`vkey: 'intro'`) đọc khớp trên video — giọng dài hơn đoạn thì video chiếu chậm (≥ 0,5×); xong mới tới pha `intro` bay vào bản đồ (vkey `introMap`, không lời). `clipTime` với cửa sổ `open` luôn chiếu từ đầu đoạn. sfx: case `front` (nổ trầm + pop + whoosh chuyển cảnh); case `intro` nay cộng `p.t0` (trước dùng giây tuyệt đối). (2) Các đoạn còn lại + ảnh nằm CUỐI sau khi bản đồ xong; đoạn cuối đầu tiên có câu mời `reel`: "Và sau đây, xin mời quý vị cùng xem video (và hình ảnh) thực tế của căn nhà"; không có video phụ thì câu `photos` thành câu mời xem hình ảnh. AI (lib/script.js) biết cảnh `reel`; mô tả cảnh `intro`/`photos` gửi AI đổi theo có video/ảnh.
 - 2026-10-24 tối (Giang: ảnh/video thực tế ra HẲN cuối video, sau câu kêu gọi xem nhà, chiếu liền nhau không chen bản đồ; xếp mặt tiền → phòng khách → bếp → phòng ngủ → toilet): timeline cuối = `summary → outro → clip (câu mời 'reel') → clip … → photos`; khung cuối cùng của video vẫn là ảnh/video (drawPhotos/drawClips nhận t = tổng thời lượng). Mỗi ảnh/video có nhãn phòng `room` (`ROOMS` trong app.js: mattien/khach/bep/ngu/wc/khac), chọn bằng ô `.room-sel` dưới mỗi ô ảnh/video; mặc định đoán theo tên file, không thì gán theo thứ tự tải lên (1 mặt tiền, 2 phòng khách…); đổi nhãn thì `sortRooms()` xếp lại + lưu (IndexedDB ảnh nay lưu `{src, room}`, bản cũ là chuỗi vẫn đọc được; video lưu thêm `room`). Nhãn phòng hiện trên video (`photoLabels`, `clip.label`; "Khác" = nhãn mặc định). CHỈ đoạn video gắn "Mặt tiền" (hoặc chưa có nhãn) mới mở đầu video (`frontClip` render.js = `hasFrontClip()` app.js — đổi một bên phải đổi bên kia); không có thì mọi đoạn dồn xuống cuối. Thứ tự câu trong kịch bản: outro rồi reel/photos. Thử: scratchpad `test_rooms.py`.
+
+---
+
+## 6. Công nghệ & dịch vụ đã nghiên cứu (đọc trước khi đề xuất lại — 25/10/2026)
+
+| Thứ | Kết luận | Ghi chú kiểm chứng |
+|---|---|---|
+| **Remotion** | KHÔNG dùng cho Vị Trí Studio. Hợp với webapp dựng A-roll/B-roll (video quay + chữ/hiệu ứng) | Mã nguồn công khai nhưng giấy phép độc quyền; miễn phí khi đội ≤ 3 người (tính gộp cả đối tác), ≥ 4 người → "Remotion for Automators" $0,01/video, tối thiểu $100/tháng. Render trên trình duyệt (`@remotion/web-renderer`) dùng chính WebCodecs + Mediabunny như app → không nhanh hơn, cần Safari 26+, gửi telemetry mỗi lần render. Render server = tốn máy (Lambda/VPS) cho từng video |
+| Hiệu ứng chữ/vector động | Làm ngay trong `render.js`: tự viết `spring()`/`interpolate()`, chữ nảy/trượt, số giá chạy, nét tự vẽ (`setLineDash`), Lottie qua lottie-web vẽ canvas `goToAndStop(frame, true)` | Giữ đường xuất hiện tại, chạy được máy cũ, không phí giấy phép. Nên đặt trong file riêng (vd. `js/motion.js`) + công tắc mặc định tắt |
+| **BDS Chat API** (`api.bds.chat`, OpenAPI tại `/openapi.yaml`) | Chỉ dùng cho TP.HCM; hợp làm "phiếu kiểm tra" cho môi giới hơn là đưa vào video quảng cáo | Không có endpoint định giá theo toạ độ. Giá nhà nước: `GET /meta/gov-land-price?street=&ward=&district=` (NQ 87/2025, mốc thuế/bồi thường, không phải giá thị trường). Rủi ro: `GET /meta/risk/check?lat&lon` → `risk_level` low/medium/high/critical + quy hoạch, chồng lấn DGT, lộ giới. Không có trường `critical_risk_flag`, `average_market_price_m2` theo toạ độ (giá thị trường chỉ từ ~541 tin rao). Free 100 lượt/ngày, Pro 10.000. Họ tự nhớ đệm quy hoạch 90 ngày → cache phía mình theo đoạn đường (giá) / toạ độ làm tròn (quy hoạch), không theo bán kính 10 m |
+| Flycam 3D thật | Chưa làm. Nếu thử: trang riêng Google Photorealistic 3D Tiles + CesiumJS, kiểm tra Bình Chánh có 3D không trước | Tính phí theo root tile; ngoại thành VN có thể chỉ là ảnh phẳng. MapLibre (miễn phí, `flyTo` + nghiêng) dữ liệu nhà OSM ở VN thưa. Hiện app đã có bay vào + lượn vòng lô ở dạng 2.5D (`intro`, `house` có `orbit`) |
+| VN-2000 → WGS-84 (sổ đỏ) | Ý tưởng tốt, làm trước nếu Giang duyệt: đổ kết quả vào `state.lot` có sẵn | X = hướng Bắc, Y = hướng Đông (dễ nhầm); múi 3°, k0 0,9999; kinh tuyến trục lấy theo dòng in trên sơ đồ thửa (sổ cũ theo tỉnh TRƯỚC sáp nhập 2025); sổ cũ có thể không có toạ độ → quay về vẽ lô tay. Nên có chụp ảnh sơ đồ → Claude đọc bảng toạ độ. Không lưu tên chủ/số sổ |
+| Render trên server (BullMQ/Redis) | Không cần lúc này. Chỉ khi cần tự đăng bài / render khi khách tắt máy → Cloudflare Queues + máy render riêng | Cloudflare Worker không chạy được BullMQ/Chrome |
+
+Đang chờ Giang quyết (25/10): cảnh giá/pháp lý có vào video không; chấp nhận chỉ TP.HCM; có mua BDS Chat Pro; phụ đề theo câu hay karaoke ước lượng; bản thử hiệu ứng động trên nhánh riêng (thẻ giá mở đầu, tiện ích, bảng tổng kết).
