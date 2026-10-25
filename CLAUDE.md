@@ -301,3 +301,9 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 | Render trên server (BullMQ/Redis) | Không cần lúc này. Chỉ khi cần tự đăng bài / render khi khách tắt máy → Cloudflare Queues + máy render riêng | Cloudflare Worker không chạy được BullMQ/Chrome |
 
 Đang chờ Giang quyết (25/10): cảnh giá/pháp lý có vào video không; chấp nhận chỉ TP.HCM; có mua BDS Chat Pro; phụ đề theo câu hay karaoke ước lượng; bản thử hiệu ứng động trên nhánh riêng (thẻ giá mở đầu, tiện ích, bảng tổng kết).
+
+### Đo phễu & tìm nguyên nhân khách giảm (25/10)
+- Bảng: `vt_users` (`source` = nguồn, phần trước `|`: fb-ads, truc-tiep, facebook, zalo…; loại `no_limits` + login `%vitristudio.com%`), `vt_usage.kind` (grant/export/tts/script), `vt_orders` (status `paid`, `paid_amount`), `vt_visits` (day, page landing/app/map/install, source, n = lượt tải trang, không phải người). Alias cột `day` phải viết `as dd` (lỗi cú pháp nếu bỏ `as`).
+- Cách tách nguyên nhân: so lượt vào theo nguồn (`vt_visits`) với đăng ký cùng nguồn, theo giờ, đối chiếu giờ commit (`TZ=Asia/Ho_Chi_Minh git log --date=format-local`). Giảm xảy ra TRƯỚC khi đẩy code → do quảng cáo, không phải code.
+- Kết quả 25/10: code đứng yên 19/10 16:16 → 22/10 19:44. fb-ads: 21/10 230 lượt vào → 25 đăng ký (11%); 22/10 (ban ngày, code CŨ) 147 → 9 (6%); 23–24/10 ~6–7%. ⇒ đợt giảm chủ yếu do quảng cáo (ít click hơn + click kém chất lượng hơn), không phải do code. Còn theo dõi: tỉ lệ tạo đơn của khách 24/10 (2/25) và tối 23–24/10 gần như 0 đăng ký (kiểm tra ngân sách ngày trong Ads Manager).
+- 14 khách trả tiền thật (20–24/10), TB 176.000đ, TB 7,8 video/người sau khi trả → sản phẩm có giá trị; đòn bẩy chính là lượng + chất lượng khách từ quảng cáo.
