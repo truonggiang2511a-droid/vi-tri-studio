@@ -10,7 +10,7 @@ import { sfxEvents } from './sfx.js';
 import { stretchBuffer } from './stretch.js';
 import { parseCoordText, checkPolygon, convertLot, MERIDIANS, fmtMeridian } from './vn2000.js';
 import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4, unlockAudioContext } from './export.js';
-import { initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount } from './account.js';
+import { onAccountChange, initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount } from './account.js';
 import { splitVoice, joinForTts, splitAt } from './voicesplit.js';
 import { loadConfig, initTracking, countVisit } from './track.js';
 import { initInstall } from './install.js';
@@ -776,11 +776,19 @@ async function vnSnap(file) {
     say('AI chưa đọc được ảnh (' + e.message + '). Thử lại, hoặc chép tay bảng toạ độ bên dưới.');
   } finally { btn.disabled = false; }
 }
+// Hiện lối vào khi mở link ?vn2000=1 hoặc đăng nhập tài khoản nội bộ (@vitristudio.com); khách thường chưa thấy
+const vnVisible = () => vnEnabled() || /@vitristudio\.com$/i.test(String(account.profile?.login || ''));
+function syncVnEntry() {
+  const on = vnVisible();
+  $('vnOpen').hidden = !on;
+  $('vnEntry').hidden = !on;
+}
 function initVn2000() {
-  if (!vnEnabled()) return;
+  syncVnEntry();
+  onAccountChange(syncVnEntry);
+  $('vnEntry').addEventListener('click', () => $('vnDlg').showModal());
   $('vnSnap').addEventListener('click', () => $('vnPhoto').click());
   $('vnPhoto').addEventListener('change', e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) vnSnap(f); });
-  $('vnOpen').hidden = false;
   const sel = $('vnKtt');
   for (const m of MERIDIANS) sel.insertAdjacentHTML('beforeend', `<option value="${m}">${fmtMeridian(m)}</option>`);
   $('vnOpen').addEventListener('click', () => $('vnDlg').showModal());
