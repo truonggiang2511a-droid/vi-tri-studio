@@ -308,14 +308,22 @@ function motionOn() {
   } catch { /* bỏ qua */ }
   return /@vitristudio\.com$/i.test(String(account.profile?.login || ''));
 }
+// 25/10 22:12 Giang: phong cách "Neon đêm" (mặc định) luôn dùng thẻ giá mở đầu kiểu chữ đen – vàng (gói denvang)
+// cho MỌI khách — chỉ thẻ mở đầu, tiêu đề cảnh giữ kiểu cũ (motionHookOnly). Tài khoản nội bộ/?motion=1 vẫn thử đủ.
+const NEON_MOTION = 'denvang';
 function sceneMotion() {
-  if (!motionOn() || !state.house) return null;
-  const forced = (() => { try { return new URLSearchParams(location.search).get('motionKey'); } catch { return null; } })();
-  return forced && MOTION[forced] ? forced : pickMotion(state.house);
+  if (!state.house) return null;
+  if (motionOn()) {
+    const forced = (() => { try { return new URLSearchParams(location.search).get('motionKey'); } catch { return null; } })();
+    if (forced && MOTION[forced]) return forced;
+    return state.style === 'neon' ? NEON_MOTION : pickMotion(state.house);
+  }
+  return state.style === 'neon' ? NEON_MOTION : null;
 }
 function buildScene() {
   return {
     motion: sceneMotion(),
+    motionHookOnly: !motionOn(),
     house: state.house,
     label: (state.label || 'VỊ TRÍ').toUpperCase(),
     sub: state.sub,

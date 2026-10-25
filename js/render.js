@@ -3919,7 +3919,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     const tTop = logo && tl.fmt !== 'h' ? logo.y + logo.h + 8 : 0;
     const mEnv = { LW: tl.LW, LH: tl.LH, safe: tl.safe, fmt: tl.fmt, lt: t - tStart, A: tA, k: (Math.min(tl.LW, tl.LH) / 540) * (tl.fmt === 'v' ? 1 : 0.85),
       text: String(scene.title || '').toUpperCase(), sub: scene.titleSub, top: Math.max(tl.fmt === 'v' ? tl.safe.top + 8 : tl.safe.top - 6, tTop) };
-    if (!(tA > 0.01 && scene.motion && motionTitle(ctx, scene.motion, mEnv))) drawTitle(ctx, tl, scene.title, scene.titleSub, tA, tTop);
+    if (!(tA > 0.01 && scene.motion && !scene.motionHookOnly && motionTitle(ctx, scene.motion, mEnv))) drawTitle(ctx, tl, scene.title, scene.titleSub, tA, tTop);
     if (tA > 0.2) occBox(ctx, tl.safe.x, mEnv.top - 6, tl.LW - tl.safe.x, mEnv.top + (scene.titleSub ? 118 : 80) * mEnv.k);
   }
   const houseCardA = Math.max(fadeWin(t, ho.t0 + 0.5, ov.t0 + 0.4, 0.45, 0.4), fadeWin(t, ou.t0 + 0.5, T + 10, 0.45, 0.4));
