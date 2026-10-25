@@ -1725,16 +1725,14 @@ function vbeeKey() {
   try { const k = JSON.parse(localStorage.getItem(VBEE_KEY) || 'null'); return k && k.app && k.token ? k : null; } catch { return null; }
 }
 const vbeeKeyHeaders = (k = vbeeKey()) => (k ? { 'x-vbee-app': k.app, 'x-vbee-token': k.token } : {});
-// Đang thử: hiện cho tài khoản nội bộ, link ?vbee=1 (nhớ trên máy, ?vbee=0 tắt), hoặc máy đã kết nối khoá
+// 25/10 tối (Giang): mở cho mọi khách. Vẫn tắt được trên 1 máy bằng ?vbee=0 (khi máy đó chưa lưu khoá)
 function vbeeOwnVisible() {
   try {
     const q = new URLSearchParams(location.search).get('vbee');
     if (q === '1' || q === '0') localStorage.setItem('vitri.vbeeOn', q);
-    const v = localStorage.getItem('vitri.vbeeOn');
-    if (v === '0') return !!vbeeKey();
-    if (v === '1' || vbeeKey()) return true;
+    if (localStorage.getItem('vitri.vbeeOn') === '0') return !!vbeeKey();
   } catch { /* bỏ qua */ }
-  return /@vitristudio\.com$/i.test(String(account.profile?.login || ''));
+  return true;
 }
 function syncVbeeOwn(info) {
   const box = $('vbeeOwn');
