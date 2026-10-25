@@ -1766,7 +1766,9 @@ async function vbeeConnect() {
     if (!r.ok || !j.ok) { msg.textContent = '❌ ' + (j.error || 'Không kết nối được, thử lại.'); return; }
     try { localStorage.setItem(VBEE_KEY, JSON.stringify({ app, token })); } catch { msg.textContent = 'Máy không cho lưu khoá (chế độ ẩn danh?).'; return; }
     $('vbeeTok').value = '';
-    msg.textContent = `✅ Đã kết nối · ${j.voices} giọng${j.personal ? `, trong đó ${j.personal} giọng riêng ⭐` : ''}. Chọn giọng ở ô "Hoặc chọn giọng Vbee" phía trên.`;
+    const d = j.diag;
+    msg.textContent = `✅ Đã kết nối · ${j.voices} giọng${j.personal ? `, trong đó ${j.personal} giọng riêng ⭐ (giọng nhân bản của anh/chị)` : ' · chưa thấy giọng riêng/nhân bản nào trong ứng dụng này'}. Chọn giọng ở ô "Hoặc chọn giọng Vbee" phía trên.`
+      + (d ? ` (Vbee trả: ${d.vbee} giọng Vbee · ${d.rieng} giọng riêng${d.riengLoi ? ' · lỗi ' + d.riengLoi : ''})` : '');
     await checkAi();
     const mine = (ai.voices || []).find(v => v.provider === 'vbee' && v.own);
     if (mine) { state.voiceId = mine.id; syncVoiceUi(); renderScript(); save(); }
