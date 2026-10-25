@@ -177,19 +177,29 @@ export function useBase(key) { BASE = BASES[key] || BASES.vetinh; }
 const KEYED_TILE = (z, x, y) =>
   `https://ibasemaps-api.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}?token=${encodeURIComponent(IMG_TOKEN)}`;
 
-// Ô "Map data not yet available" của Esri: gần như một màu xám sáng (đo: trung bình ~205, lệch chuẩn ~3 ở 16×16)
+// Ô "Map data not yet available" của Esri: xám trung tính ~205 + dòng chữ trắng.
+// 25/10: bản cũ đo lệch chuẩn ở 16×16 — Safari (iPhone) thu nhỏ kiểu lấy từng điểm, dính chữ trắng → lệch chuẩn 7,2 > 7
+// → coi nhầm là ảnh thật, video hiện ô xám. Nay đếm TỈ LỆ điểm xám trung tính ở 64×64 (ô xám 99,9%, ảnh thật ~0,1%),
+// không phụ thuộc cách trình duyệt thu nhỏ ảnh.
 let phCanvas = null;
+const PH_N = 64;
 function isPlaceholder(img) {
   try {
-    phCanvas ||= Object.assign(document.createElement('canvas'), { width: 16, height: 16 });
+    phCanvas ||= Object.assign(document.createElement('canvas'), { width: PH_N, height: PH_N });
     const g = phCanvas.getContext('2d', { willReadFrequently: true });
-    g.clearRect(0, 0, 16, 16);
-    g.drawImage(img, 0, 0, 16, 16);
-    const d = g.getImageData(0, 0, 16, 16).data;
-    let s = 0, s2 = 0;
-    for (let i = 0; i < d.length; i += 4) { const l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; s += l; s2 += l * l; }
-    const m = s / 256, sd = Math.sqrt(Math.max(0, s2 / 256 - m * m));
-    return m > 180 && sd < 7;
+    g.clearRect(0, 0, PH_N, PH_N);
+    g.drawImage(img, 0, 0, PH_N, PH_N);
+    const d = g.getImageData(0, 0, PH_N, PH_N).data;
+    let neutral = 0, gray = 0, s = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], gg = d[i + 1], b = d[i + 2];
+      const l = 0.299 * r + 0.587 * gg + 0.114 * b;
+      s += l;
+      if (Math.max(r, gg, b) - Math.min(r, gg, b) <= 10) neutral++;
+      if (l >= 185 && l <= 225) gray++;
+    }
+    const n = PH_N * PH_N, m = s / n;
+    return m > 180 && m < 235 && neutral / n > 0.9 && gray / n > 0.8;
   } catch { return false; }
 }
 export class TileCache {
