@@ -643,7 +643,7 @@ function vnRead() {
   }
   const chk = checkPolygon(pr.pts);
   const k = $('vnKtt').value;
-  if (k === '' && !state.house) { vnShow('Hãy dán toạ độ căn nhà ở bước 1 trước để app tự dò kinh tuyến trục, hoặc chọn kinh tuyến trục in trên sổ.', true); return; }
+  if (k === '' && !state.house) { vnShow('Chưa có vị trí căn nhà để tự dò kinh tuyến trục. Chọn <b>kinh tuyến trục</b> ở ô bên dưới (in trên sổ, hoặc theo tỉnh có lô đất), app sẽ đặt căn nhà đúng chỗ lô đất.', true); vnKttHint(); return; }
   const r = convertLot(chk.pts, { lon0: k === '' ? null : Number(k), pin: state.house });
   const lines = [], warn = [];
   let block = chk.issues.length > 0;
@@ -652,11 +652,21 @@ function vnRead() {
   const given = areaFromText(state.area);
   if (given > 0 && Math.abs(given - chk.area) / given > 0.05) warn.push(`Khác diện tích anh/chị nhập (${esc(state.area)}) hơn 5% — kiểm tra lại các điểm.`);
   lines.push(`Kinh tuyến trục: <b>${fmtMeridian(r.meridian)}</b>${r.guessed ? ' (tự dò theo ghim)' : ''}${r.k0 === 0.9996 ? ' · bản đồ múi 6°' : ''}.`);
-  if (r.pinDist != null) {
+  let move = false; // đặt lại căn nhà tại lô (lô ở chỗ khác ghim hiện tại / chưa có ghim)
+  if (r.pinDist == null) {
+    move = true;
+    lines.push(`Lô đất nằm tại <b>${r.centroid.lat.toFixed(5)}, ${r.centroid.lng.toFixed(5)}</b> — app sẽ đặt căn nhà ở đây.`);
+  } else {
     lines.push(`Giữa lô cách ghim căn nhà <b>${fmtM(r.pinDist)}</b>.`);
     if (r.pinDist > 1000) {
-      block = true;
-      warn.push('Lô đất cách ghim quá xa: có thể sai kinh tuyến trục, toạ độ không phải VN-2000, hoặc ghim căn nhà đặt sai chỗ.');
+      if (r.guessed) {
+        block = true;
+        warn.push('Lô đất cách ghim hiện tại quá xa nên app không tự dò được kinh tuyến trục. Chọn <b>kinh tuyến trục</b> ở ô bên dưới (in trên sổ, hoặc theo tỉnh có lô đất) — app sẽ đặt căn nhà đúng chỗ lô đất.');
+        vnKttHint();
+      } else {
+        move = true;
+        warn.push(`Lô đất cách ghim hiện tại ${fmtM(r.pinDist)} — đây là căn khác: bấm nút bên dưới để <b>đặt căn nhà tại lô này</b> (thông tin căn cũ sẽ để trống).`);
+      }
     } else if (r.pinDist > 300) warn.push('Lô đất khá xa ghim: kiểm tra lại ghim căn nhà ở bước 1.');
     else if (r.pinDist > 20) $('vnPin').hidden = false;
   }
@@ -685,7 +695,8 @@ function vnRead() {
   if (pr.bad.length) warn.push(`Bỏ qua dòng ${pr.bad.join(', ')} (không thấy toạ độ).`);
   if (pr.odd.length) warn.push(`Dòng ${pr.odd.join(', ')} có số không giống toạ độ VN-2000 — kiểm tra lại.`);
   vnShow(lines.join('<br>') + (warn.length ? `<ul>${warn.map(w => `<li>${w}</li>`).join('')}</ul>` : ''), block || ocrBad);
-  if (!block) { vnRes = { ...r, area: chk.area }; $('vnApply').disabled = false; }
+  $('vnApply').textContent = move ? '📍 Đặt căn nhà tại lô này + dùng làm lô đất' : 'Dùng làm lô đất';
+  if (!block) { vnRes = { ...r, area: chk.area, move }; $('vnApply').disabled = false; }
 }
 // Diện tích khách nhập: "100m2", "1.200 m²", "120,5", "5x20m" → m²
 function areaFromText(v) {
@@ -705,8 +716,35 @@ function vnFitZoom(lot) {
   const z = Math.log2(156543.03 * Math.cos(h.lat * Math.PI / 180) / mpp);
   return Math.max(16.5, Math.min(20.5, Math.floor(z * 2) / 2));
 }
+// Kinh tuyến trục bản đồ địa chính theo tỉnh (Thông tư 973/2001/TT-TCĐC, Bảng 4 — tên tỉnh TRƯỚC sáp nhập 2025, sổ cũ in theo tỉnh cũ)
+const KTT_PROV = {
+  104.5: 'Kiên Giang',
+  104.75: 'An Giang, Nghệ An',
+  105: 'Hà Nội, Cần Thơ, Thanh Hoá',
+  105.5: 'Tây Ninh, Vĩnh Long, Bắc Ninh, Hưng Yên, Hải Dương',
+  105.75: 'TP.HCM, Bình Dương, Long An, Tiền Giang, Bến Tre, Hải Phòng',
+  106.25: 'Bình Phước',
+  107: 'Thừa Thiên Huế',
+  107.75: 'Đồng Nai, Bà Rịa–Vũng Tàu, Đà Nẵng, Lâm Đồng, Quảng Ninh',
+  108.25: 'Khánh Hoà',
+  108.5: 'Đắk Lắk, Bình Thuận',
+};
+// Gợi ý chọn kinh tuyến trục: cuộn tới + nháy sáng ô chọn
+function vnKttHint() {
+  const sel = $('vnKtt');
+  sel.classList.remove('flash'); void sel.offsetWidth; sel.classList.add('flash');
+}
+function vnPlaceHouse(c) {
+  const text = `${c.lat.toFixed(6)}, ${c.lng.toFixed(6)}`;
+  $('coordInput').value = text;
+  state.coordText = text;
+  setHouse({ lat: +c.lat.toFixed(7), lng: +c.lng.toFixed(7) }, { fresh: true });
+}
 function vnApply() {
   if (!vnRes) return;
+  if (vnRes.move) {
+    vnPlaceHouse(vnRes.centroid);
+  }
   state.lot = vnRes.lot.map(p => ({ lat: +p.lat.toFixed(7), lng: +p.lng.toFixed(7) }));
   lotZoom = vnFitZoom(state.lot);
   dirty = true;
@@ -714,7 +752,9 @@ function vnApply() {
   save();
   scheduleRebuild();
   $('vnDlg').close();
-  toast(`Đã dùng lô đất ${state.lot.length} góc · ${formatArea(vnRes.area)} từ toạ độ sổ đỏ.`, 3800);
+  toast(vnRes.move
+    ? `Đã đặt căn nhà + lô đất ${state.lot.length} góc · ${formatArea(vnRes.area)} theo toạ độ sổ. Bấm "Quét tiện ích" để tìm tiện ích quanh căn này.`
+    : `Đã dùng lô đất ${state.lot.length} góc · ${formatArea(vnRes.area)} từ toạ độ sổ đỏ.`, 5000);
 }
 // "KTT 105°45'" / "105 độ 45 phút" → 105.75 (chỉ nhận nếu có trong danh sách)
 function kttFromText(t) {
@@ -790,7 +830,7 @@ function initVn2000() {
   $('vnSnap').addEventListener('click', () => $('vnPhoto').click());
   $('vnPhoto').addEventListener('change', e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) vnSnap(f); });
   const sel = $('vnKtt');
-  for (const m of MERIDIANS) sel.insertAdjacentHTML('beforeend', `<option value="${m}">${fmtMeridian(m)}</option>`);
+  for (const m of MERIDIANS) sel.insertAdjacentHTML('beforeend', `<option value="${m}">${fmtMeridian(m)}${KTT_PROV[m] ? ' — ' + KTT_PROV[m] : ''}</option>`);
   $('vnOpen').addEventListener('click', () => $('vnDlg').showModal());
   $('vnRead').addEventListener('click', vnRead);
   $('vnText').addEventListener('input', () => { vnRes = null; $('vnApply').disabled = true; $('vnPin').hidden = true; });
