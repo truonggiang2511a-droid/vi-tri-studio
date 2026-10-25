@@ -92,6 +92,7 @@
         </span>
         <button id="lotUndo" class="link-btn" type="button">Bỏ góc cuối</button>
         <button id="lotClear" class="link-btn" type="button">Xoá hết</button>
+        <button id="vnOpen" class="link-btn vn-open" type="button" hidden>📄 Nhập toạ độ sổ đỏ</button>
         <div class="lot-fields">
           <label class="field"><span class="field-label">Chữ trên lô đất</span><input id="lotText" class="input" type="text" maxlength="24" placeholder="LÔ ĐẤT" autocomplete="off"></label>
           <label class="field"><span class="field-label">Diện tích hiển thị</span><input id="lotArea" class="input" type="text" maxlength="16" placeholder="Tự tính" autocomplete="off"></label>
@@ -530,6 +531,30 @@
       <button id="recUse" class="btn btn-primary" type="button" hidden>Dùng bản thu này</button>
     </div>
     <audio id="recPlay" controls hidden></audio>
+  </div>
+</dialog>
+
+<dialog id="vnDlg" class="dlg dlg-wide" aria-labelledby="vnTitle">
+  <div class="dlg-card vn-card">
+    <button class="dlg-x" type="button" data-close aria-label="Đóng">×</button>
+    <h3 id="vnTitle">Nhập toạ độ từ sổ đỏ (VN-2000)</h3>
+    <div class="vn-snap">
+      <button id="vnSnap" class="btn btn-primary" type="button">📷 Chụp ảnh sơ đồ thửa — AI tự điền</button>
+      <input id="vnPhoto" type="file" accept="image/*" hidden>
+      <p id="vnSnapMsg" class="hint">Chụp thẳng, đủ sáng, sát <b>bảng toạ độ</b> trên trang sơ đồ thửa. Ảnh chỉ dùng để đọc số rồi bỏ, không lưu. Có thể che tên chủ trước khi chụp.</p>
+    </div>
+    <p class="hint">Hoặc tự chép bảng toạ độ các điểm góc (cột X, Y), mỗi dòng một điểm, theo thứ tự đi vòng quanh lô. Dán cả số thứ tự điểm cũng được.</p>
+    <label class="field"><span class="field-label">Bảng toạ độ</span>
+      <textarea id="vnText" class="input vn-text" rows="7" autocomplete="off" spellcheck="false" placeholder="1   1180081,47   591372,13&#10;2   1180081,47   591377,13&#10;3   1180101,47   591377,13&#10;4   1180101,47   591372,13"></textarea></label>
+    <label class="field"><span class="field-label">Kinh tuyến trục <em>(in trên sơ đồ thửa, vd. KTT 105°45')</em></span>
+      <select id="vnKtt" class="input"><option value="">Tự dò theo vị trí căn nhà (khuyên dùng)</option></select></label>
+    <div id="vnResult" class="vn-result" aria-live="polite" hidden></div>
+    <div class="ai-actions">
+      <button id="vnRead" class="btn btn-quiet" type="button">Đọc toạ độ</button>
+      <button id="vnPin" class="btn btn-quiet" type="button" hidden>Đưa ghim về giữa lô</button>
+      <button id="vnApply" class="btn btn-primary" type="button" disabled>Dùng làm lô đất</button>
+    </div>
+    <p class="hint vn-note">Sai số khoảng 1 m, chỉ để vẽ lô trong video, không thay cho trích lục bản đồ địa chính. Toạ độ chỉ dùng trên máy anh/chị, không lưu tên chủ hay số sổ. AI có thể đọc nhầm chữ số — luôn so lại với sổ trước khi dùng.</p>
   </div>
 </dialog>
 

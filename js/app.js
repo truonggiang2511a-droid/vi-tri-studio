@@ -8,6 +8,7 @@ import {
 } from './render.js';
 import { sfxEvents } from './sfx.js';
 import { stretchBuffer } from './stretch.js';
+import { parseCoordText, checkPolygon, convertLot, MERIDIANS, fmtMeridian } from './vn2000.js';
 import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4, unlockAudioContext } from './export.js';
 import { initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount } from './account.js';
 import { splitVoice, joinForTts, splitAt } from './voicesplit.js';
@@ -606,6 +607,187 @@ function updateLotMsg() {
   $('lotMsg').textContent = n === 0 ? 'Chạm lần lượt các góc lô đất trên ảnh.' : n < 3 ? `Đã chấm ${n} góc, chấm thêm ${3 - n} góc nữa.` : `Lô đất ${n} góc · khoảng ${formatArea(lotAreaM2(state.lot))}`;
   $('lotBtn').textContent = n >= 3 ? 'Sửa lô đất' : 'Vẽ lô đất';
   $('lotArea').placeholder = n >= 3 ? formatArea(lotAreaM2(state.lot)) : 'Tự tính';
+}
+
+// ---------- Toạ độ sổ đỏ (VN-2000) → lô đất ----------
+// Đang thử: chỉ hiện khi mở link có ?vn2000=1 (nhớ trên máy; ?vn2000=0 để tắt). Không gửi toạ độ lên máy chủ.
+let vnRes = null;
+let vnOcr = null; // kết quả AI đọc ảnh: { labels, edges, area, unsure }
+function vnEnabled() {
+  try {
+    const q = new URLSearchParams(location.search).get('vn2000');
+    if (q === '1') localStorage.setItem('vitri.vn2000', '1');
+    if (q === '0') localStorage.removeItem('vitri.vn2000');
+    return localStorage.getItem('vitri.vn2000') === '1';
+  } catch { return false; }
+}
+const fmtM = m => (m >= 1000 ? (m / 1000).toFixed(1).replace('.', ',') + ' km' : Math.round(m) + ' m');
+function vnShow(html, bad) {
+  const box = $('vnResult');
+  box.hidden = false;
+  box.classList.toggle('bad', !!bad);
+  box.innerHTML = html;
+}
+function vnRead() {
+  vnRes = null;
+  $('vnApply').disabled = true;
+  $('vnPin').hidden = true;
+  const pr = parseCoordText($('vnText').value);
+  if (pr.pts.length < 3) {
+    vnShow('Chưa đọc được đủ 3 điểm góc. Mỗi dòng cần có 2 số X và Y (vd. <b>1180081,47&nbsp;&nbsp;591372,13</b>).', true);
+    return;
+  }
+  const chk = checkPolygon(pr.pts);
+  const k = $('vnKtt').value;
+  if (k === '' && !state.house) { vnShow('Hãy dán toạ độ căn nhà ở bước 1 trước để app tự dò kinh tuyến trục, hoặc chọn kinh tuyến trục in trên sổ.', true); return; }
+  const r = convertLot(chk.pts, { lon0: k === '' ? null : Number(k), pin: state.house });
+  const lines = [], warn = [];
+  let block = chk.issues.length > 0;
+  lines.push(`Đọc được <b>${chk.pts.length}</b> điểm góc${pr.swapped ? ' (đã tự đổi lại cột X/Y)' : ''}.`);
+  lines.push(`Diện tích tính từ toạ độ: <b>${formatArea(chk.area)}</b>.`);
+  const given = areaFromText(state.area);
+  if (given > 0 && Math.abs(given - chk.area) / given > 0.05) warn.push(`Khác diện tích anh/chị nhập (${esc(state.area)}) hơn 5% — kiểm tra lại các điểm.`);
+  lines.push(`Kinh tuyến trục: <b>${fmtMeridian(r.meridian)}</b>${r.guessed ? ' (tự dò theo ghim)' : ''}${r.k0 === 0.9996 ? ' · bản đồ múi 6°' : ''}.`);
+  if (r.pinDist != null) {
+    lines.push(`Giữa lô cách ghim căn nhà <b>${fmtM(r.pinDist)}</b>.`);
+    if (r.pinDist > 1000) {
+      block = true;
+      warn.push('Lô đất cách ghim quá xa: có thể sai kinh tuyến trục, toạ độ không phải VN-2000, hoặc ghim căn nhà đặt sai chỗ.');
+    } else if (r.pinDist > 300) warn.push('Lô đất khá xa ghim: kiểm tra lại ghim căn nhà ở bước 1.');
+    else if (r.pinDist > 20) $('vnPin').hidden = false;
+  }
+  // Ảnh do AI đọc: so với diện tích + độ dài cạnh in trên sổ để bắt chữ số đọc nhầm
+  let ocrBad = false;
+  if (vnOcr) {
+    if (vnOcr.area > 0) {
+      const d = Math.abs(vnOcr.area - chk.area) / vnOcr.area;
+      if (d <= 0.02) lines.push(`Khớp diện tích in trên sổ (${formatArea(vnOcr.area)}) ✓`);
+      else ocrBad = !!warn.push(`<b>Sổ ghi ${formatArea(vnOcr.area)}</b> nhưng toạ độ cho ${formatArea(chk.area)} — có thể AI đọc nhầm một chữ số, so từng dòng với sổ.`);
+    }
+    if (vnOcr.labels.length === pr.pts.length && vnOcr.edges.length) {
+      let okN = 0;
+      for (const e of vnOcr.edges) {
+        const i = vnOcr.labels.indexOf(e.from), j = vnOcr.labels.indexOf(e.to);
+        if (i < 0 || j < 0) continue;
+        const dm = Math.hypot(pr.pts[i].x - pr.pts[j].x, pr.pts[i].y - pr.pts[j].y);
+        if (Math.abs(dm - e.m) > Math.max(0.2, e.m * 0.01)) ocrBad = !!warn.push(`Cạnh ${esc(e.from)}–${esc(e.to)}: sổ ghi ${e.m.toLocaleString('vi-VN')} m, toạ độ cho ${dm.toFixed(2).replace('.', ',')} m — kiểm tra điểm ${esc(e.from)} hoặc ${esc(e.to)}.`);
+        else okN++;
+      }
+      if (okN) lines.push(`Khớp ${okN} cạnh in trên sổ ✓`);
+    }
+    if (vnOcr.unsure.length) warn.push(`AI không chắc điểm ${vnOcr.unsure.map(esc).join(', ')} — so kỹ với sổ.`);
+  }
+  for (const m of chk.issues) warn.push(esc(m));
+  if (pr.bad.length) warn.push(`Bỏ qua dòng ${pr.bad.join(', ')} (không thấy toạ độ).`);
+  if (pr.odd.length) warn.push(`Dòng ${pr.odd.join(', ')} có số không giống toạ độ VN-2000 — kiểm tra lại.`);
+  vnShow(lines.join('<br>') + (warn.length ? `<ul>${warn.map(w => `<li>${w}</li>`).join('')}</ul>` : ''), block || ocrBad);
+  if (!block) { vnRes = { ...r, area: chk.area }; $('vnApply').disabled = false; }
+}
+// Diện tích khách nhập: "100m2", "1.200 m²", "120,5", "5x20m" → m²
+function areaFromText(v) {
+  const t = String(v || '').toLowerCase().replace(/\s/g, '');
+  const num = x => parseFloat(x.replace(',', '.'));
+  const m = t.match(/(\d+(?:[.,]\d+)?)[x×*](\d+(?:[.,]\d+)?)/);
+  if (m) return num(m[1]) * num(m[2]);
+  const n = t.match(/\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?/);
+  if (!n) return 0;
+  return num(/^\d{1,3}(\.\d{3})+/.test(n[0]) ? n[0].replace(/\./g, '') : n[0]);
+}
+function vnFitZoom(lot) {
+  const h = state.house; if (!h || !lot.length) return lotZoom;
+  const ext = Math.max(...lot.map(p => haversineKm(h, p) * 1000), 8);
+  const { LW, LH } = FORMATS[state.fmt];
+  const mpp = (2 * ext) / (0.75 * Math.min(LW, LH));
+  const z = Math.log2(156543.03 * Math.cos(h.lat * Math.PI / 180) / mpp);
+  return Math.max(16.5, Math.min(20.5, Math.floor(z * 2) / 2));
+}
+function vnApply() {
+  if (!vnRes) return;
+  state.lot = vnRes.lot.map(p => ({ lat: +p.lat.toFixed(7), lng: +p.lng.toFixed(7) }));
+  lotZoom = vnFitZoom(state.lot);
+  dirty = true;
+  updateLotMsg();
+  save();
+  scheduleRebuild();
+  $('vnDlg').close();
+  toast(`Đã dùng lô đất ${state.lot.length} góc · ${formatArea(vnRes.area)} từ toạ độ sổ đỏ.`, 3800);
+}
+// "KTT 105°45'" / "105 độ 45 phút" → 105.75 (chỉ nhận nếu có trong danh sách)
+function kttFromText(t) {
+  const m = String(t || '').match(/(1[01]\d)\s*(?:°|º|độ|o)\s*(?:(\d{1,2})\s*(?:'|′|’|phút))?/i);
+  if (!m) return null;
+  const v = Number(m[1]) + (m[2] ? Number(m[2]) / 60 : 0);
+  return MERIDIANS.find(x => Math.abs(x - v) < 1e-6) ?? null;
+}
+// Ảnh chụp → JPEG cạnh dài tối đa 2000 px (đủ nét cho chữ số, gửi nhanh)
+async function shrinkScan(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await loadLogo(url);
+    if (!img) return null;
+    const k = Math.min(1, 2000 / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(img.width * k));
+    c.height = Math.max(1, Math.round(img.height * k));
+    const g = c.getContext('2d');
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.88);
+  } finally { URL.revokeObjectURL(url); }
+}
+async function vnSnap(file) {
+  const msg = $('vnSnapMsg'), btn = $('vnSnap');
+  const say = t => { msg.textContent = t; };
+  if (!account.profile && !(await requireLogin('Đăng nhập để AI đọc ảnh sơ đồ thửa.'))) return;
+  btn.disabled = true;
+  try {
+    say('Đang chuẩn bị ảnh…');
+    const image = await shrinkScan(file);
+    if (!image) { say('Không mở được ảnh này, thử chụp lại hoặc chọn ảnh JPG/PNG.'); return; }
+    say('AI đang đọc bảng toạ độ… (khoảng 10–30 giây)');
+    const res = await fetch('/api/so-ocr', {
+      method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ image, lat: state.house?.lat, lng: state.house?.lng }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (await handleAiError(res.status, j)) { say(j.error || ''); return; }
+      throw new Error(j.error || 'HTTP ' + res.status);
+    }
+    if (!j.points?.length) {
+      say('Không thấy bảng toạ độ trong ảnh' + (j.note ? ` (${j.note})` : '') + '. Chụp thẳng, rõ, sát bảng toạ độ rồi thử lại — hoặc chép tay bên dưới.');
+      return;
+    }
+    const vn = s => String(s).replace('.', ',');
+    $('vnText').value = j.points.map(p => `${p.n}   ${vn(p.x)}   ${vn(p.y)}`).join('\n');
+    const k = kttFromText(j.ktt);
+    if (k != null) $('vnKtt').value = String(k);
+    vnOcr = { labels: j.points.map(p => p.n), edges: j.edges || [], area: j.area || 0, unsure: j.unsure || [] };
+    say(`AI đã điền ${j.points.length} điểm${k != null ? ' + kinh tuyến trục' : ''}. So lại từng số với sổ rồi bấm "Dùng làm lô đất".`);
+    vnRead();
+  } catch (e) {
+    say('AI chưa đọc được ảnh (' + e.message + '). Thử lại, hoặc chép tay bảng toạ độ bên dưới.');
+  } finally { btn.disabled = false; }
+}
+function initVn2000() {
+  if (!vnEnabled()) return;
+  $('vnSnap').addEventListener('click', () => $('vnPhoto').click());
+  $('vnPhoto').addEventListener('change', e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) vnSnap(f); });
+  $('vnOpen').hidden = false;
+  const sel = $('vnKtt');
+  for (const m of MERIDIANS) sel.insertAdjacentHTML('beforeend', `<option value="${m}">${fmtMeridian(m)}</option>`);
+  $('vnOpen').addEventListener('click', () => $('vnDlg').showModal());
+  $('vnRead').addEventListener('click', vnRead);
+  $('vnText').addEventListener('input', () => { vnRes = null; $('vnApply').disabled = true; $('vnPin').hidden = true; });
+  $('vnKtt').addEventListener('change', () => { if ($('vnText').value.trim()) vnRead(); });
+  $('vnApply').addEventListener('click', vnApply);
+  $('vnPin').addEventListener('click', () => {
+    if (!vnRes) return;
+    setHouse({ lat: vnRes.centroid.lat, lng: vnRes.centroid.lng });
+    $('vnPin').hidden = true;
+    toast('Đã đưa ghim căn nhà về giữa lô đất.');
+    vnRead();
+  });
 }
 
 // ---------- Toạ độ ----------
@@ -3251,6 +3433,7 @@ function init() {
     toggleEdit(false);
     if (state.lot.length >= 3) toast(`Đã lưu lô đất khoảng ${formatArea(lotAreaM2(state.lot))}. Video sẽ zoom cận vào lô rồi mới ra bán kính.`, 3800);
   });
+  initVn2000();
   $('bigPlay').addEventListener('click', e => { e.stopPropagation(); play(); });
   canvas.addEventListener('click', e => {
     if (!editing) { playing ? pause() : play(); return; }
