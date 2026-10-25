@@ -9,6 +9,7 @@ import { handleConfig } from './lib/config.js';
 import { handleCapi } from './lib/capi.js';
 import { handleSoOcr } from './lib/so-ocr.js';
 export { AiRelay } from './lib/ai-relay.js';
+export { VbeeBox } from './lib/vbee-box.js';
 import { MEDIA_SIZES } from './lib/media-sizes.js';
 import { handleMap } from './lib/map.js';
 import { handleMedia, handleLead, handleTelegram, handleCan, handlePageEvent, handleCallLink, runCron } from './lib/pages.js';
