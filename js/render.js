@@ -843,7 +843,8 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   };
   tl.hookPh = first('front') || tl.intro;
   tl.hookEnd = hook ? tl.hookPh.t0 + tl.hookPh.hookLen : 0;
-  tl.keyPops = scene.motion && opts.keyTexts && vd ? buildKeyPops(phases, opts.keyTexts, vd, (tl.hookEnd || 0) + 0.4) : [];
+  // 25/10 22:07 Giang: BỎ từ khoá bật lên theo giọng đọc (giữ code, đổi KEY_POPS = true để bật lại)
+  tl.keyPops = KEY_POPS && scene.motion && opts.keyTexts && vd ? buildKeyPops(phases, opts.keyTexts, vd, (tl.hookEnd || 0) + 0.4) : [];
   // Có video thực tế: đoạn đầu làm nền chuyển động cho thẻ giá mở đầu (ưu tiên hơn ảnh tĩnh)
   // Đoạn mặt tiền chiếu toàn khung suốt cảnh mở đầu `front` (thẻ giá nếu có đè lên 2,2 s đầu)
   const fp = first('front');
@@ -905,6 +906,7 @@ function capWeight(s) {
 }
 // Từ khoá bật lên theo giọng đọc (chỉ khi có gói chữ động): thời điểm = vị trí từ khoá trong câu × thời lượng giọng câu đó,
 // cùng cách chia như phụ đề (chữ số đọc lâu hơn, dấu câu có ngắt). Mỗi cảnh 1 từ khoá (cảnh căn nhà 2), cách nhau ≥ 1,8 s.
+const KEY_POPS = false;
 function charWeight(ch) { return 1 + (/\d/.test(ch) ? 2.5 : 0) + (/[.!?…]/.test(ch) ? 5 : /[,;:]/.test(ch) ? 3 : 0); }
 export function buildKeyPops(phases, texts, voice, notBefore = 0) {
   const out = [];
