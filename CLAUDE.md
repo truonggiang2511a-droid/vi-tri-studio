@@ -8,6 +8,31 @@ Tên biến/hàm: tiếng Anh. Không tuyên bố "đã chạy được/đã bui
 
 ---
 
+## 0. Cách làm việc với Giang (Giang yêu cầu 25/10/2026 — áp dụng cho MỌI yêu cầu)
+
+**Phản biện trước, làm sau.** Mỗi yêu cầu/đề xuất của Giang (kể cả prompt dài, ý tưởng tính năng, chọn công nghệ) phải được
+xét theo **mục tiêu thật** (khách đăng ký, xuất video, trả tiền; video thu hút; app ổn định) chứ không làm theo nguyên văn.
+Giang muốn hướng **tối ưu và hiệu quả nhất**, không cần chiều ý.
+
+Mỗi lần nhận yêu cầu:
+1. Nêu ngắn mục tiêu thật đằng sau yêu cầu.
+2. Đối chiếu với repo + mục này: cái gì **đã có sẵn**, cái gì **xung đột** với điều Giang đã chốt (vd. "tự nhiên, không màu mè"
+   giúp tăng đăng ký; kiểu hiện tiện ích chỉ 2 kiểu; nhạc duck 0,42…), cái gì **sai về kỹ thuật/dữ liệu** (kiểm tra tài liệu thật,
+   không tin tên API/trường dữ liệu trong đề bài).
+3. Nói thẳng chỗ chưa ổn + chi phí/rủi ro (tiền, giấy phép, máy cũ/iPhone, quảng cáo, thanh toán) và đề xuất cách tốt hơn,
+   chia giai đoạn nhỏ, có công tắc bật/tắt.
+4. Chỉ hỏi lại những quyết định thật sự thuộc về Giang (tối đa vài câu, có lựa chọn sẵn). Yêu cầu rõ và rẻ để làm lại thì làm luôn,
+   ghi rõ đã chọn hướng nào và vì sao.
+5. Nếu Giang vẫn chọn hướng của mình sau khi nghe phản biện → làm theo Giang, ghi quyết định vào nhật ký mục 5.
+
+Ví dụ đã làm (25/10): master prompt "Next.js + Remotion + BullMQ + BDS Chat" → phản biện vì sai stack (repo là JS thuần +
+Cloudflare + render trên máy khách), tên trường BDS Chat không tồn tại (API thật: chỉ TP.HCM, giá nhà nước tra theo tên đường
+NQ 87/2025, rủi ro qua `/meta/risk/check`), cảnh rủi ro/giá trong video quảng cáo hại môi giới. Remotion: không nhanh hơn
+(cùng WebCodecs + Mediabunny như app), cần Safari 26+, giấy phép Automators khi đội ≥ 4 người → đề xuất làm hiệu ứng chữ/vector
+động ngay trong `render.js` (spring/interpolate tự viết, Lottie vẽ lên canvas theo khung), để Remotion cho webapp A-roll/B-roll.
+
+---
+
 ## 1. Kiến trúc nhanh
 
 | Phần | Ở đâu | Ghi chú |
