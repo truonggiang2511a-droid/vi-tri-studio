@@ -4,7 +4,7 @@
 import { project, unproject, haversineKm, metersPerPixel, formatKm, fitZoom } from './geo.js';
 import { drawIcon } from './icons.js';
 import { CATEGORIES, iconOf } from './data.js';
-import { motionHook, motionTitle } from './motion.js';
+import { motionHook, motionTitle, keyPop, keyPopBox, findKeywords } from './motion.js';
 
 export const BASE_FONT = '"Be Vietnam Pro", "Segoe UI", system-ui, sans-serif';
 // Chữ tên xã/phường, tỉnh/thành: Montserrat đậm, to rộng
@@ -843,6 +843,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   };
   tl.hookPh = first('front') || tl.intro;
   tl.hookEnd = hook ? tl.hookPh.t0 + tl.hookPh.hookLen : 0;
+  tl.keyPops = scene.motion && opts.keyTexts && vd ? buildKeyPops(phases, opts.keyTexts, vd, (tl.hookEnd || 0) + 0.4) : [];
   // Có video thực tế: đoạn đầu làm nền chuyển động cho thẻ giá mở đầu (ưu tiên hơn ảnh tĩnh)
   // Đoạn mặt tiền chiếu toàn khung suốt cảnh mở đầu `front` (thẻ giá nếu có đè lên 2,2 s đầu)
   const fp = first('front');
@@ -901,6 +902,35 @@ function capWeight(s) {
   const digits = (s.match(/\d/g) || []).length;
   const stop = /[.!?…]$/.test(s) ? 5 : /[,;:]$/.test(s) ? 3 : 0;
   return Math.max(4, s.length + digits * 2.5 + stop);
+}
+// Từ khoá bật lên theo giọng đọc (chỉ khi có gói chữ động): thời điểm = vị trí từ khoá trong câu × thời lượng giọng câu đó,
+// cùng cách chia như phụ đề (chữ số đọc lâu hơn, dấu câu có ngắt). Mỗi cảnh 1 từ khoá (cảnh căn nhà 2), cách nhau ≥ 1,8 s.
+function charWeight(ch) { return 1 + (/\d/.test(ch) ? 2.5 : 0) + (/[.!?…]/.test(ch) ? 5 : /[,;:]/.test(ch) ? 3 : 0); }
+export function buildKeyPops(phases, texts, voice, notBefore = 0) {
+  const out = [];
+  let last = -9;
+  for (const ph of phases) {
+    const text = ph.vkey && texts[ph.vkey];
+    const dur = ph.vkey && voice[ph.vkey];
+    if (!text || !dur || ph.type === 'clip' || ph.type === 'photos') continue;
+    const s = String(text).normalize('NFC');
+    const keys = findKeywords(s);
+    if (!keys.length) continue;
+    const cw = Array.from(s).map(charWeight);
+    const tot = cw.reduce((a, b) => a + b, 0) || 1;
+    const at = i => { let w = 0; for (let j = 0; j < i && j < cw.length; j++) w += cw[j]; return w / tot; };
+    const start = ph.t0 + (ph.type === 'intro' ? 0.5 : 0.3);
+    const max = ph.type === 'house' ? 2 : 1;
+    // quan trọng trước (giá > khoảng cách/phút > diện tích > pháp lý > phòng), cùng hạng thì từ khoá nói trước
+    const pick = keys.slice().sort((a, b) => a.rank - b.rank || a.i - b.i).slice(0, max).sort((a, b) => a.i - b.i);
+    for (const k of pick) {
+      const t = start + dur * at(k.i + k.len * 0.5) - 0.12;
+      if (t < notBefore || t - last < 1.8 || t > ph.t1 - 0.3) continue;
+      out.push({ t, dur: Math.min(1.6, Math.max(1.1, ph.t1 - t - 0.1)), text: k.text, kicker: k.kicker, kind: k.kind, id: out.length });
+      last = t;
+    }
+  }
+  return out;
 }
 export function buildCaptions(phases, texts, voice, fmtKey) {
   const out = [];
@@ -1429,7 +1459,17 @@ function shade(hex, f) {
 }
 
 // ---------- Vẽ trên màn hình ----------
+// Chỗ đã có chữ/thẻ/ghim trên màn hình trong khung đang vẽ (toạ độ điểm ảnh thật) — để từ khoá bật lên né ra
+let OCC = null, OCC_CTX = null;
+function occBox(ctx, x0, y0, x1, y1) {
+  if (!OCC || ctx !== OCC_CTX) return;
+  const m = ctx.getTransform();
+  const xs = [], ys = [];
+  for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) { xs.push(m.a * x + m.c * y + m.e); ys.push(m.b * x + m.d * y + m.f); }
+  OCC.push({ x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) });
+}
 function roundRect(ctx, x, y, w, h, r) {
+  occBox(ctx, x, y, x + w, y + h);
   ctx.beginPath();
   ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -1471,6 +1511,7 @@ function spacedCaps(ctx, text, x, y, sp) {
 
 function drawPoiPin(ctx, x, y, cat, s, alpha, ic = null) {
   if (s <= 0.01) return;
+  if (alpha > 0.2) occBox(ctx, x - 22 * s, y - 50 * s, x + 22 * s, y + 6 * s);
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(x, y);
@@ -1507,6 +1548,7 @@ function drawFlagPin(ctx, x, y, s) {
 }
 
 function drawHousePin(ctx, x, y, dropT, t, s = 1) {
+  occBox(ctx, x - 34 * s, y - 80 * s, x + 34 * s, y + 10 * s);
   const pulse = (t % 1.8) / 1.8;
   for (const off of [0, 0.5]) {
     const q = (pulse + off) % 1;
@@ -2104,6 +2146,7 @@ function infraAlpha(tl, t) {
 }
 function hubPin(ctx, x, y, type, s, alpha) {
   if (s <= 0.01 || alpha <= 0.01) return;
+  if (alpha > 0.2) occBox(ctx, x - 22 * s, y - 50 * s, x + 22 * s, y + 6 * s);
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.translate(x, y);
@@ -2482,6 +2525,40 @@ function drawHook(ctx, tl, t) {
     ctx.restore();
   }
   ctx.restore();
+}
+// Từ khoá bật lên đúng lúc giọng đọc nói tới (giá, cách nhà …m, …phút, diện tích, sổ hồng): phía trên gần giữa màn hình,
+// chọn chỗ KHÔNG đè thẻ/ghim/tên đường/phụ đề đang hiện (OCC); chọn 1 lần lúc bật rồi giữ nguyên chỗ cho tới khi rút.
+const POP_YS = [0.33, 0.27, 0.39, 0.22, 0.45, 0.17];
+function drawKeyPops(ctx, tl, t) {
+  if (!tl.keyPops || !tl.keyPops.length || !tl.scene.motion) return;
+  const { LW, LH, safe } = tl;
+  const k = (Math.min(LW, LH) / 540) * (tl.fmt === 'v' ? 1 : 0.8);
+  const maxW = LW - safe.x * 2 - 20;
+  tl._popY ||= new Map();
+  for (const p of tl.keyPops) {
+    const lt = t - p.t;
+    if (lt < 0 || lt > p.dur) continue;
+    const e = { x: LW / 2, y: 0, lt, dur: p.dur, A: 1, k, text: p.text, kicker: p.kicker, kind: p.kind };
+    let y = tl._popY.get(p.id);
+    if (y == null || lt < 0.05) {
+      const box = keyPopBox(ctx, tl.scene.motion, e, maxW);
+      const m = ctx.getTransform();
+      let best = null;
+      POP_YS.forEach((fy, i) => {
+        const cy = LH * fy;
+        const x0 = m.a * (LW / 2 - box.w / 2) + m.e, x1 = m.a * (LW / 2 + box.w / 2) + m.e;
+        const y0 = m.d * (cy - box.h / 2) + m.f, y1 = m.d * (cy + box.h / 2) + m.f;
+        let over = 0;
+        for (const o of OCC || []) over += Math.max(0, Math.min(x1, o.x1) - Math.max(x0, o.x0)) * Math.max(0, Math.min(y1, o.y1) - Math.max(y0, o.y0));
+        const score = over + i * 40 * m.a * m.a; // cùng trống thì ưu tiên chỗ gần giữa – trên
+        if (!best || score < best.score) best = { score, cy };
+      });
+      y = best.cy;
+      tl._popY.set(p.id, y);
+    }
+    e.y = y;
+    keyPop(ctx, tl.scene.motion, e, maxW);
+  }
 }
 // Khung điện ảnh (phong cách sang trọng): 2 dải đen trên/dưới lúc mở đầu và lúc kết
 function drawBars(ctx, tl, t) {
@@ -2914,6 +2991,7 @@ function drawHiWall(ctx, P, v, W, t, LW, LH) {
 }
 
 export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
+  OCC = tl.keyPops && tl.keyPops.length ? [] : null; OCC_CTX = ctx;
   useStyle(tl.scene.style);
   useHiTheme(tl.scene.hiTheme);
   useBase(tl.scene.base);
@@ -3707,6 +3785,10 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     }
     for (const it of items) {
       if (it.vis <= 0.02) continue;
+      if (it.vis * it.labA > 0.3 && it.pts.length) { // chữ tên trục đường: chiếm cả phần khối dâng lên phía trên
+        const xs = it.pts.map(p => p.x), ys = it.pts.map(p => p.y), r = Math.max(...it.pts.map(p => p.r));
+        occBox(ctx, Math.min(...xs) - r, Math.min(...ys) - r * 1.6, Math.max(...xs) + r, Math.max(...ys) + r);
+      }
       const { L, q, s0 } = it;
       const st = roadStyleOf(scene, tl.roads[L.road]);
       // Kiểu cũ (Giang chốt 23/10): chữ 3D in đậm, mặt trắng hoặc vàng, thân khối tối, viền đen dày; dâng khối khi hiện
@@ -3836,6 +3918,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     const mEnv = { LW: tl.LW, LH: tl.LH, safe: tl.safe, fmt: tl.fmt, lt: t - tStart, A: tA, k: (Math.min(tl.LW, tl.LH) / 540) * (tl.fmt === 'v' ? 1 : 0.85),
       text: String(scene.title || '').toUpperCase(), sub: scene.titleSub, top: Math.max(tl.fmt === 'v' ? tl.safe.top + 8 : tl.safe.top - 6, tTop) };
     if (!(tA > 0.01 && scene.motion && motionTitle(ctx, scene.motion, mEnv))) drawTitle(ctx, tl, scene.title, scene.titleSub, tA, tTop);
+    if (tA > 0.2) occBox(ctx, tl.safe.x, mEnv.top - 6, tl.LW - tl.safe.x, mEnv.top + (scene.titleSub ? 118 : 80) * mEnv.k);
   }
   const houseCardA = Math.max(fadeWin(t, ho.t0 + 0.5, ov.t0 + 0.4, 0.45, 0.4), fadeWin(t, ou.t0 + 0.5, T + 10, 0.45, 0.4));
   labelCard(ctx, hs.x, hs.y - 60 * depthScale(hs.w), scene.label, scene.sub, houseCardA, LW, safe);
@@ -4059,6 +4142,10 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   drawInfo(ctx, infoTop, infoEndA);
   drawPhotos(ctx, tl, t, logo);
   drawClips(ctx, tl, t, logo);
+  if (capL && capA > 0.01) occBox(ctx, capL.x, capL.y, capL.x + capL.w, capL.y + capL.h);
+  OCC_CTX = null;
+  drawKeyPops(ctx, tl, t);
+  OCC = null;
   drawHook(ctx, tl, t);
   drawBars(ctx, tl, t);
   drawLogo(ctx, tl, logo);

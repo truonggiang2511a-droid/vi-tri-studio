@@ -383,9 +383,16 @@ function captionTexts() {
   }
   return out;
 }
+// Lời từng cảnh đã có giọng (cho từ khoá bật lên theo giọng — cần cả khi khách tắt phụ đề)
+function voicedTexts() {
+  if (!state.aiVoiceOn) return null;
+  const out = {};
+  for (const sg of scriptSegments()) if (voiceOk(sg)) out[sg.key] = sg.text;
+  return out;
+}
 function timelineOpts() {
   const vd = voiceDurations();
-  return vd ? { voice: vd, captions: captionTexts() } : { fitDuration: voiceFitDuration() };
+  return vd ? { voice: vd, captions: captionTexts(), keyTexts: sceneMotion() ? voicedTexts() : null } : { fitDuration: voiceFitDuration() };
 }
 function voiceSegsFor(T) {
   if (!state.aiVoiceOn) return [];
@@ -422,7 +429,7 @@ let audioSrc = null;
 let exporting = false;
 
 // Cho phép soát lỗi từ bảng điều khiển trình duyệt
-window.__vitri = { get tl() { return tl; }, get t() { return t; }, state, scanArea, SAMPLE_KEYS: () => SAMPLE_KEYS };
+window.__vitri = { get tl() { return tl; }, get t() { return t; }, state, scanArea, SAMPLE_KEYS: () => SAMPLE_KEYS, pause: () => pause() };
 
 function rebuild() {
   if (photoKey(state.house) !== photoHouse) { restorePhotos(); showPageResult(); }

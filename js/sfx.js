@@ -102,6 +102,11 @@ export function sfxEvents(tl) {
         break;
     }
   }
+  // Từ khoá bật lên theo giọng đọc (chữ động): "pop" khi bật, giá thêm tiếng "ding" sáng (khớp tl.keyPops trong render.js)
+  for (const k of tl.keyPops || []) {
+    add(k.t + 0.02, 'pop', k.kind === 'price' ? 0.6 : 0.42);
+    if (k.kind === 'price') add(k.t + 0.12, 'ding', 0.4);
+  }
   // Radar quét bán kính: tiếng "ping" sonar mỗi vòng quét + tiếng ù radar quay vòng.
   // Thời điểm khớp với tia quét trong render.js (bắt đầu ở hướng 12 giờ, 1,25 giây một vòng)
   const ov = ph.find(x => x.type === 'overview'), rp = ph.find(x => x.type === 'radar'), sm = ph.find(x => x.type === 'summary');

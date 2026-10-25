@@ -517,3 +517,127 @@ export function motionTitle(ctx, key, env) {
   ctx.save(); m.title(ctx, env); ctx.restore();
   return true;
 }
+
+// ---------- Từ khoá bật lên theo giọng đọc (giá, cách nhà bao nhiêu mét, số phút…) ----------
+// e: { x, y (tâm), lt (giây từ lúc bật), dur (giây hiện), A, k, text, kicker, kind }
+const POP_FONT = {
+  denvang: s => `900 ${s}px ${HEAD}`, khoi: s => `900 ${s}px ${HEAD}`,
+  tapchi: s => `700 ${s}px ${SERIF}`, hiendai: s => `800 ${s}px ${BODY}`,
+};
+function popSizes(ctx, key, e, maxW) {
+  const f = POP_FONT[key] || POP_FONT.denvang;
+  const big = fitSize(ctx, e.text, f, (e.kind === 'price' ? 64 : 54) * e.k, 0.02, maxW - 40 * e.k);
+  const kick = e.kicker ? 17 * e.k : 0;
+  ctx.font = f(big);
+  const tw = charsOf(ctx, e.text, big * 0.02).total;
+  return { f, big, kick, tw, w: tw + 44 * e.k, h: big * 1.18 + (kick ? kick * 1.9 : 0) + 18 * e.k };
+}
+export function keyPopBox(ctx, key, e, maxW) {
+  const s = popSizes(ctx, key, e, maxW);
+  return { w: s.w, h: s.h };
+}
+export function keyPop(ctx, key, e, maxW) {
+  if (!MOTION[key]) return;
+  const { x, y, lt, dur, k } = e;
+  const out = clamp01((lt - (dur - 0.28)) / 0.28);           // rút ra cuối
+  const A = e.A * clamp01(lt / 0.08) * (1 - out);
+  if (A <= 0.01) return;
+  const S = popSizes(ctx, key, e, maxW);
+  const sp = spring(lt, { stiffness: 260, damping: 15 });      // nảy vào
+  const sc = (0.55 + 0.45 * sp) * (1 - 0.12 * out);
+  const by = y + (S.kick ? S.kick * 0.95 : 0);                  // tâm chữ to
+  const ky = y - S.h / 2 + S.kick * 0.7 + 4 * k;                // dòng nhỏ phía trên
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(sc, sc); ctx.translate(-x, -y);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  if (key === 'khoi') {
+    const p = ease.expo(clamp01(lt / 0.3));
+    ctx.save(); ctx.translate(x, by); ctx.rotate(-0.035);
+    ctx.globalAlpha = A; ctx.fillStyle = '#FFD400';
+    ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 4;
+    ctx.fillRect(-S.w / 2, -S.big * 0.62, S.w * p, S.big * 1.24);
+    ctx.shadowColor = 'transparent';
+    ctx.font = S.f(S.big); ctx.fillStyle = '#101010';
+    ctx.fillText(e.text, 0, S.big * 0.05);
+    ctx.restore();
+    if (S.kick) {
+      ctx.font = `800 ${S.kick}px ${BODY}`;
+      const kw = ctx.measureText(e.kicker).width + 18 * k;
+      ctx.globalAlpha = A; ctx.fillStyle = '#101010';
+      ctx.fillRect(x - S.w / 2, ky - S.kick * 0.75, kw, S.kick * 1.5);
+      ctx.fillStyle = '#FFFFFF'; ctx.textAlign = 'left';
+      ctx.fillText(e.kicker, x - S.w / 2 + 9 * k, ky);
+    }
+  } else {
+    // nền mờ tối phía sau để chữ luôn đọc rõ trên ảnh vệ tinh
+    const g = ctx.createRadialGradient(x, y, 4, x, y, Math.max(S.w, S.h) * 0.62);
+    g.addColorStop(0, 'rgba(0,0,0,0.62)'); g.addColorStop(0.6, 'rgba(0,0,0,0.36)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.globalAlpha = A; ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(x, y, S.w * 0.62, S.h * 0.85, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 10;
+    if (S.kick) {
+      ctx.font = key === 'tapchi' ? `italic 500 ${S.kick * 1.15}px ${SERIF}` : `700 ${S.kick}px ${BODY}`;
+      ctx.globalAlpha = A * clamp01((lt - 0.05) / 0.2);
+      ctx.fillStyle = key === 'hiendai' ? '#3EE8B5' : key === 'tapchi' ? '#F7F1E6' : '#F4EFE6';
+      const kk = key === 'tapchi' ? e.kicker : e.kicker.toUpperCase();
+      if (key === 'tapchi') ctx.fillText(kk, x, ky);
+      else {
+        ctx.font = `700 ${S.kick}px ${BODY}`;
+        const { cs, ws, total } = charsOf(ctx, kk, S.kick * 0.18);
+        let cx = x - total / 2; ctx.textAlign = 'left';
+        for (let i = 0; i < cs.length; i++) { ctx.fillText(cs[i], cx, ky); cx += ws[i]; }
+        ctx.textAlign = 'center';
+      }
+    }
+    ctx.globalAlpha = A;
+    ctx.font = S.f(S.big);
+    // viền tối mảnh dưới chữ để chữ vàng/trắng không chìm vào nền ảnh vệ tinh sáng
+    ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(2, S.big * 0.07); ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+    ctx.strokeText(e.text, x, by);
+    ctx.fillStyle = key === 'hiendai' ? '#FFFFFF' : key === 'tapchi' ? goldGrad(ctx, by, S.big) : goldGrad(ctx, by, S.big);
+    ctx.fillText(e.text, x, by);
+    ctx.shadowColor = 'transparent';
+    if (key !== 'hiendai') sheen(ctx, e.text, x, by, S.big, S.f, 0, (lt - 0.25) / 0.55, A);
+    const ly = by + S.big * 0.6;
+    if (key === 'hiendai') {
+      ctx.globalAlpha = A; ctx.fillStyle = '#3EE8B5';
+      const bw = S.tw * ease.expo(clamp01((lt - 0.12) / 0.4));
+      ctx.fillRect(x - bw / 2, ly, bw, 4 * k);
+    } else hairline(ctx, x, ly, S.tw * 0.55, clamp01((lt - 0.1) / 0.45), '#D9B26F', A, key === 'tapchi' ? 9 * k : 0);
+  }
+  ctx.restore();
+}
+
+// Tìm từ khoá ngắn quan trọng trong câu đọc → [{ i (vị trí ký tự), len, text, kicker, kind, rank }]
+const KEY_RULES = [
+  { kind: 'price', rank: 0, re: /(\d+(?:[.,]\d+)?)\s*(tỷ|tỉ)(?:\s*(\d{1,3})(?!\s*(?:m(?![\p{L}\d])|mét|km|phút))(\s*triệu)?)?/giu,
+    fmt: m => (m[1] + ' TỶ' + (m[3] ? ' ' + m[3] + (m[4] ? ' TRIỆU' : '') : '')), kick: 'Giá chỉ' },
+  { kind: 'price', rank: 0, re: /(\d+(?:[.,]\d+)?)\s*triệu(\s*\/\s*m(?:²|2))?/giu, fmt: m => m[1] + ' TRIỆU' + (m[2] ? '/M²' : ''), kick: 'Giá chỉ' },
+  { kind: 'size', rank: 2, re: /(\d+(?:[.,]\d+)?)\s*[x×]\s*(\d+(?:[.,]\d+)?)\s*(?:m(?![\p{L}\d])|mét)?/giu, fmt: m => `${m[1]}×${m[2]} M`, kick: 'Diện tích' },
+  { kind: 'area', rank: 2, re: /(\d+(?:[.,]\d+)?)\s*(?:m²|m2(?![\p{L}\d])|mét vuông)/giu, fmt: m => m[1] + ' M²', kick: 'Diện tích' },
+  { kind: 'time', rank: 1, re: /(\d+)\s*phút/giu, fmt: m => m[1] + ' PHÚT', kick: 'Chỉ' },
+  { kind: 'dist', rank: 1, re: /(\d+(?:[.,]\d+)?)\s*(km|ki-lô-mét|cây số|mét|m)(?![²\p{L}\d])/giu,
+    fmt: m => m[1] + (/^m|mét$/i.test(m[2]) ? ' M' : ' KM'), kick: 'Cách nhà' },
+  { kind: 'legal', rank: 3, re: /sổ hồng riêng|sổ đỏ riêng|sổ hồng|sổ đỏ|full thổ cư|thổ cư 100\s*%/gi, fmt: m => m[0].toUpperCase(), kick: 'Pháp lý' },
+  { kind: 'beds', rank: 4, re: /(\d+)\s*phòng ngủ/gi, fmt: m => m[1] + ' PHÒNG NGỦ', kick: '' },
+  { kind: 'floors', rank: 4, re: /1\s*trệt\s*(\d+)\s*(lầu|tầng)/gi, fmt: m => `1 TRỆT ${m[1]} ${m[2].toUpperCase()}`, kick: '' },
+];
+export function findKeywords(text) {
+  const s = String(text || '').normalize('NFC');
+  const out = [];
+  for (const r of KEY_RULES) {
+    r.re.lastIndex = 0;
+    let m;
+    while ((m = r.re.exec(s))) {
+      if (out.some(o => m.index < o.i + o.len && o.i < m.index + m[0].length)) continue; // đã có từ khoá chồng lên
+      let kick = r.kick;
+      const before = s.slice(Math.max(0, m.index - 14), m.index).toLowerCase();
+      if (r.kind === 'dist' && /bán kính\s*$/.test(before)) kick = 'Bán kính';
+      if (r.kind === 'dist' && /chỉ\s*(cách\s*)?$/.test(before)) kick = 'Chỉ cách';
+      if (r.kind === 'time' && !/chỉ|khoảng|mất/.test(before)) kick = '';
+      if (r.kind === 'price') kick = /chỉ\s*$/.test(before) ? 'Giá chỉ' : 'Giá bán';
+      out.push({ i: m.index, len: m[0].length, text: r.fmt(m), kicker: kick, kind: r.kind, rank: r.rank });
+    }
+  }
+  return out.sort((a, b) => a.i - b.i);
+}
