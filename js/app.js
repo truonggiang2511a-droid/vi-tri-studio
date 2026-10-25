@@ -1768,7 +1768,7 @@ async function vbeeConnect() {
     $('vbeeTok').value = '';
     const d = j.diag;
     msg.textContent = `✅ Đã kết nối · ${j.voices} giọng${j.personal ? `, trong đó ${j.personal} giọng riêng ⭐ (giọng nhân bản của anh/chị)` : ' · chưa thấy giọng riêng/nhân bản nào trong ứng dụng này'}. Chọn giọng ở ô "Hoặc chọn giọng Vbee" phía trên.`
-      + (d ? ` (Vbee trả: ${d.vbee} giọng Vbee · ${d.rieng} giọng riêng${d.riengLoi ? ' · lỗi ' + d.riengLoi : ''})` : '');
+      + (d ? ` (Vbee trả: ${d.vbee} giọng Vbee · ${d.rieng} giọng riêng · ${d.congdong ?? 0} giọng cộng đồng${d.riengLoi ? ' · lỗi ' + d.riengLoi : ''})` : '');
     await checkAi();
     const mine = (ai.voices || []).find(v => v.provider === 'vbee' && v.own);
     if (mine) { state.voiceId = mine.id; syncVoiceUi(); renderScript(); save(); }
@@ -1815,7 +1815,13 @@ function renderVoices(list) {
   if (row && sel) {
     row.hidden = !vb.length;
     const g = { female: 'nữ', male: 'nam' };
-    sel.innerHTML = '<option value="">— Chọn giọng Vbee —</option>' + vb.map(v => `<option value="${esc(v.id)}">${esc(v.label)}${g[v.gender] ? ' · ' + g[v.gender] : ''}</option>`).join('');
+    const opt = v => `<option value="${esc(v.id)}">${esc(v.label)}${g[v.gender] ? ' · ' + g[v.gender] : ''}</option>`;
+    // Nhóm như trên Vbee: giọng riêng/nhân bản ⭐ → giọng Vbee → giọng cộng đồng
+    const groups = [['rieng', '⭐ Giọng riêng của anh/chị'], ['vbee', 'Giọng Vbee'], ['congdong', 'Giọng cộng đồng']];
+    sel.innerHTML = '<option value="">— Chọn giọng Vbee —</option>' + groups.map(([k, name]) => {
+      const items = vb.filter(v => (v.group || (v.own ? 'rieng' : 'vbee')) === k);
+      return items.length ? `<optgroup label="${esc(name)} (${items.length})">${items.map(opt).join('')}</optgroup>` : '';
+    }).join('');
   }
   if (!list.some(v => v.id === state.voiceId)) {
     const male = /^(g-)?nam/.test(state.voiceId);
