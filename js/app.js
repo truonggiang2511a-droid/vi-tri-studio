@@ -80,6 +80,8 @@ const state = {
   regionOff: [],     // id điểm mốc / tuyến hạ tầng khách tắt
   hiTheme: 'dien',   // màu line trục đường điểm nhấn (HI_THEMES)
   lotStyle: 'phatsang', // kiểu viền làm nổi lô đất (LOT_STYLES) — mặc định = kiểu gốc
+  lotSrc: '',        // lô lấy từ đâu: 'so' (toạ độ sổ đỏ, chính xác) | 'tay' (chạm vẽ, ước lượng)
+  lotDims: 'auto',   // ghi kích thước lô: auto = bật khi lô lấy từ sổ | on | off
   lotColor: 'auto',  // màu viền lô: auto = theo phong cách video (LOT_COLORS)
   pageVideo: '',     // link video đã đăng (gắn vào trang web căn nhà)
   pageDesc: '',
@@ -334,7 +336,7 @@ function buildScene() {
     sweep: !!state.showSweep,
     roadTheme: state.roadTheme,
     hiTheme: state.hiTheme,
-    lotStyle: state.lotStyle, lotColor: state.lotColor,
+    lotStyle: state.lotStyle, lotColor: state.lotColor, lotDims: lotDimsOn(),
     routeTheme: state.routeTheme,
     roadLabelFace: state.roadLabelFace,
   };
@@ -746,6 +748,7 @@ function vnApply() {
     vnPlaceHouse(vnRes.centroid);
   }
   state.lot = vnRes.lot.map(p => ({ lat: +p.lat.toFixed(7), lng: +p.lng.toFixed(7) }));
+  state.lotSrc = 'so';
   lotZoom = vnFitZoom(state.lot);
   dirty = true;
   updateLotMsg();
@@ -912,11 +915,12 @@ const houseMemo = [];
 function resetHouseInfo(prev) {
   const has = HOUSE_INFO.some(([k]) => state[k]) || state.lot?.length || state.stars?.length;
   if (has && prev) {
-    houseMemo.unshift({ house: prev, lot: state.lot || [], stars: state.stars || [], areaFor: state.areaFor || '', info: Object.fromEntries(HOUSE_INFO.map(([k]) => [k, state[k] || ''])) });
+    houseMemo.unshift({ house: prev, lot: state.lot || [], lotSrc: state.lotSrc || '', stars: state.stars || [], areaFor: state.areaFor || '', info: Object.fromEntries(HOUSE_INFO.map(([k]) => [k, state[k] || ''])) });
     houseMemo.length = Math.min(houseMemo.length, 5);
   }
   for (const [k, id] of HOUSE_INFO) { state[k] = ''; const el = $(id); if (el) el.value = ''; }
   state.lot = [];
+  state.lotSrc = '';
   state.stars = [];
   state.pois = state.pois.filter(p => !p.manual);
   state.selected = state.selected.filter(id => state.pois.some(p => p.id === id));
@@ -928,7 +932,7 @@ function restoreHouseInfo(h) {
   if (i < 0 || HOUSE_INFO.some(([k]) => state[k])) return false;
   const [m] = houseMemo.splice(i, 1);
   for (const [k, id] of HOUSE_INFO) { state[k] = m.info[k] || ''; const el = $(id); if (el) el.value = state[k]; }
-  state.lot = m.lot; state.stars = m.stars; state.areaFor = m.areaFor;
+  state.lot = m.lot; state.lotSrc = m.lotSrc || ''; state.stars = m.stars; state.areaFor = m.areaFor;
   updateAreaPlaceholders();
   toast('Đã điền lại thông tin của căn này.', 2500);
   return true;
@@ -2102,6 +2106,12 @@ function showLotMoment() {
     dirty = true;
   }
 }
+// Ghi kích thước lô: tự bật khi lô lấy từ toạ độ sổ đỏ; lô vẽ tay chỉ bật khi khách chọn (số đo ước lượng)
+function lotDimsOn() {
+  if (state.lotDims === 'on') return true;
+  if (state.lotDims === 'off') return false;
+  return state.lotSrc === 'so';
+}
 function renderLotStyles() {
   const row = $('lotStyleRow');
   if (!row) return;
@@ -2117,6 +2127,12 @@ function renderLotStyles() {
     renderLotStyles();
     showLotMoment();
   };
+  const dim = $('lotDimsOn');
+  if (dim) {
+    dim.checked = lotDimsOn();
+    $('lotDimsHint').textContent = state.lotSrc === 'so' ? 'Số đo tính từ toạ độ sổ đỏ.' : hasLot ? 'Lô vẽ tay: số đo ước lượng từ chỗ chạm, có thể lệch 1–2 m — chỉ bật khi đã chấm thật khớp.' : '';
+    dim.onchange = () => { state.lotDims = dim.checked ? 'on' : 'off'; renderLotStyles(); showLotMoment(); };
+  }
   renderSwatches('lotColorRow', 'lotColor', true, LOT_COLORS);
   $('lotColorRow').onclick = e => {
     const b = e.target.closest('button[data-v]');
@@ -2359,7 +2375,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'lotStyle', 'lotColor', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'lotStyle', 'lotColor', 'lotSrc', 'lotDims', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -3517,8 +3533,8 @@ function init() {
   $('lotArea').value = state.lotArea || '';
   $('lotText').addEventListener('input', e => { state.lotText = e.target.value; save(); });
   $('lotArea').addEventListener('input', e => { state.lotArea = e.target.value; save(); });
-  $('lotUndo').addEventListener('click', () => { state.lot.pop(); dirty = true; updateLotMsg(); save(); });
-  $('lotClear').addEventListener('click', () => { state.lot = []; dirty = true; updateLotMsg(); save(); });
+  $('lotUndo').addEventListener('click', () => { state.lot.pop(); state.lotSrc = state.lot.length ? 'tay' : ''; dirty = true; updateLotMsg(); save(); });
+  $('lotClear').addEventListener('click', () => { state.lot = []; state.lotSrc = ''; dirty = true; updateLotMsg(); save(); });
   $('lotDone').addEventListener('click', () => {
     if (state.lot.length && state.lot.length < 3) { toast('Lô đất cần ít nhất 3 góc.'); return; }
     toggleEdit(false);
@@ -3531,6 +3547,7 @@ function init() {
     const rect = canvas.getBoundingClientRect();
     if (editMode === 'lot') {
       if (state.lot.length >= 12) { toast('Tối đa 12 góc.'); return; }
+      state.lotSrc = 'tay';
       state.lot.push(editTapToLatLng(state.house, state.fmt, (e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height, lotZoom));
       dirty = true; updateLotMsg(); save();
       return;
