@@ -791,6 +791,12 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .vbee-pick { display: flex; gap: 8px; align-items: center; }
 .vbee-pick select { flex: 1; min-width: 0; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: inherit; font: inherit; }
 .vbee-row.on select { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.vbee-own { margin: 6px 0 10px; border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; }
+.vbee-own summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+.vbee-own .vbee-st { font-weight: 600; font-size: 0.85em; color: var(--mute, #6b7280); }
+.vbee-own .vbee-st.ok { color: #12805c; }
+.vbee-steps { margin: 6px 0 8px; padding-left: 18px; }
+.vbee-own-act { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 
 /* Mục "Hỗ trợ" (Zalo Giang) ở thanh điều hướng nháy sáng khi khách gặp lỗi (không dùng nút nổi vì che nút Quét/Dán) */
 .appnav .zalo-link.pulse { animation: navPulse 1.2s ease-in-out 5; color: #0068ff; }

@@ -1718,16 +1718,75 @@ function renderScript() {
   updateVoCard();
 }
 
-async function checkAi() {
+// ---------- Giọng Vbee bằng tài khoản của khách (khách tự mang khoá) ----------
+// Khoá lưu trên máy (localStorage), gửi kèm header x-vbee-app/x-vbee-token; máy chủ chỉ chuyển tiếp sang Vbee.
+const VBEE_KEY = 'vitri.vbeeKey';
+function vbeeKey() {
+  try { const k = JSON.parse(localStorage.getItem(VBEE_KEY) || 'null'); return k && k.app && k.token ? k : null; } catch { return null; }
+}
+const vbeeKeyHeaders = (k = vbeeKey()) => (k ? { 'x-vbee-app': k.app, 'x-vbee-token': k.token } : {});
+// Đang thử: hiện cho tài khoản nội bộ, link ?vbee=1 (nhớ trên máy, ?vbee=0 tắt), hoặc máy đã kết nối khoá
+function vbeeOwnVisible() {
   try {
-    const [a, b] = await Promise.all([
-      fetch('/api/tts').then(r => r.ok ? r.json() : null).catch(() => null),
+    const q = new URLSearchParams(location.search).get('vbee');
+    if (q === '1' || q === '0') localStorage.setItem('vitri.vbeeOn', q);
+    const v = localStorage.getItem('vitri.vbeeOn');
+    if (v === '0') return !!vbeeKey();
+    if (v === '1' || vbeeKey()) return true;
+  } catch { /* bỏ qua */ }
+  return /@vitristudio\.com$/i.test(String(account.profile?.login || ''));
+}
+function syncVbeeOwn(info) {
+  const box = $('vbeeOwn');
+  if (!box) return;
+  box.hidden = !vbeeOwnVisible();
+  const k = vbeeKey();
+  $('vbeeForget').hidden = !k;
+  $('vbeeConnect').textContent = k ? 'Kết nối lại' : 'Kết nối';
+  const st = $('vbeeOwnState');
+  st.textContent = k ? (info?.vbeeOwn === false ? '· khoá chưa dùng được' : '· đã kết nối') : '';
+  st.classList.toggle('ok', !!k && info?.vbeeOwn !== false);
+  if (k && !$('vbeeApp').value) $('vbeeApp').value = k.app;
+}
+async function vbeeConnect() {
+  const app = $('vbeeApp').value.trim(), token = $('vbeeTok').value.trim().replace(/^Bearer\s+/i, '') || vbeeKey()?.token || '';
+  const msg = $('vbeeOwnMsg');
+  if (!app || !token) { msg.textContent = 'Dán đủ App ID và Token rồi bấm Kết nối.'; return; }
+  const btn = $('vbeeConnect');
+  btn.disabled = true; msg.textContent = 'Đang kiểm tra với Vbee…';
+  try {
+    const r = await fetch('/api/tts?vbee=check', { headers: vbeeKeyHeaders({ app, token }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) { msg.textContent = '❌ ' + (j.error || 'Không kết nối được, thử lại.'); return; }
+    try { localStorage.setItem(VBEE_KEY, JSON.stringify({ app, token })); } catch { msg.textContent = 'Máy không cho lưu khoá (chế độ ẩn danh?).'; return; }
+    $('vbeeTok').value = '';
+    msg.textContent = `✅ Đã kết nối · ${j.voices} giọng${j.personal ? `, trong đó ${j.personal} giọng riêng ⭐` : ''}. Chọn giọng ở ô "Hoặc chọn giọng Vbee" phía trên.`;
+    await checkAi();
+    const mine = (ai.voices || []).find(v => v.provider === 'vbee' && v.own);
+    if (mine) { state.voiceId = mine.id; syncVoiceUi(); renderScript(); save(); }
+  } catch { msg.textContent = '❌ Lỗi mạng, thử lại.'; }
+  finally { btn.disabled = false; }
+}
+function vbeeForget() {
+  try { localStorage.removeItem(VBEE_KEY); } catch { /* bỏ qua */ }
+  $('vbeeApp').value = ''; $('vbeeTok').value = '';
+  $('vbeeOwnMsg').textContent = 'Đã ngắt kết nối. Khoá đã xoá khỏi máy này.';
+  checkAi();
+}
+
+async function checkAi() {
+  let a = null;
+  try {
+    let b;
+    [a, b] = await Promise.all([
+      fetch('/api/tts', { headers: vbeeKeyHeaders() }).then(r => r.ok ? r.json() : null).catch(() => null),
       fetch('/api/script').then(r => r.ok ? r.json() : null).catch(() => null),
     ]);
     ai.tts = !!a?.ready; ai.ttsProvider = a?.provider || null; ai.script = !!b?.ready;
     ai.gated = a?.gated !== false;
     if (a?.voices?.length) renderVoices(a.voices);
   } catch { /* để mặc định */ }
+  syncVbeeOwn(a);
   const prov = { fpt: 'FPT.AI', google: 'Google', vbee: 'Vbee' }[ai.ttsProvider] || '';
   $('aiStatus').textContent = ai.tts
     ? `Giọng AI sẵn sàng${prov ? ' (' + prov + ')' : ''}. Video tự giãn theo từng câu đọc.`
@@ -1920,7 +1979,7 @@ let ttsBusy = false;
 // Gọi /api/tts một lần; FPT chưa tạo xong thì hỏi lại link cho tới khi có file
 async function ttsRequest(text, onWait, attempt = 0) {
   const res = await fetch('/api/tts', {
-    method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() },
+    method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders(), ...(String(state.voiceId || '').startsWith('vb:') ? vbeeKeyHeaders() : {}) },
     body: JSON.stringify({ text, voice: state.voiceId, speed: state.voiceSpeed, lat: state.house?.lat, lng: state.house?.lng }),
   });
   // Nhiều khách tạo giọng cùng lúc: máy chủ báo đông thì tự xếp hàng thử lại vài lần
@@ -3502,6 +3561,10 @@ function init() {
     if (!v) return;
     state.voiceId = v; syncVoiceUi(); renderScript(); save();
   });
+  $('vbeeConnect').addEventListener('click', vbeeConnect);
+  $('vbeeForget').addEventListener('click', vbeeForget);
+  syncVbeeOwn();
+  onAccountChange(() => syncVbeeOwn());
   let demoAudio = null;
   $('vbeeDemo').addEventListener('click', () => {
     const v = (ai.voices || []).find(x => x.id === state.voiceId);

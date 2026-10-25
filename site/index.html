@@ -375,6 +375,21 @@
               <button type="button" class="btn btn-quiet" id="vbeeDemo" hidden>▶ Nghe thử</button>
             </div>
           </div>
+          <details class="vbee-own" id="vbeeOwn" hidden>
+            <summary>🔑 Dùng tài khoản Vbee của anh/chị <span id="vbeeOwnState" class="vbee-st"></span></summary>
+            <ol class="hint small vbee-steps">
+              <li>Đăng nhập <a href="https://studio.vbee.vn/apps" target="_blank" rel="noopener">studio.vbee.vn/apps</a> → <b>Tích hợp API</b> → <b>Tạo ứng dụng</b>, chọn hạn <b>Vĩnh viễn</b>.</li>
+              <li>Chép <b>App ID</b> và <b>Token</b> của ứng dụng, dán vào đây rồi bấm <b>Kết nối</b>.</li>
+            </ol>
+            <label class="field"><span class="field-label">App ID</span><input id="vbeeApp" class="input" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+            <label class="field"><span class="field-label">Token</span><input id="vbeeTok" class="input" type="password" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+            <div class="vbee-own-act">
+              <button id="vbeeConnect" class="btn btn-primary" type="button">Kết nối</button>
+              <button id="vbeeForget" class="btn btn-quiet" type="button" hidden>Ngắt kết nối</button>
+            </div>
+            <p id="vbeeOwnMsg" class="hint small" aria-live="polite"></p>
+            <p class="hint small">Khoá chỉ lưu trên máy này và gửi kèm khi tạo giọng — Vị Trí Studio không lưu khoá. Tiền giọng Vbee trừ vào tài khoản Vbee của anh/chị, không trừ lượt tạo giọng của app (xuất video vẫn tính lượt như thường). Giọng có ⭐ là giọng riêng/giọng nhân bản của anh/chị.</p>
+          </details>
           <button id="ttsBtn" class="btn btn-primary btn-lg btn-block vo-go" type="button">🎙️ Tạo kịch bản &amp; giọng đọc</button>
           <button id="voVoiceOnly" class="link-btn vo-only" type="button" hidden>Đã sửa lời? Chỉ đọc lại giọng (giữ nguyên kịch bản)</button>
           <button id="noVoiceBtn" class="btn btn-quiet btn-block vo-skip" type="button">🎵 Không cần giọng đọc, chỉ nhạc nền + SFX →</button>
