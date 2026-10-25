@@ -173,3 +173,82 @@ if __name__ == '__main__':
     for k in which:
         p, T = {'A': ad_a, 'B': ad_b, 'C': ad_c}[k]()
         print(k, p, T)
+
+def cut_sp(src, segs, name):
+    """Như cut() nhưng mỗi đoạn có hệ số chậm (start, dur_nguồn, chậm)."""
+    parts = []
+    for i, (ss, dur, slow) in enumerate(segs):
+        p = os.path.join(OUT, f'_{name}_{i}.mp4')
+        run(['ffmpeg', '-v', 'error', '-y', '-ss', str(ss), '-t', str(dur), '-i', src, '-an',
+             '-vf', f'setpts={slow}*PTS,scale={W}:{H}:flags=lanczos,{GRADE},fps=30,setsar=1',
+             '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p', p])
+        parts.append(p)
+    return parts, round(sum(d * s for _, d, s in segs), 2)
+
+def vdur(p):
+    return float(subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', p],
+                                capture_output=True, text=True).stdout.strip())
+
+def compose_vo(base, total, overlays, music, voices, out, tempo=1.15):
+    cmd = ['ffmpeg', '-v', 'error', '-y', '-i', base]
+    for png, a, b in overlays: cmd += ['-loop', '1', '-t', str(total), '-i', png]
+    cmd += ['-i', music]
+    for p, st in voices: cmd += ['-i', p]
+    fc, last = [], '0:v'
+    for i, (png, a, b) in enumerate(overlays, 1):
+        fc.append(f'[{i}:v]format=rgba,fade=t=in:st={a}:d=0.2:alpha=1,fade=t=out:st={max(a, b - 0.2)}:d=0.2:alpha=1[o{i}]')
+        fc.append(f"[{last}][o{i}]overlay=0:0:enable='between(t,{a},{b})'[v{i}]")
+        last = f'v{i}'
+    m = len(overlays) + 1
+    fc.append(f'[{m}:a]atrim=0:{total},volume=0.30,afade=t=in:d=0.15,afade=t=out:st={total - 1.2}:d=1.2[mus]')
+    labs = ['[mus]']
+    for j, (p, st) in enumerate(voices):
+        k = m + 1 + j; ms = int(st * 1000)
+        fc.append(f'[{k}:a]aresample=48000,atempo={tempo},adelay={ms}|{ms},volume=1.0[vo{j}]'); labs.append(f'[vo{j}]')
+    fc.append(f"{''.join(labs)}amix=inputs={len(labs)}:normalize=0:duration=first,loudnorm=I=-14:TP=-1.5:LRA=9,alimiter=limit=0.84:level=false,atrim=0:{total}[a]")
+    cmd += ['-filter_complex', ';'.join(fc), '-map', f'[{last}]', '-map', '[a]', '-t', str(total),
+            '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-profile:v', 'high', '-pix_fmt', 'yuv420p',
+            '-r', '30', '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-movflags', '+faststart', out]
+    run(cmd)
+
+def ad_c_voice(vo_dir):
+    tp = 1.15
+    d = {k: vdur(os.path.join(vo_dir, k + '.mp3')) / tp for k in ['q1', 'q2', 'q3', 'r', 'n1', 'n2', 'n3', 'cta']}
+    # Mốc tin nhắn theo giọng
+    t_q1 = 0.2; t_q2 = t_q1 + d['q1'] + 0.12; t_q3 = t_q2 + d['q2'] + 0.12; t_r = t_q3 + d['q3'] + 0.15
+    L0 = round(t_r + d['r'] + 0.25, 2)
+    bgp = os.path.join(OUT, '_C_bg.png')
+    if not os.path.exists(bgp):
+        poster(DEMO, 8.0, bgp)
+        im = Image.open(bgp).convert('RGB').resize((W, H), Image.LANCZOS).filter(ImageFilter.GaussianBlur(10))
+        Image.blend(im, Image.new('RGB', (W, H), (8, 10, 16)), 0.45).save(bgp)
+    intro = os.path.join(OUT, '_CV_intro.mp4')
+    run(['ffmpeg', '-v', 'error', '-y', '-loop', '1', '-t', str(L0), '-i', bgp, '-vf', 'fps=30,format=yuv420p,setsar=1',
+         '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', intro])
+    L1 = round(d['n1'] + 0.45, 2); L2 = round(d['n2'] + 0.45, 2); L3 = round(d['n3'] + 0.45, 2); L4 = round(d['cta'] + 0.9, 2)
+    parts, _ = cut_sp(DEMO, [(6.0, L1, 1), (72.3, L2, 1), (24.6, L3, 1), (108.0, 3.4, round(L4 / 3.4, 3))], 'CV')
+    base = os.path.join(OUT, '_CV_full.mp4')
+    ins = [intro] + parts
+    cmd = ['ffmpeg', '-v', 'error', '-y']
+    for p in ins: cmd += ['-i', p]
+    fc = ''.join(f'[{i}:v]fps=30,format=yuv420p,setsar=1[s{i}];' for i in range(len(ins)))
+    fc += ''.join(f'[s{i}]' for i in range(len(ins))) + f'concat=n={len(ins)}:v=1:a=0[v]'
+    run(cmd + ['-filter_complex', fc, '-map', '[v]', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', base])
+    T = round(L0 + L1 + L2 + L3 + L4, 2)
+    msgs = [('Nhà ở đâu vậy anh?', 'L'), ('Gần trường, chợ không?', 'L'), ('Ra quốc lộ bao xa?', 'L'),
+            ('Em gửi anh video vị trí nè ▶', 'R')]
+    bs = [bubbles(msgs[:k], f'C_b{k}') for k in range(1, 5)]
+    s1 = L0; s2 = s1 + L1; s3 = s2 + L2; s4 = s3 + L3
+    ov = [(bs[0], t_q1, t_q2), (bs[1], t_q2, t_q3), (bs[2], t_q3, t_r), (bs[3], t_r, L0),
+          (chip('NHÀ Ở ĐÂU?', 250, 'C_q1'), s1, s2),
+          (chip('GẦN TRƯỜNG, CHỢ KHÔNG?', 250, 'C_q2'), s2, s3),
+          (chip('RA QUỐC LỘ BAO XA?', 250, 'C_q3'), s3, s4),
+          (card([('GỬI 1 VIDEO', WHITE, F_BLACK, 84), ('THAY 10 TIN NHẮN', YEL, F_BLACK, 74),
+                 ('Thử miễn phí · vitristudio.com', WHITE, F_XB, 48)], 300, accent=YEL, name='C_cta'), s4, T)]
+    vo = [(os.path.join(vo_dir, 'q1.mp3'), t_q1), (os.path.join(vo_dir, 'q2.mp3'), t_q2), (os.path.join(vo_dir, 'q3.mp3'), t_q3),
+          (os.path.join(vo_dir, 'r.mp3'), t_r), (os.path.join(vo_dir, 'n1.mp3'), s1 + 0.15),
+          (os.path.join(vo_dir, 'n2.mp3'), s2 + 0.15), (os.path.join(vo_dir, 'n3.mp3'), s3 + 0.15),
+          (os.path.join(vo_dir, 'cta.mp3'), s4 + 0.3)]
+    out = os.path.join(OUT, 'QC_C2_gui-1-video-co-giong-doc.mp4')
+    compose_vo(base, T, ov, f'{MUS}/tran-ca.m4a', vo, out, tp)
+    return out, T
