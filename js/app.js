@@ -1881,13 +1881,13 @@ async function aiRewrite() {
   if (!ai.script) { altScript(); return false; }
   const btn = $('aiScriptBtn');
   btn.disabled = true; $('aiScriptBig').disabled = true;
-  $('ttsMsg').textContent = 'AI đang viết và biên tập kịch bản… (khoảng 20–40 giây)';
+  $('ttsMsg').textContent = 'AI đang viết kịch bản… (khoảng 30–40 giây)';
   try {
     const facts = {
       loai_bds: TYPE_WORD[state.typeLabel] || 'Căn nhà', tieu_de: state.title, dong_phu: state.sub, thuong_hieu: state.brand,
       so_dien_thoai_lien_he: phoneDisplay(state.phone) || null,
       thong_tin_nha: { gia: state.price || null, dien_tich: state.area || null, tho_cu: state.thoCu || null, so_tang: state.floors || null,
-        phong_ngu: state.beds || null, phap_ly: state.legal || null, duong_truoc_nha: state.roadWidth || null, gia_moi_m2: pricePerM2() },
+        phong_ngu: state.beds || null, phap_ly: state.legal || null, duong_truoc_nha: state.roadWidth || null, gia_moi_m2: pricePerM2(), dien_tich_m2: areaFromText(state.area) || null },
       diem_noi_bat: highlightLines(), khach_muc_tieu: state.buyer || null,
       ban_kinh_km: state.radiusKm, tinh_thanh: provName(), xa_phuong: wardName(),
       duong_lon: selectedRoads().map(r => ({ ten: r.label, ten_duong: r.alt || '', cach_km: +r.nearKm.toFixed(2) })),
