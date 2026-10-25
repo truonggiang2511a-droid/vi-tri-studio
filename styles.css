@@ -801,3 +801,6 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .vn-result ul { margin: 6px 0 0; padding-left: 18px; }
 .vn-result b { font-weight: 700; }
 .vn-note { font-size: 12px; margin: 0; }
+.vn-snap { display: grid; gap: 6px; padding: 12px; border-radius: 12px; border: 1px dashed color-mix(in srgb, var(--focus) 45%, transparent); }
+.vn-snap .btn { width: 100%; min-width: 0; white-space: normal; }
+.vn-snap .hint { margin: 0; font-size: 13px; }

@@ -7,11 +7,12 @@ import { handleSepay } from './lib/sepay.js';
 import { handleResolve } from './lib/resolve.js';
 import { handleConfig } from './lib/config.js';
 import { handleCapi } from './lib/capi.js';
+import { handleSoOcr } from './lib/so-ocr.js';
 import { MEDIA_SIZES } from './lib/media-sizes.js';
 import { handleMap } from './lib/map.js';
 import { handleMedia, handleLead, handleTelegram, handleCan, handlePageEvent, handleCallLink, runCron } from './lib/pages.js';
 
-const ROUTES = { '/api/tts': handleTts, '/api/script': handleScript, '/api/sepay': handleSepay, '/api/resolve': handleResolve, '/api/config': handleConfig, '/api/capi': handleCapi };
+const ROUTES = { '/api/tts': handleTts, '/api/script': handleScript, '/api/sepay': handleSepay, '/api/resolve': handleResolve, '/api/config': handleConfig, '/api/capi': handleCapi, '/api/so-ocr': handleSoOcr };
 
 // Video: phần tĩnh của Cloudflare không trả từng đoạn (Range), mà Safari/iPhone bắt buộc phải có
 // mới phát được MP4. Worker tự cắt đúng đoạn được hỏi từ file gốc rồi trả mã 206.
