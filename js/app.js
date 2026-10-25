@@ -10,6 +10,7 @@ import { sfxEvents } from './sfx.js';
 import { stretchBuffer } from './stretch.js';
 import { parseCoordText, checkPolygon, convertLot, MERIDIANS, fmtMeridian } from './vn2000.js';
 import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4, unlockAudioContext } from './export.js';
+import { MOTION, pickMotion } from './motion.js';
 import { onAccountChange, initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount } from './account.js';
 import { splitVoice, joinForTts, splitAt } from './voicesplit.js';
 import { loadConfig, initTracking, countVisit } from './track.js';
@@ -295,8 +296,26 @@ function selectedRoads() {
   const hi = state.roadStars || [];
   return state.roads.filter(r => state.selectedRoads.includes(r.id)).map(r => ({ ...r, ways: stitchedWays(r), hi: hi.includes(r.id) }));
 }
+// Chữ động (gói MOTION trong js/motion.js) — đang thử: chỉ bật khi mở ?motion=1 (nhớ trên máy, ?motion=0 để tắt)
+// hoặc đăng nhập tài khoản nội bộ @vitristudio.com. Kiểu chữ tự chọn theo toạ độ căn, khách không phải chọn.
+function motionOn() {
+  try {
+    const q = new URLSearchParams(location.search).get('motion');
+    if (q === '1' || q === '0') localStorage.setItem('vitri.motion', q);
+    const v = localStorage.getItem('vitri.motion');
+    if (v === '1') return true;
+    if (v === '0') return false;
+  } catch { /* bỏ qua */ }
+  return /@vitristudio\.com$/i.test(String(account.profile?.login || ''));
+}
+function sceneMotion() {
+  if (!motionOn() || !state.house) return null;
+  const forced = (() => { try { return new URLSearchParams(location.search).get('motionKey'); } catch { return null; } })();
+  return forced && MOTION[forced] ? forced : pickMotion(state.house);
+}
 function buildScene() {
   return {
+    motion: sceneMotion(),
     house: state.house,
     label: (state.label || 'VỊ TRÍ').toUpperCase(),
     sub: state.sub,
@@ -826,9 +845,12 @@ function syncVnEntry() {
   $('vnOpen').hidden = !on;
   $('vnEntry').hidden = !on;
 }
+let lastMotion = null;
 function initVn2000() {
   syncVnEntry();
   onAccountChange(syncVnEntry);
+  // tài khoản nội bộ đăng nhập xong → dựng lại để thấy chữ động
+  onAccountChange(() => { const m = sceneMotion(); if (m !== lastMotion) { lastMotion = m; if (tl) rebuild(); } });
   $('vnEntry').addEventListener('click', () => $('vnDlg').showModal());
   $('vnSnap').addEventListener('click', () => $('vnPhoto').click());
   $('vnPhoto').addEventListener('change', e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) vnSnap(f); });
@@ -2279,6 +2301,8 @@ async function fontsReady() {
       Promise.all([
         ...['300', '500', '600', '700', '800'].map(w => document.fonts.load(`${w} 20px ${FONT}`, 'Vị trí ạ')),
         document.fonts.load('900 40px "Montserrat"', 'PHƯỜNG THÀNH PHỐ Ồ'),
+        // chữ động: Montserrat 800 + Playfair (gói "Tạp chí")
+        ...(sceneMotion() ? [document.fonts.load('800 40px "Montserrat"', 'GIÁ BÁN Ồ'), document.fonts.load('700 40px "Playfair Display"', 'Giá chỉ'), document.fonts.load('italic 500 20px "Playfair Display"', 'Giá chỉ')] : []),
         ...(STYLES[state.style] && STYLES[state.style].head !== FONT
           ? ['500', '700', '800', 'italic 500'].map(w => document.fonts.load(`${w} 20px ${STYLES[state.style].head}`, 'Giá chỉ ạ'))
           : []),

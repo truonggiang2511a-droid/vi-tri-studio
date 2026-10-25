@@ -4,6 +4,7 @@
 import { project, unproject, haversineKm, metersPerPixel, formatKm, fitZoom } from './geo.js';
 import { drawIcon } from './icons.js';
 import { CATEGORIES, iconOf } from './data.js';
+import { motionHook, motionTitle } from './motion.js';
 
 export const BASE_FONT = '"Be Vietnam Pro", "Segoe UI", system-ui, sans-serif';
 // Chữ tên xã/phường, tỉnh/thành: Montserrat đậm, to rộng
@@ -626,7 +627,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   const hook = makeHook(scene, roads, pois);
   // 24/10 (khách góp ý mở đầu chậm, xem 1–2 s đã chán): thẻ giá KHÔNG còn đứng yên 2,7 s trước khi bay.
   // Máy bay vào ngay từ giây 0 (vẫn trọn 5 s êm như Giang chốt 23/10), thẻ giá hiện đè lên đường bay trong HOOK_LEN giây.
-  const HOOK_LEN = hook ? 2.2 : 0;
+  const HOOK_LEN = hook ? (scene.motion ? 2.9 : 2.2) : 0; // chữ động cần thêm ~0,7 s để đọc kịp 4 dòng
   const raw = [];
   // Trình tự mở đầu (yêu cầu của Giang, 10/2026):
   // 1) intro: trung cảnh ghim bất động sản ("Đây là vị trí … thuộc phường …"), giữ 0,5–1 s, xã/phường sáng lên
@@ -2400,6 +2401,8 @@ function drawHook(ctx, tl, t) {
     // Làm tối vừa đủ để chữ nổi nhưng vẫn thấy bản đồ đang bay vào phía sau
     ctx.save(); ctx.globalAlpha = A * 0.36; ctx.fillStyle = '#05090a'; ctx.fillRect(0, 0, LW, LH); ctx.restore();
   }
+  // Gói chữ động (tự chọn theo căn): vẽ thay toàn bộ phần chữ của thẻ mở đầu
+  if (tl.scene.motion && motionHook(ctx, tl.scene.motion, { LW, LH, safe, fmt: tl.fmt, lt, A, k: (Math.min(LW, LH) / 540) * (tl.fmt === 'v' ? 1 : 0.78), H })) return;
   // Chữ hiện gần như ngay lập tức (giá ở 0,05 s) để 1 giây đầu đã có thông tin "móc" người xem
   const step = (d0, dur = 0.35) => clamp01((lt - d0) / dur);
   const cy = tl.fmt === 'h' ? LH * 0.45 : LH * 0.43;
@@ -3827,7 +3830,13 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
 
   // Tiêu đề + thẻ căn nhà
   const logo = logoBox(tl);
-  drawTitle(ctx, tl, scene.title, scene.titleSub, fadeWin(t, tl.hookEnd ? tl.hookEnd - 0.2 : 0.3, ov.t0 + 0.5, 0.6, 0.6), logo && tl.fmt !== 'h' ? logo.y + logo.h + 8 : 0);
+  {
+    const tStart = tl.hookEnd ? tl.hookEnd - 0.2 : 0.3, tA = fadeWin(t, tStart, ov.t0 + 0.5, 0.6, 0.6);
+    const tTop = logo && tl.fmt !== 'h' ? logo.y + logo.h + 8 : 0;
+    const mEnv = { LW: tl.LW, LH: tl.LH, safe: tl.safe, fmt: tl.fmt, lt: t - tStart, A: tA, k: (Math.min(tl.LW, tl.LH) / 540) * (tl.fmt === 'v' ? 1 : 0.85),
+      text: String(scene.title || '').toUpperCase(), sub: scene.titleSub, top: Math.max(tl.fmt === 'v' ? tl.safe.top + 8 : tl.safe.top - 6, tTop) };
+    if (!(tA > 0.01 && scene.motion && motionTitle(ctx, scene.motion, mEnv))) drawTitle(ctx, tl, scene.title, scene.titleSub, tA, tTop);
+  }
   const houseCardA = Math.max(fadeWin(t, ho.t0 + 0.5, ov.t0 + 0.4, 0.45, 0.4), fadeWin(t, ou.t0 + 0.5, T + 10, 0.45, 0.4));
   labelCard(ctx, hs.x, hs.y - 60 * depthScale(hs.w), scene.label, scene.sub, houseCardA, LW, safe);
 
