@@ -3,7 +3,7 @@ import { parseCoords, haversineKm, formatKm } from './geo.js';
 import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, guessCategory, stitchWays, bridgeWays, localFrame, pickHubs, loadInfra, simplifyLine } from './data.js';
 import { ICON_PATHS } from './icons.js';
 import {
-  FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, HI_THEMES, STYLES, BASES,
+  FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, HI_THEMES, LOT_STYLES, LOT_COLORS, STYLES, BASES,
   CLIP_MAX, clipTime,
 } from './render.js';
 import { sfxEvents } from './sfx.js';
@@ -79,6 +79,8 @@ const state = {
   showInfra: true,   // cảnh Hạ tầng đang thi công gần nhà
   regionOff: [],     // id điểm mốc / tuyến hạ tầng khách tắt
   hiTheme: 'dien',   // màu line trục đường điểm nhấn (HI_THEMES)
+  lotStyle: 'phatsang', // kiểu viền làm nổi lô đất (LOT_STYLES) — mặc định = kiểu gốc
+  lotColor: 'auto',  // màu viền lô: auto = theo phong cách video (LOT_COLORS)
   pageVideo: '',     // link video đã đăng (gắn vào trang web căn nhà)
   pageDesc: '',
   roadTheme: 'auto',
@@ -332,6 +334,7 @@ function buildScene() {
     sweep: !!state.showSweep,
     roadTheme: state.roadTheme,
     hiTheme: state.hiTheme,
+    lotStyle: state.lotStyle, lotColor: state.lotColor,
     routeTheme: state.routeTheme,
     roadLabelFace: state.roadLabelFace,
   };
@@ -607,6 +610,7 @@ function updateLotMsg() {
   $('lotMsg').textContent = n === 0 ? 'Chạm lần lượt các góc lô đất trên ảnh.' : n < 3 ? `Đã chấm ${n} góc, chấm thêm ${3 - n} góc nữa.` : `Lô đất ${n} góc · khoảng ${formatArea(lotAreaM2(state.lot))}`;
   $('lotBtn').textContent = n >= 3 ? 'Sửa lô đất' : 'Vẽ lô đất';
   $('lotArea').placeholder = n >= 3 ? formatArea(lotAreaM2(state.lot)) : 'Tự tính';
+  renderLotStyles();
 }
 
 // ---------- Toạ độ sổ đỏ (VN-2000) → lô đất ----------
@@ -758,6 +762,9 @@ async function vnSnap(file) {
       say('Không thấy bảng toạ độ trong ảnh' + (j.note ? ` (${j.note})` : '') + '. Chụp thẳng, rõ, sát bảng toạ độ rồi thử lại — hoặc chép tay bên dưới.');
       return;
     }
+    // Bảng sổ thường in lặp điểm đầu ở dòng cuối → bỏ cho gọn
+    const P0 = j.points[0], PN = j.points[j.points.length - 1];
+    if (j.points.length > 3 && P0.x === PN.x && P0.y === PN.y) j.points.pop();
     const vn = s => String(s).replace('.', ',');
     $('vnText').value = j.points.map(p => `${p.n}   ${vn(p.x)}   ${vn(p.y)}`).join('\n');
     const k = kttFromText(j.ktt);
@@ -2036,6 +2043,41 @@ function renderBases() {
     scheduleRebuild();
   };
 }
+// Kiểu + màu viền lô đất: đổi xong tua khung xem tới đúng lúc lô hiện rõ để khách thấy ngay
+function showLotMoment() {
+  rebuild();
+  save();
+  const hasLot = state.lot && state.lot.length >= 3;
+  if (hasLot && tl?.house && !playing) {
+    t = tl.house.t0 + 0.72 * (tl.house.t1 - tl.house.t0);
+    updateTimeUi();
+    dirty = true;
+  }
+}
+function renderLotStyles() {
+  const row = $('lotStyleRow');
+  if (!row) return;
+  const cur = LOT_STYLES[state.lotStyle] ? state.lotStyle : 'phatsang';
+  row.innerHTML = Object.entries(LOT_STYLES).map(([k, s]) =>
+    `<button type="button" role="radio" class="swatch lot-style" data-v="${k}" aria-checked="${k === cur}"><span class="lot-ico lot-ico-${k}" aria-hidden="true"></span>${esc(s.label)}</button>`).join('');
+  const hasLot = state.lot && state.lot.length >= 3;
+  $('lotStyleHint').textContent = (hasLot ? '' : 'Áp dụng khi có vẽ lô đất (nút "Vẽ lô đất" dưới khung xem). ') + (LOT_STYLES[cur].hint || '') + '.';
+  row.onclick = e => {
+    const b = e.target.closest('button[data-v]');
+    if (!b) return;
+    state.lotStyle = b.dataset.v;
+    renderLotStyles();
+    showLotMoment();
+  };
+  renderSwatches('lotColorRow', 'lotColor', true, LOT_COLORS);
+  $('lotColorRow').onclick = e => {
+    const b = e.target.closest('button[data-v]');
+    if (!b) return;
+    state.lotColor = b.dataset.v;
+    for (const x of $('lotColorRow').querySelectorAll('button')) x.setAttribute('aria-checked', String(x === b));
+    showLotMoment();
+  };
+}
 function renderSwatches(id, key, withAuto, themes = LINE_THEMES) {
   const el = $(id);
   if (!el) return;
@@ -2269,7 +2311,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal',
-  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'lotStyle', 'lotColor', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -3340,6 +3382,7 @@ function init() {
   renderSwatches('roadThemeRow', 'roadTheme', true);
   renderSwatches('routeThemeRow', 'routeTheme', false);
   renderSwatches('hiThemeRow', 'hiTheme', false, HI_THEMES);
+  renderLotStyles();
   $('lookRow').addEventListener('click', e => { const b = e.target.closest('[data-look]'); if (b) pickLook(b.dataset.look); });
   $('lookClose').addEventListener('click', () => { $('lookPick').hidden = true; clearInterval(lookTimer); });
   setSeg('labelFaceSeg', state.roadLabelFace || 'line');

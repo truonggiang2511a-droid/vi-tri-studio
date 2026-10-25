@@ -110,6 +110,18 @@ export const HI_THEMES = {
   trang: { label: 'Trắng bạc', core: '#FFFFFF', glow: '#9EC9FF' },
   ngoc:  { label: 'Xanh ngọc', core: '#5EF5E0', glow: '#00C2B0' },
 };
+// Kiểu viền làm nổi lô đất (khách chọn ở mục Phong cách). 'phatsang' = kiểu gốc, mặc định.
+// col = màu gợi ý của kiểu khi khách để "Màu gợi ý" (null = màu nhấn của phong cách video, như trước)
+export const LOT_STYLES = {
+  phatsang: { label: 'Phát sáng', hint: 'Viền sáng chạy quanh lô, sóng lan ra (kiểu gốc)', col: null },
+  khoanh:   { label: 'Khoanh đậm', hint: 'Nét liền đậm + nền màu, như khoanh trên sổ', col: 'do' },
+  netdut:   { label: 'Nét đứt + số mét', hint: 'Nét đứt chạy, chấm góc, ghi chiều dài từng cạnh', col: 'trang' },
+  neon:     { label: 'Neon xung sáng', hint: 'Line neon có xung sáng chạy vòng quanh lô', col: 'dien' },
+  tuong:    { label: 'Tường sáng 3D', hint: 'Bức tường ánh sáng dựng lên quanh ranh lô', col: 'vang' },
+  cotmoc:   { label: 'Cột mốc góc', hint: 'Cột sáng mọc lên ở từng góc lô', col: 'ngoc' },
+};
+// Màu viền lô: 'auto' = màu gợi ý của từng kiểu, còn lại dùng chung bảng màu với trục ★
+export const LOT_COLORS = { auto: { label: 'Màu gợi ý' }, ...HI_THEMES };
 let HI_ROAD = { ...HI_THEMES.dien, w: 5.4 };
 function useHiTheme(key) { HI_ROAD = { ...(HI_THEMES[key] || HI_THEMES.dien), w: 5.4 }; }
 function roadStyleOf(scene, r) {
@@ -2486,6 +2498,74 @@ function brandTop(tl) {
 // ---------- Khung hình ----------
 // Vẽ tường sáng trên màn hình: chân tường bám mặt đường, đỉnh nâng lên theo phối cảnh (gần to, xa nhỏ),
 // mặt tường mờ dần lên trên, mép trên là thanh sáng. Chỉ phần đường đã chạy tới (dist ≤ rr) mới có tường.
+// Phần dựng đứng của viền lô đất: "tường sáng 3D" quanh ranh hoặc "cột mốc" ở từng góc.
+// pts = các góc lô đã chiếu ra màn hình ({x, y, w}); chiều cao theo cỡ lô trên màn hình, chia w để đúng phối cảnh.
+function drawLotRise(ctx, pts, fx, t) {
+  if (pts.some(q => !(q.w > 0.05))) return;
+  const n = pts.length;
+  const cx = pts.reduce((s, q) => s + q.x, 0) / n, cy = pts.reduce((s, q) => s + q.y, 0) / n;
+  const R = Math.max(...pts.map(q => Math.hypot(q.x - cx, q.y - cy)));
+  if (R < 7) return; // lô quá nhỏ trên hình (máy lùi xa) → chỉ còn viền dưới đất
+  const wm = pts.reduce((s, q) => s + q.w, 0) / n;
+  const rgb = hex => { const v = parseInt(String(hex).slice(1), 16); return `${v >> 16},${(v >> 8) & 255},${v & 255}`; };
+  const cl = rgb(fx.LC), gl = rgb(fx.LG);
+  ctx.save();
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  if (fx.style === 'tuong') {
+    const rise = easeOut(clamp01((fx.draw - 0.15) / 0.85));
+    const H = Math.min(120, R * 0.85) * rise;
+    if (H < 1) { ctx.restore(); return; }
+    const h = q => H * wm / q.w;
+    // Mặt xa vẽ trước (y nhỏ = xa máy)
+    const faces = pts.map((a, i) => [a, pts[(i + 1) % n]]).sort((A, B) => (A[0].y + A[1].y) - (B[0].y + B[1].y));
+    const scan = (t * 0.55) % 1; // dải sáng chạy từ chân lên đỉnh tường
+    for (const [a, b] of faces) {
+      const ym = (a.y + b.y) / 2, hm = (h(a) + h(b)) / 2;
+      const gr = ctx.createLinearGradient(0, ym, 0, ym - hm);
+      gr.addColorStop(0, `rgba(${gl},${0.6 * fx.a})`);
+      gr.addColorStop(Math.max(0.01, scan - 0.08), `rgba(${cl},${0.16 * fx.a})`);
+      gr.addColorStop(scan, `rgba(255,255,255,${0.3 * fx.a * fx.focus + 0.08 * fx.a})`);
+      gr.addColorStop(Math.min(0.99, scan + 0.08), `rgba(${cl},${0.12 * fx.a})`);
+      gr.addColorStop(1, `rgba(${cl},${0.02 * fx.a})`);
+      ctx.fillStyle = gr;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(b.x, b.y - h(b)); ctx.lineTo(a.x, a.y - h(a)); ctx.closePath();
+      ctx.fill();
+    }
+    // Mép trên mảnh + cạnh đứng ở góc cho ra khối
+    ctx.globalAlpha = fx.a * 0.85;
+    ctx.strokeStyle = `rgba(${cl},0.95)`; ctx.lineWidth = 2.2; ctx.shadowColor = fx.LG; ctx.shadowBlur = 12;
+    ctx.beginPath();
+    pts.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y - h(q)) : ctx.moveTo(q.x, q.y - h(q))));
+    ctx.closePath(); ctx.stroke();
+    ctx.globalAlpha = fx.a * 0.6; ctx.lineWidth = 1.2;
+    for (const q of pts) { ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(q.x, q.y - h(q)); ctx.stroke(); }
+  } else {
+    // Cột mốc: mỗi góc một cột sáng mọc lên lần lượt, đỉnh có chấm sáng, chân có vòng
+    const H = Math.min(150, Math.max(40, R * 1.5));
+    pts.forEach((q, i) => {
+      const k = easeOut(clamp01((fx.draw * 1.25 - i / n * 0.6 - 0.1) / 0.5));
+      if (k <= 0) return;
+      const hh = H * k * wm / q.w, top = q.y - hh;
+      const gr = ctx.createLinearGradient(0, q.y, 0, top);
+      gr.addColorStop(0, `rgba(${gl},${0.9 * fx.a})`);
+      gr.addColorStop(1, `rgba(${cl},${0.15 * fx.a})`);
+      ctx.globalAlpha = 1;
+      ctx.shadowColor = fx.LG; ctx.shadowBlur = 18;
+      ctx.strokeStyle = gr; ctx.lineWidth = 7;
+      ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(q.x, top); ctx.stroke();
+      ctx.strokeStyle = `rgba(255,255,255,${0.85 * fx.a})`; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(q.x, top + hh * 0.35); ctx.stroke();
+      const pul = 0.75 + 0.25 * Math.sin(t * 4 + i);
+      ctx.fillStyle = `rgba(255,255,255,${fx.a})`; ctx.shadowBlur = 16;
+      ctx.beginPath(); ctx.arc(q.x, top, 5 * pul, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0; ctx.strokeStyle = `rgba(${cl},${0.8 * fx.a})`; ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.ellipse(q.x, q.y, 10, 4.2, 0, 0, Math.PI * 2); ctx.stroke();
+    });
+  }
+  ctx.restore();
+}
+
 function drawHiWall(ctx, P, v, W, t, LW, LH) {
   const H0 = 11 * W.k; // độ nâng line (px màn hình ở độ sâu chuẩn); kẹp tối đa 18 px để line không tách xa con đường
   if (H0 < 0.5 || W.a < 0.02) return;
@@ -2959,6 +3039,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   // Ranh lô đất: viền chạy vòng quanh lô + nền sáng nhấp nháy + sóng lan ra khi giới thiệu căn nhà; sau đó giữ viền mảnh
   const LOT = tl.lot;
   let lotShape = null;
+  let lotFx = null; // kiểu viền lô có phần dựng đứng (tường sáng / cột mốc) → vẽ trên màn hình sau phép phối cảnh
   if (LOT) {
     const xy = LOT.map(p => gLL(v, p.lat, p.lng));
     const path = new Path2D();
@@ -2973,26 +3054,113 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     const draw = clamp01((t - ho.t0 - 0.25 * hd) / (0.4 * hd));       // viền chạy quanh lô
     const focus = fadeWin(t, ho.t0 + 0.25 * hd, ov.t0 + 0.8, 0.4, 0.8);  // lúc đang giới thiệu lô
     const keepA = t >= ou.t0 ? 0.85 : 0.65;
+    const lst = LOT_STYLES[scene.lotStyle] ? scene.lotStyle : 'phatsang';
+    const lth = HI_THEMES[scene.lotColor] || HI_THEMES[LOT_STYLES[lst].col];
+    const LC = lth ? lth.core : GOLD, LG = lth ? lth.glow : GOLD;
+    const lineA = Math.max(focus, keepA);
+    // Sóng khoanh vùng lan ra từ lô (kiểu phát sáng, neon)
+    const ripples = col => {
+      if (focus <= 0.05) return;
+      g.shadowBlur = 0; g.lineWidth = 2.4; g.strokeStyle = col; g.setLineDash([]);
+      for (let k = 0; k < 3; k++) {
+        const q = ((t - ho.t0) / 1.6 + k / 3) % 1;
+        g.globalAlpha = focus * (1 - q) * 0.8;
+        g.beginPath(); g.arc(c.x, c.y, r * (1.15 + q * 2.2), 0, Math.PI * 2); g.stroke();
+      }
+    };
     if (draw > 0) {
       g.save();
+      g.lineJoin = 'round'; g.lineCap = lst === 'phatsang' ? 'butt' : 'round'; // kiểu gốc giữ nguyên như trước
       const pulse = 0.5 + 0.5 * Math.sin(t * 5);
-      g.globalAlpha = focus * (0.22 + 0.16 * pulse) + (1 - focus) * 0.12;
-      g.fillStyle = GOLD; g.fill(path);
-      // viền phát sáng, chạy dần cho đủ một vòng
-      g.setLineDash([per * draw, per]);
-      g.lineJoin = 'round';
-      g.globalAlpha = Math.max(focus, keepA) * 0.45; g.strokeStyle = GOLD; g.lineWidth = 18; g.stroke(path);
-      g.globalAlpha = Math.max(focus, keepA); g.lineWidth = 6; g.strokeStyle = GOLD; g.stroke(path);
-      g.lineWidth = 2.6; g.strokeStyle = '#ffffff'; g.shadowColor = GOLD; g.shadowBlur = 12; g.stroke(path);
-      g.setLineDash([]);
-      // sóng khoanh vùng lan ra từ lô
-      if (focus > 0.05) {
-        g.shadowBlur = 0; g.lineWidth = 2.4; g.strokeStyle = GOLD;
-        for (let k = 0; k < 3; k++) {
-          const q = ((t - ho.t0) / 1.6 + k / 3) % 1;
-          g.globalAlpha = focus * (1 - q) * 0.8;
-          g.beginPath(); g.arc(c.x, c.y, r * (1.15 + q * 2.2), 0, Math.PI * 2); g.stroke();
+      if (lst === 'phatsang') {
+        g.globalAlpha = focus * (0.22 + 0.16 * pulse) + (1 - focus) * 0.12;
+        g.fillStyle = LC; g.fill(path);
+        // viền phát sáng, chạy dần cho đủ một vòng
+        g.setLineDash([per * draw, per]);
+        g.globalAlpha = lineA * 0.45; g.strokeStyle = LG; g.lineWidth = 18; g.stroke(path);
+        g.globalAlpha = lineA; g.lineWidth = 6; g.strokeStyle = LC; g.stroke(path);
+        g.lineWidth = 2.6; g.strokeStyle = '#ffffff'; g.shadowColor = LG; g.shadowBlur = 12; g.stroke(path);
+        g.setLineDash([]);
+        ripples(LC);
+      } else if (lst === 'khoanh') {
+        // Nét liền đậm có viền tối + nền màu đều (không nhấp nháy), chấm trắng ở góc
+        g.globalAlpha = draw * (focus * 0.3 + (1 - focus) * 0.18);
+        g.fillStyle = LC; g.fill(path);
+        g.setLineDash([per * draw, per]);
+        g.globalAlpha = lineA * 0.55; g.strokeStyle = 'rgba(0,0,0,0.8)'; g.lineWidth = 11; g.stroke(path);
+        g.globalAlpha = lineA; g.strokeStyle = LC; g.lineWidth = 6.5; g.stroke(path);
+        g.setLineDash([]);
+        if (draw >= 1) for (const q of xy) {
+          g.fillStyle = '#ffffff'; g.strokeStyle = 'rgba(0,0,0,0.75)'; g.lineWidth = 2;
+          g.beginPath(); g.arc(q.x, q.y, 4.2, 0, Math.PI * 2); g.fill(); g.stroke();
         }
+      } else if (lst === 'netdut') {
+        // Nét đứt chạy chậm (như ranh trên bản đồ địa chính) + chấm góc + chiều dài từng cạnh
+        g.globalAlpha = draw * (focus * 0.16 + (1 - focus) * 0.08);
+        g.fillStyle = LC; g.fill(path);
+        g.globalAlpha = lineA * draw;
+        g.strokeStyle = 'rgba(0,0,0,0.7)'; g.lineWidth = 6; g.stroke(path);
+        g.setLineDash([12, 8]); g.lineDashOffset = -t * 14;
+        g.strokeStyle = LC; g.lineWidth = 3.4; g.stroke(path);
+        g.setLineDash([]); g.lineDashOffset = 0;
+        for (let i = 0; i < xy.length; i++) {
+          const q = xy[i], k = clamp01(draw * xy.length - i);
+          if (k <= 0) continue;
+          g.globalAlpha = lineA * k;
+          g.fillStyle = LC; g.strokeStyle = '#111'; g.lineWidth = 2;
+          g.beginPath(); g.arc(q.x, q.y, 5.2 * easeOut(k), 0, Math.PI * 2); g.fill(); g.stroke();
+          g.fillStyle = '#fff'; g.beginPath(); g.arc(q.x, q.y, 1.8 * easeOut(k), 0, Math.PI * 2); g.fill();
+        }
+        // Chiều dài cạnh (m) ghi ngoài ranh lô, chỉ khi cạnh đủ dài trên hình
+        const edA = clamp01((draw - 0.6) / 0.4) * Math.max(focus, t >= ou.t0 ? 0.85 : 0);
+        if (edA > 0.02) {
+          g.font = `800 15px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+          for (let i = 0; i < xy.length; i++) {
+            const a = xy[i], b = xy[(i + 1) % xy.length];
+            const len = Math.hypot(b.x - a.x, b.y - a.y);
+            if (len < 34) continue;
+            const m = haversineKm(LOT[i], LOT[(i + 1) % LOT.length]) * 1000;
+            const label = (m < 100 ? m.toFixed(1) : String(Math.round(m))).replace('.', ',') + ' m';
+            let nx = -(b.y - a.y) / len, ny = (b.x - a.x) / len;
+            const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+            if ((mx + nx - c.x) * nx + (my + ny - c.y) * ny < 0) { nx = -nx; ny = -ny; }
+            let ang = Math.atan2(b.y - a.y, b.x - a.x);
+            if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI;
+            g.save();
+            g.globalAlpha = edA;
+            g.translate(mx + nx * 13, my + ny * 13); g.rotate(ang);
+            g.lineWidth = 4; g.strokeStyle = 'rgba(0,0,0,0.8)'; g.strokeText(label, 0, 0);
+            g.fillStyle = '#ffffff'; g.fillText(label, 0, 0);
+            g.restore();
+          }
+        }
+      } else if (lst === 'neon') {
+        // Line neon + xung sáng trắng chạy vòng quanh lô
+        g.globalAlpha = focus * (0.1 + 0.08 * pulse) + (1 - focus) * 0.07;
+        g.fillStyle = LC; g.fill(path);
+        g.setLineDash([per * draw, per]);
+        g.globalAlpha = lineA * 0.5; g.strokeStyle = LG; g.lineWidth = 14; g.shadowColor = LG; g.shadowBlur = 22; g.stroke(path);
+        g.globalAlpha = lineA; g.strokeStyle = LC; g.lineWidth = 4; g.shadowBlur = 10; g.stroke(path);
+        g.setLineDash([]);
+        if (draw >= 1) {
+          g.globalCompositeOperation = 'lighter';
+          g.shadowBlur = 14; g.shadowColor = '#ffffff';
+          g.setLineDash([Math.max(8, per * 0.07), Math.max(16, per * 0.18)]); g.lineDashOffset = -t * per * 0.32;
+          g.globalAlpha = lineA; g.strokeStyle = '#ffffff'; g.lineWidth = 3.4; g.stroke(path);
+          g.setLineDash([]); g.lineDashOffset = 0;
+          g.globalCompositeOperation = 'source-over';
+        }
+        ripples(LG);
+      } else {
+        // tuong / cotmoc: dưới đất chỉ nền nhạt + line mảnh; phần dựng đứng vẽ trên màn hình sau phép phối cảnh
+        g.globalAlpha = draw * (focus * (0.16 + 0.06 * pulse) + (1 - focus) * 0.1);
+        g.fillStyle = LC; g.fill(path);
+        g.setLineDash([per * draw, per]);
+        g.globalAlpha = lineA * 0.5; g.strokeStyle = LG; g.lineWidth = 9; g.stroke(path);
+        g.globalAlpha = lineA; g.strokeStyle = LC; g.lineWidth = 3.2; g.stroke(path);
+        g.lineWidth = 1.4; g.strokeStyle = '#ffffff'; g.stroke(path);
+        g.setLineDash([]);
+        lotFx = { style: lst, LC, LG, a: lineA, draw, focus };
       }
       g.restore();
     }
@@ -3142,6 +3310,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
 
   // Tường sáng dựng đứng trên trục đường điểm nhấn (line "nổi" như ranh TP.HCM trong video mẫu)
   for (const W of hiWalls) drawHiWall(ctx, P, v, W, t, LW, LH);
+  if (lotFx && LOT) drawLotRise(ctx, LOT.map(p => S(p.lat, p.lng)), lotFx, t);
 
   // Chữ 3D tên trục đường lớn: vẽ TRÊN MÀN HÌNH (không vẽ vào canvas mặt đất nữa — chữ ra ngoài vùng canvas
   // mặt đất lúc máy lia sẽ bị cắt cụt). Dùng phép biến đổi phối cảnh cục bộ tại vị trí chữ nên vẫn trông in dẹt trên đường.
