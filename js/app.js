@@ -1881,7 +1881,7 @@ async function aiRewrite() {
   if (!ai.script) { altScript(); return false; }
   const btn = $('aiScriptBtn');
   btn.disabled = true; $('aiScriptBig').disabled = true;
-  $('ttsMsg').textContent = 'AI đang viết kịch bản… (khoảng 30–40 giây)';
+  $('ttsMsg').textContent = 'AI đang viết kịch bản… (khoảng 15–25 giây)';
   try {
     const facts = {
       loai_bds: TYPE_WORD[state.typeLabel] || 'Căn nhà', tieu_de: state.title, dong_phu: state.sub, thuong_hieu: state.brand,
