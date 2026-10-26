@@ -10,7 +10,7 @@ import { sfxEvents } from './sfx.js';
 import { stretchBuffer } from './stretch.js';
 import { parseCoordText, checkPolygon, convertLot, MERIDIANS, fmtMeridian } from './vn2000.js';
 import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4, unlockAudioContext } from './export.js';
-import { MOTION, pickMotion } from './motion.js';
+import { MOTION } from './motion.js';
 import { onAccountChange, initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount } from './account.js';
 import { splitVoice, joinForTts, splitAt } from './voicesplit.js';
 import { loadConfig, initTracking, countVisit } from './track.js';
@@ -310,17 +310,17 @@ function motionOn() {
   } catch { /* bỏ qua */ }
   return /@vitristudio\.com$/i.test(String(account.profile?.login || ''));
 }
-// 25/10 22:12 Giang: phong cách "Neon đêm" (mặc định) luôn dùng thẻ giá mở đầu kiểu chữ đen – vàng (gói denvang)
-// cho MỌI khách — chỉ thẻ mở đầu, tiêu đề cảnh giữ kiểu cũ (motionHookOnly). Tài khoản nội bộ/?motion=1 vẫn thử đủ.
-const NEON_MOTION = 'denvang';
+// Thẻ giá mở đầu theo phong cách — mỗi phong cách một kiểu chữ động riêng, cho MỌI khách (chỉ thẻ mở đầu,
+// tiêu đề cảnh giữ kiểu cũ: motionHookOnly). 25/10 22:12: Neon = đen – vàng. 26/10 Giang: Sang trọng/Trẻ trung/Tối giản
+// trước đây cùng một thẻ cũ giống hệt nhau → tách riêng. Tài khoản nội bộ/?motion=1 thêm tiêu đề động; ?motionKey=… ép 1 gói.
+const STYLE_MOTION = { neon: 'denvang', sangtrong: 'tapchi', tretrung: 'khoi', toigian: 'hiendai' };
 function sceneMotion() {
   if (!state.house) return null;
   if (motionOn()) {
     const forced = (() => { try { return new URLSearchParams(location.search).get('motionKey'); } catch { return null; } })();
     if (forced && MOTION[forced]) return forced;
-    return state.style === 'neon' ? NEON_MOTION : pickMotion(state.house);
   }
-  return state.style === 'neon' ? NEON_MOTION : null;
+  return STYLE_MOTION[state.style] || null;
 }
 function buildScene() {
   return {
