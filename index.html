@@ -115,6 +115,17 @@
         <button id="roadCancel" class="link-btn" type="button">Huỷ</button>
         <button id="roadDone" class="btn btn-primary" type="button">Xong, thêm vào video</button>
       </div>
+      <div id="poiBar" class="lot-bar poi-bar" hidden>
+        <span id="poiMsg" class="hint"></span>
+        <span class="lot-zoom" role="group" aria-label="Phóng to thu nhỏ">
+          <button id="poiZoomOut" class="chip-btn" type="button" aria-label="Thu nhỏ">−</button>
+          <button id="poiZoomIn" class="chip-btn" type="button" aria-label="Phóng to">+</button>
+        </span>
+        <button id="poiHome" class="link-btn" type="button">📍 Về căn nhà</button>
+        <div id="poiPickList" class="poi-pick"></div>
+        <button id="poiDone" class="link-btn" type="button">Xong</button>
+        <button id="poiAddBtn" class="btn btn-primary" type="button">Thêm vào video</button>
+      </div>
       <div id="lookPick" class="look-pick" hidden>
         <div class="look-head"><strong>Chọn kiểu video</strong><span class="hint small">Bấm một kiểu để xem ngay — đổi lại lúc nào cũng được</span>
           <button id="lookClose" class="link-btn" type="button" aria-label="Ẩn">Ẩn</button></div>
@@ -199,6 +210,7 @@
         <div id="regionBox" class="region-box" hidden></div>
         <div class="sub-head">Tiện ích <span class="sub-note">tối đa 10 điểm</span></div>
         <div id="poiList" class="poi-list"></div>
+        <button id="poiTapAdd" class="btn btn-quiet my-road-add" type="button">📍 Chạm trên bản đồ để thêm tiện ích app chưa quét được</button>
         <details class="more addpoi">
           <summary>Thêm điểm chưa có trong danh sách</summary>
           <div class="more-body">

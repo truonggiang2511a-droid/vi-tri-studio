@@ -4194,7 +4194,7 @@ export const formatArea = m2 => (m2 >= 10000 ? (m2 / 10000).toFixed(2).replace('
 
 // center: tâm khung đang xem (khách kéo để di chuyển khi vẽ lô/đường), mặc định là căn nhà.
 // roads: đường khách tự vẽ [{ pts: [[lat,lng]…], label, active }] — active = đường đang vẽ (có chấm từng điểm ghim).
-export function renderEdit(ctx, house, fmtKey, { cache, scale = 1, lot = null, mode = 'pin', zoom: zIn = null, center = null, roads = null }, zoom = zIn ?? (mode === 'lot' ? 18.5 : 17)) {
+export function renderEdit(ctx, house, fmtKey, { cache, scale = 1, lot = null, mode = 'pin', zoom: zIn = null, center = null, roads = null, marks = null }, zoom = zIn ?? (mode === 'lot' ? 18.5 : 17)) {
   const { LW, LH } = FORMATS[fmtKey];
   const ctr = center || house;
   const cam = { lat: ctr.lat, lng: ctr.lng, zoom };
@@ -4249,6 +4249,20 @@ export function renderEdit(ctx, house, fmtKey, { cache, scale = 1, lot = null, m
     }
     ctx.restore();
   }
+  // Điểm đánh dấu khi thêm tiện ích bằng cách chạm: tiện ích đã chọn (xanh), gợi ý quanh chỗ chạm (trắng), chỗ vừa chạm (cam)
+  if (marks && marks.length) {
+    ctx.save();
+    for (const m of marks) {
+      const [x, y] = toXY(m);
+      const r = m.tap ? 9 : m.sel ? 6.5 : 5;
+      if (m.tap) { ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(255,159,28,0.9)'; ctx.lineWidth = 2.5; ctx.setLineDash([5, 4]); ctx.stroke(); ctx.setLineDash([]); }
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = m.tap ? '#FF9F1C' : m.sel ? '#2BD67B' : '#FFFFFF'; ctx.fill();
+      ctx.lineWidth = 2.2; ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.stroke();
+      if (m.label) chip(ctx, x, y - r - 14, m.label, 1, m.sel ? '#2BD67B' : '#FFFFFF');
+    }
+    ctx.restore();
+  }
   // Ghim căn nhà luôn hiện (cả khi vẽ lô/đường) để khách biết đang ở đúng chỗ
   const hp = toXY(house);
   drawHousePin(ctx, hp[0], hp[1], 1, (typeof performance !== 'undefined' ? performance.now() : 0) / 1000, mode === 'pin' ? 1 : 0.8);
@@ -4256,6 +4270,7 @@ export function renderEdit(ctx, house, fmtKey, { cache, scale = 1, lot = null, m
   ctx.font = `700 14px ${FONT}`;
   const txt = mode === 'lot' ? 'Chạm từng góc lô đất · kéo để di chuyển'
     : mode === 'road' ? 'Chạm dọc theo đường · chỗ cua chạm dày hơn · kéo để di chuyển'
+    : mode === 'poi' ? 'Chạm vào chỗ có tiện ích · kéo để di chuyển'
     : 'Chạm vào đúng căn nhà để dời ghim';
   const w = ctx.measureText(txt).width + 28;
   roundRect(ctx, (LW - w) / 2, 18, w, 34, 17);

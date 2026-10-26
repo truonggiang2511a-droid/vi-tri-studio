@@ -438,6 +438,10 @@ let roadZoom = 18;   // mức phóng khi tự vẽ đường (15–21.5)
 let editCenter = null; // tâm khung khi vẽ lô/đường (khách kéo để di chuyển); null = căn nhà
 let roadDraft = null;  // đường đang vẽ { id|null, label, pts }
 const LOT_ZMIN = 16.5, LOT_ZMAX = 21.5, ROAD_ZMIN = 15, ROAD_ZMAX = 21.5;
+let poiZoom = 17.5;    // mức phóng khi chạm thêm tiện ích (14–21)
+let poiTap = null;     // chỗ khách vừa chạm {lat,lng}
+let poiCands = [];     // gợi ý quanh chỗ chạm [{name, lat, lng, km, cat, poiId?, src}]
+let poiReq = 0;
 let dirty = true;
 let lastFrame = 0;
 let audioCtx = null;
@@ -508,8 +512,9 @@ function frame(now) {
     if (now - lastFrame > 33 || dirty) {
       renderEdit(ctx, state.house, state.fmt, {
         cache, scale, lot: editMode === 'road' ? null : state.lot, mode: editMode,
-        zoom: editMode === 'lot' ? lotZoom : editMode === 'road' ? roadZoom : null,
+        zoom: editMode === 'lot' ? lotZoom : editMode === 'road' ? roadZoom : editMode === 'poi' ? poiZoom : null,
         center: editMode === 'pin' ? null : editCenter,
+        marks: editMode === 'poi' ? poiMarks() : null,
         roads: editMode === 'road' ? [...(state.myRoads || []).filter(m => !roadDraft || m.id !== roadDraft.id), ...(roadDraft ? [{ ...roadDraft, active: true }] : [])] : null,
       });
       lastFrame = now;
@@ -645,6 +650,8 @@ function toggleEdit(on, mode = 'pin') {
   $('lotBtn').setAttribute('aria-pressed', String(editing && editMode === 'lot'));
   $('lotBar').hidden = !(editing && editMode === 'lot');
   $('roadBar').hidden = !(editing && editMode === 'road');
+  $('poiBar').hidden = !(editing && editMode === 'poi');
+  if (!editing || editMode !== 'poi') { poiTap = null; poiCands = []; renderPoiCands(); }
   updateRoadMsg();
   updateLotMsg();
   if (!editing) scheduleRebuild();
@@ -734,6 +741,108 @@ function removeMyRoad(id) {
   renderLists();
   scheduleRebuild();
   save();
+}
+
+// ---------- Thêm tiện ích bằng cách chạm trên bản đồ (app chưa quét được) ----------
+// Khách chạm vào chỗ có tiện ích trên ảnh vệ tinh → app gợi ý tên các địa điểm quanh chỗ chạm: điểm app đã quét nhưng chưa chọn
+// (trong 250 m) + Vietmap Reverse v3 (/api/map/near, ≤ 10 địa điểm). Khách tick → thêm vào video + kịch bản như tiện ích quét được.
+// Không có tên nào đúng thì tự đặt tên tại chỗ chạm. Tiện ích thêm tay là `manual` (gắn với căn, xoá khi làm căn mới).
+function poiMarks() {
+  const sel = new Set(state.selected);
+  const out = state.pois.filter(p => sel.has(p.id)).map(p => ({ lat: p.lat, lng: p.lng, label: p.name.length > 22 ? p.name.slice(0, 21) + '…' : p.name, sel: true }));
+  for (const c of poiCands) if (!(c.poiId && sel.has(c.poiId))) out.push({ lat: c.lat, lng: c.lng });
+  if (poiTap) out.push({ ...poiTap, tap: true });
+  return out;
+}
+function startPoiPick() {
+  if (!state.house) { toast('Dán toạ độ căn nhà trước.'); return; }
+  toggleEdit(true, 'poi');
+  updatePoiMsg('Chạm vào chỗ có tiện ích trên ảnh vệ tinh (kéo để di chuyển, −/+ để phóng). App sẽ gợi ý tên quanh chỗ chạm.');
+  dirty = true;
+  document.querySelector('.stage')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function updatePoiMsg(t, cls = 'hint') { const el = $('poiMsg'); if (el) { el.textContent = t; el.className = cls; } }
+async function findPoisAt(ll) {
+  poiTap = { lat: ll.lat, lng: ll.lng };
+  dirty = true;
+  const my = ++poiReq;
+  const near = (p, km) => haversineKm(p, poiTap) <= km;
+  const sel = new Set(state.selected);
+  // 1) điểm app đã quét quanh chỗ chạm (chưa chọn trước, đã chọn sau)
+  const local = state.pois.filter(p => near(p, 0.25)).sort((a, b) => haversineKm(a, poiTap) - haversineKm(b, poiTap)).slice(0, 6)
+    .map(p => ({ name: p.name, lat: p.lat, lng: p.lng, km: p.km ?? haversineKm(state.house, p), cat: p.cat, poiId: p.id, src: 'app', on: sel.has(p.id) }));
+  poiCands = local;
+  renderPoiCands();
+  updatePoiMsg('Đang tìm tên địa điểm quanh chỗ chạm…');
+  let remote = [];
+  try {
+    const res = await fetch(`/api/map/near?lat=${ll.lat.toFixed(6)}&lng=${ll.lng.toFixed(6)}`);
+    if (res.ok) remote = (await res.json()).items || [];
+  } catch { /* bỏ qua */ }
+  if (my !== poiReq) return; // khách đã chạm chỗ khác
+  const norm = s => String(s).normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim();
+  const have = new Set(local.map(x => norm(x.name)));
+  for (const x of remote) {
+    if (have.has(norm(x.name)) || haversineKm(x, poiTap) > 0.4) continue;
+    have.add(norm(x.name));
+    poiCands.push({ name: x.name, lat: x.lat, lng: x.lng, km: haversineKm(state.house, x), cat: guessCategory({ name: x.name }), src: 'vm', where: x.address });
+  }
+  poiCands.sort((a, b) => haversineKm(a, poiTap) - haversineKm(b, poiTap));
+  poiCands = poiCands.slice(0, 10);
+  renderPoiCands();
+  updatePoiMsg(poiCands.length ? 'Tick tiện ích muốn đưa vào video rồi bấm "Thêm vào video". Không có tên đúng thì tự đặt tên ở dòng cuối.'
+    : 'Không tìm thấy tên địa điểm ở đây. Tự đặt tên cho chỗ vừa chạm ở ô bên dưới, hoặc chạm chỗ khác.');
+  dirty = true;
+}
+const catOptions = cur => Object.entries(CATEGORIES).sort((a, b) => a[1].order - b[1].order).map(([k, c]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${esc(c.label)}</option>`).join('');
+function renderPoiCands() {
+  const box = $('poiPickList');
+  if (!box) return;
+  if (!poiTap) { box.innerHTML = ''; return; }
+  box.innerHTML = poiCands.map((c, i) => `
+    <label class="pick-row${c.on ? ' on' : ''}">
+      <input type="checkbox" data-pick="${i}" ${c.on ? 'checked disabled' : ''}>
+      <span class="pick-name">${esc(c.name)}${c.on ? ' <small>· đã có trong video</small>' : ''}${c.where ? `<small class="pick-where">${esc(c.where)}</small>` : ''}</span>
+      <span class="pick-km">${formatKm(c.km, true)}</span>
+      <select class="input pick-cat" data-pick-cat="${i}" aria-label="Nhóm tiện ích"${c.on ? ' disabled' : ''}>${catOptions(c.cat)}</select>
+    </label>`).join('') + `
+    <div class="pick-row pick-own">
+      <input type="checkbox" id="poiOwnOn" aria-label="Tự đặt tên tại chỗ vừa chạm">
+      <input id="poiOwnName" class="input" type="text" maxlength="60" placeholder="Tự đặt tên tại chỗ vừa chạm (vd. Chợ đêm Bình Lợi)" autocomplete="off">
+      <select class="input pick-cat" id="poiOwnCat" aria-label="Nhóm tiện ích">${catOptions('congcong' in CATEGORIES ? 'congcong' : Object.keys(CATEGORIES)[0])}</select>
+    </div>`;
+}
+function addPickedPois() {
+  if (!poiTap) { toast('Chạm vào chỗ có tiện ích trên bản đồ trước.'); return; }
+  const box = $('poiPickList');
+  const picks = [...box.querySelectorAll('input[data-pick]:checked:not(:disabled)')].map(el => {
+    const c = poiCands[+el.dataset.pick];
+    return { ...c, cat: box.querySelector(`[data-pick-cat="${el.dataset.pick}"]`)?.value || c.cat };
+  });
+  const ownName = $('poiOwnName')?.value.trim();
+  if (ownName && ($('poiOwnOn')?.checked || !picks.length)) picks.push({ name: ownName, lat: poiTap.lat, lng: poiTap.lng, km: haversineKm(state.house, poiTap), cat: $('poiOwnCat').value, src: 'own' });
+  if (!picks.length) { toast('Tick ít nhất 1 tiện ích, hoặc tự đặt tên cho chỗ vừa chạm.'); return; }
+  let added = 0, full = false;
+  for (const c of picks) {
+    if (state.selected.length >= MAX_POIS) { full = true; break; }
+    let id = c.poiId;
+    if (id) { const p = state.pois.find(x => x.id === id); if (p) p.cat = c.cat; }
+    else {
+      id = 'm' + Date.now().toString(36) + added;
+      state.pois.push({ id, name: c.name, cat: c.cat, kind: 'manual', lat: c.lat, lng: c.lng, km: haversineKm(state.house, c), manual: true });
+    }
+    if (!state.selected.includes(id)) state.selected.push(id);
+    added++;
+  }
+  renderLists();
+  queueRoutes();
+  scheduleRebuild();
+  save();
+  poiCands = poiCands.map(c => ({ ...c, on: c.on || picks.some(p => p.name === c.name) }));
+  renderPoiCands();
+  dirty = true;
+  if (full) toast(`Video tối đa ${MAX_POIS} tiện ích. Bỏ chọn bớt tiện ích khác ở danh sách để thêm.`, 3500);
+  else toast(`Đã thêm ${added} tiện ích vào video và kịch bản. Chạm chỗ khác để thêm tiếp, hoặc bấm Xong.`, 3000);
 }
 
 // ---------- Toạ độ sổ đỏ (VN-2000) → lô đất ----------
@@ -3809,6 +3918,14 @@ function init() {
   $('lotHome').addEventListener('click', () => { editCenter = { ...state.house }; dirty = true; });
   // Tự vẽ đường
   $('myRoadAdd').addEventListener('click', () => startRoadDraw());
+  // Thêm tiện ích bằng cách chạm trên bản đồ
+  $('poiTapAdd').addEventListener('click', startPoiPick);
+  $('poiZoomIn').addEventListener('click', () => { poiZoom = Math.min(21, poiZoom + 0.5); dirty = true; });
+  $('poiZoomOut').addEventListener('click', () => { poiZoom = Math.max(14, poiZoom - 0.5); dirty = true; });
+  $('poiHome').addEventListener('click', () => { editCenter = { ...state.house }; dirty = true; });
+  $('poiAddBtn').addEventListener('click', addPickedPois);
+  $('poiDone').addEventListener('click', () => toggleEdit(false));
+  $('poiPickList').addEventListener('input', e => { if (e.target.id === 'poiOwnName') $('poiOwnOn').checked = !!e.target.value.trim(); });
   $('roadZoomIn').addEventListener('click', () => { roadZoom = Math.min(ROAD_ZMAX, roadZoom + 0.5); dirty = true; });
   $('roadZoomOut').addEventListener('click', () => { roadZoom = Math.max(ROAD_ZMIN, roadZoom - 0.5); dirty = true; });
   $('roadHome').addEventListener('click', () => { editCenter = { ...state.house }; dirty = true; });
@@ -3830,7 +3947,7 @@ function init() {
     if (!panMoved) { panMoved = true; try { canvas.setPointerCapture(e.pointerId); } catch { /* bỏ qua */ } }
     const rect = canvas.getBoundingClientRect();
     const k = FORMATS[state.fmt].LW / rect.width;
-    const z = editMode === 'lot' ? lotZoom : roadZoom;
+    const z = editMode === 'lot' ? lotZoom : editMode === 'poi' ? poiZoom : roadZoom;
     // Kéo bản đồ theo ngón tay: tâm mới = điểm nằm ngược hướng kéo
     const ll = editTapToLatLng(pan.c, state.fmt, 0.5 - dx * k / FORMATS[state.fmt].LW, 0.5 - dy * k / FORMATS[state.fmt].LH, z);
     editCenter = ll;
@@ -3861,6 +3978,11 @@ function init() {
       state.lotSrc = 'tay';
       state.lot.push(editTapToLatLng(editCenter || state.house, state.fmt, (e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height, lotZoom));
       dirty = true; updateLotMsg(); save();
+      return;
+    }
+    if (editMode === 'poi') {
+      const ll = editTapToLatLng(editCenter || state.house, state.fmt, (e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height, poiZoom);
+      findPoisAt(ll);
       return;
     }
     if (editMode === 'road') {
