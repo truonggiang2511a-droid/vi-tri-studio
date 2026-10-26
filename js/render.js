@@ -834,7 +834,8 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   }
   // 26/10 (Giang): lời đọc dài làm cảnh kéo dài → máy chỉ zoom chậm 1 chỗ, nhàm. Cảnh dài thì tự chia thành nhiều cú máy
   // kiểu flycam (dùng chung camShots như kết nối vùng): căn nhà/dự án = cận → toàn cảnh dự án → góc thấp lệch → lia dọc đường
-  // trước nhà → trung cảnh → cận lại; cảnh khác = khung gốc → lùi rộng → đẩy vào lệch. Cảnh ngắn (không giọng) giữ y như cũ.
+  // trước nhà → trung cảnh → cận lại. CHỈ cảnh căn nhà/dự án (27/10 Giang): các cảnh sau giữ khung cũ vì chữ tên trục đường/
+  // cao tốc đặt theo khung máy cố định (placeRoadLabels với r.cam/camRoads/tl.summary.to) — đổi góc làm mất chữ. Cảnh ngắn giữ y như cũ.
   const offCam = (c, dx, dy, dz = 0, pitch = c.pitch) => {
     const z = c.zoom + dz, mpp = metersPerPixel(c.lat, z);
     return { lat: c.lat - dy * mpp / 110540, lng: c.lng + dx * mpp / (111320 * Math.cos(c.lat * Math.PI / 180)), zoom: z, pitch: Math.max(0, Math.min(PMAX, pitch)) };
@@ -869,16 +870,6 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
       const list = seq.slice(0, n);
       if (list.length < n) for (let i = list.length; i < n; i++) list.push({ ...seq[(i % (seq.length - 1)) + 1] });
       p.shots = mkShots(list, real);
-    } else if (['overview', 'road', 'poi', 'summary', 'outro', 'iso', 'boundary'].includes(p.type) && !p.radar && !p.shots && real > 6.2) {
-      const n = Math.max(2, Math.min(4, Math.round(real / 4.2)));
-      const C = p.to, pc = C.pitch || 30;
-      const seq = [
-        { cam: C, side: p.side || 1, move: p.move || 0.6 },
-        { cam: offCam(C, 0, 0, -0.75, Math.max(8, pc - 14)), side: -(p.side || 1) },  // lùi rộng, nhìn thẳng hơn
-        { cam: offCam(C, (p.side || 1) * LW * 0.07, 0, 0.12, Math.min(PMAX, pc + 6)), side: p.side || 1 }, // đẩy vào, lệch nhẹ
-        { cam: offCam(C, -(p.side || 1) * LW * 0.06, -LH * 0.03, -0.35, pc), side: -(p.side || 1) },
-      ];
-      p.shots = mkShots(seq.slice(0, n), real);
     }
   }
   let t = 0;
