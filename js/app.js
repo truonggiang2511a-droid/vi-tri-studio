@@ -11,6 +11,7 @@ import { stretchBuffer } from './stretch.js';
 import { parseCoordText, checkPolygon, convertLot, MERIDIANS, fmtMeridian } from './vn2000.js';
 import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4, unlockAudioContext } from './export.js';
 import { MOTION } from './motion.js';
+import { processPlan, FULL_QUAD, planNeedsAlpha } from './planimg.js';
 import { onAccountChange, initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount } from './account.js';
 import { splitVoice, joinForTts, splitAt } from './voicesplit.js';
 import { loadConfig, initTracking, countVisit } from './track.js';
@@ -111,7 +112,7 @@ const state = {
   useBoundary: true,
   scannedAt: null,
 };
-const media = { music: null, voice: null, musicName: '', voiceName: '', mixed: null, mixKey: '', voiceSegs: new Map(), logo: null, photos: [], clips: [], planImg: null };
+const media = { music: null, voice: null, musicName: '', voiceName: '', mixed: null, mixKey: '', voiceSegs: new Map(), logo: null, photos: [], clips: [], planImg: null, planRaw: null };
 const LOGO_STORE = 'vitri.logo.v1';
 const ai = { tts: false, ttsProvider: null, script: false, gated: true, voices: null };
 
@@ -455,7 +456,7 @@ let audioSrc = null;
 let exporting = false;
 
 // Cho phép soát lỗi từ bảng điều khiển trình duyệt
-window.__vitri = { get tl() { return tl; }, get t() { return t; }, state, scanArea, SAMPLE_KEYS: () => SAMPLE_KEYS, pause: () => pause(), aiRewrite: () => aiRewrite() };
+window.__vitri = { get tl() { return tl; }, get editCenter() { return editCenter; }, get planZoom() { return planZoom; }, get t() { return t; }, state, scanArea, SAMPLE_KEYS: () => SAMPLE_KEYS, pause: () => pause(), aiRewrite: () => aiRewrite() };
 
 function rebuild() {
   if (photoKey(state.house) !== photoHouse) { restorePhotos(); showPageResult(); }
@@ -484,9 +485,13 @@ function layoutCanvas() {
   const desktop = window.matchMedia('(min-width: 980px)').matches;
   const availW = inner.clientWidth;
   const transportH = 52;
+  // Máy tính: chừa chỗ cho thanh vẽ lô / đường / tiện ích / mặt bằng đang mở (không thì khung bị bóp méo hình)
+  const bars = desktop ? [...inner.querySelectorAll('.lot-bar')].filter(b => !b.hidden).reduce((s, b) => s + b.offsetHeight + 10, 0) : 0;
   const availH = desktop
-    ? inner.clientHeight - transportH - 10
-    : Math.min(window.innerHeight * (state.fmt === 'v' ? 0.27 : 0.24), 420);
+    ? Math.max(240, inner.clientHeight - transportH - 10 - bars)
+    : editing && editMode !== 'pin'
+      ? Math.min(window.innerHeight * 0.66, 680) // điện thoại: đang vẽ lô/đường/mặt bằng → khung to hơn để chạm cho chính xác
+      : Math.min(window.innerHeight * (state.fmt === 'v' ? 0.27 : 0.24), 420);
   const ratio = F.LW / F.LH;
   let w = Math.min(availW, availH * ratio);
   w = Math.max(160, w);
@@ -522,7 +527,7 @@ function frame(now) {
         zoom: editMode === 'lot' ? lotZoom : editMode === 'road' ? roadZoom : editMode === 'poi' ? poiZoom : editMode === 'plan' ? planZoom : null,
         center: editMode === 'pin' ? null : editCenter,
         marks: editMode === 'poi' ? poiMarks() : editMode === 'plan' ? planMarks() : null,
-        plan: editMode === 'plan' ? planScene((state.plan?.op ?? 0.88) * 0.7, true) : editMode === 'lot' ? planScene(0.45) : null,
+        plan: editMode === 'plan' ? planScene(planEditOp(), true, !planPick) : editMode === 'lot' ? planScene(0.45) : null,
         roads: editMode === 'road' ? [...(state.myRoads || []).filter(m => !roadDraft || m.id !== roadDraft.id), ...(roadDraft ? [{ ...roadDraft, active: true }] : [])] : null,
       });
       lastFrame = now;
@@ -667,6 +672,7 @@ function toggleEdit(on, mode = 'pin') {
   updateLotMsg();
   if (!editing) scheduleRebuild();
   $('canvasWrap').classList.toggle('editing', editing);
+  layoutCanvas();
   dirty = true;
   updateBigPlay();
 }
@@ -855,12 +861,14 @@ function addPickedPois() {
 }
 
 // ---------- Mặt bằng phân lô (đất nền) dán dẹt lên bản đồ ----------
-// Khách tải ảnh mặt bằng (JPG/PNG/chụp màn hình) → app đặt tạm quanh lô/căn nhà → khách khớp bằng 2 điểm ghim
-// (chạm 1 điểm trên ảnh rồi chạm đúng chỗ đó trên bản đồ, làm 2 lần) → phép đồng dạng (dời + xoay + phóng).
-// Ảnh lưu trên máy khách (IndexedDB 'vitri-photos', khoá 'plan:' + toạ độ căn), không tải lên máy chủ.
+// Khách tải ảnh mặt bằng (JPG/PNG/chụp màn hình) → hộp "Chỉnh ảnh mặt bằng" (cắt & nắn 4 góc, khoanh vùng dự án,
+// làm trong phần nền trắng — js/planimg.js, xử lý trên máy) → app đặt tạm quanh lô/căn nhà → khách KÉO ảnh để dời,
+// kéo chấm góc để xoay/phóng (điện thoại: 2 ngón), hoặc khớp bằng 2 điểm ghim cho chính xác.
+// Ảnh lưu trên máy khách (IndexedDB 'vitri-photos': 'planraw:' = ảnh gốc đã thu nhỏ, 'plan:' = ảnh đã xử lý), không tải lên máy chủ.
 // Video: dán dẹt xuống mặt đất CHỈ trong cảnh bay sát lô (render.js, Giang chốt 26/10), ranh lô đang bán sáng nổi phía trên.
 const PLAN_MAX = 2400;
 const planKey = () => (photoKey(state.house) ? 'plan:' + photoKey(state.house) : '');
+const planRawKey = () => (photoKey(state.house) ? 'planraw:' + photoKey(state.house) : '');
 function planFrame() { return state.plan ? localFrame({ lat: state.plan.lat, lng: state.plan.lng }) : null; }
 function planToLL(x, y) { // điểm ảnh (x sang phải, y xuống dưới) → [lat, lng]
   const P = state.plan, F = planFrame();
@@ -868,11 +876,20 @@ function planToLL(x, y) { // điểm ảnh (x sang phải, y xuống dưới) �
   const c = Math.cos(P.rot), s = Math.sin(P.rot);
   return F.ll((mx * c - my * s) / 1000, (mx * s + my * c) / 1000);
 }
-function planScene(op = null, force = false) {
+function llToPlan(ll) { // [lat,lng]/{lat,lng} → điểm ảnh {x, y}
+  const P = state.plan, F = planFrame();
+  const q = Array.isArray(ll) ? ll : [ll.lat, ll.lng];
+  const [e, n] = F.xy(q).map(v => v * 1000);
+  const c = Math.cos(-P.rot), s = Math.sin(-P.rot);
+  const mx = e * c - n * s, my = e * s + n * c;
+  return { x: mx / P.mpp + P.w / 2, y: -my / P.mpp + P.h / 2 };
+}
+function planScene(op = null, force = false, handles = false) {
   const P = state.plan, img = media.planImg;
   if (!P || !img || (state.planOn === false && !force)) return null;
-  return { img, tl: planToLL(0, 0), tr: planToLL(P.w, 0), bl: planToLL(0, P.h), op: op ?? P.op ?? 0.88 };
+  return { img, tl: planToLL(0, 0), tr: planToLL(P.w, 0), bl: planToLL(0, P.h), op: op ?? P.op ?? 1, handles };
 }
+const planEditOp = () => Math.max(0.5, (state.plan?.op ?? 1) * 0.85);
 function planMarks() {
   const out = [];
   if (planPick) for (const [i, p] of planPick.pts.entries()) if (p.lat != null) out.push({ lat: p.lat, lng: p.lng, label: String(i + 1), tap: true });
@@ -886,13 +903,13 @@ function updatePlanMsg(t) {
   const step = planPick?.step;
   el.textContent = step === 'map1' ? 'Chạm ĐÚNG chỗ của điểm ① trên bản đồ (gần góc lô sẽ tự bắt vào góc lô).'
     : step === 'map2' ? 'Chạm ĐÚNG chỗ của điểm ② trên bản đồ.'
-    : state.plan ? 'Bấm "📌 Khớp bằng 2 điểm": chọn 2 điểm dễ nhận ra (vd. 2 góc lô đang bán, góc ngã tư) trên ảnh rồi chạm đúng chỗ đó trên bản đồ. Xoay/phóng để tinh chỉnh.'
+    : state.plan ? 'Kéo trong ảnh để dời mặt bằng · kéo chấm vàng ở góc để xoay & phóng (điện thoại: dùng 2 ngón) · kéo ngoài ảnh để di chuyển bản đồ. Cần khớp thật chính xác thì bấm "📌 Khớp bằng 2 điểm".'
     : 'Chưa có ảnh mặt bằng.';
 }
 async function restorePlan() {
   const k = planKey();
   planHouse = photoKey(state.house);
-  media.planImg = null;
+  media.planImg = null; media.planRaw = null;
   if (k && state.plan) {
     const src = await photoDb('get', k);
     if (planHouse !== photoKey(state.house)) return;
@@ -924,23 +941,9 @@ async function pickPlanFile(file) {
     g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); // ảnh PNG nền trong suốt → nền trắng
     g.imageSmoothingQuality = 'high';
     g.drawImage(img, 0, 0, c.width, c.height);
-    const src = c.toDataURL('image/jpeg', 0.9);
-    const out = await loadLogo(src);
-    if (!out) return;
-    // Đặt tạm: tâm ở giữa lô (hoặc căn nhà), hướng Bắc lên trên, rộng ~70% khung đang xem
-    const lot = state.lot?.length >= 3 ? state.lot : null;
-    const ctr = lot ? { lat: lot.reduce((a, p) => a + p.lat, 0) / lot.length, lng: lot.reduce((a, p) => a + p.lng, 0) / lot.length } : state.house;
-    const viewM = FORMATS[state.fmt].LW * metersPerPixelAt(ctr.lat, planZoom);
-    state.plan = { w: c.width, h: c.height, lat: ctr.lat, lng: ctr.lng, mpp: (viewM * 0.7) / c.width, rot: 0, op: 0.88, pins: [] };
-    state.planOn = true;
-    media.planImg = out;
-    planHouse = photoKey(state.house);
-    await photoDb('put', planKey(), src);
-    save();
-    showPlanUi();
-    scheduleRebuild();
-    startPlanEdit();
-    toast('Đã đặt tạm ảnh mặt bằng. Bấm "📌 Khớp bằng 2 điểm" để khớp đúng vị trí.', 4000);
+    const raw = await loadLogo(c.toDataURL('image/jpeg', 0.92));
+    if (!raw) return;
+    openPlanEditor({ raw, isNew: true });
   } finally { URL.revokeObjectURL(url); }
 }
 const metersPerPixelAt = (lat, z) => 156543.03392 * Math.cos(lat * Math.PI / 180) / Math.pow(2, z);
@@ -948,10 +951,201 @@ function startPlanEdit() {
   if (!state.plan || !media.planImg) { $('planFile').click(); return; }
   toggleEdit(true, 'plan');
   editCenter = { lat: state.plan.lat, lng: state.plan.lng };
-  $('planOp').value = String(Math.round((state.plan.op ?? 0.88) * 100));
+  $('planOp').value = String(Math.round((state.plan.op ?? 1) * 100));
   updatePlanMsg();
   dirty = true;
   document.querySelector('.stage')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ----- Hộp "Chỉnh ảnh mặt bằng": ✂️ cắt & nắn 4 góc · ✏️ khoanh vùng dự án · làm trong nền trắng -----
+let pe = null; // { raw, isNew, tab, quad, mask, white, prev, prevKey, drag, applied, view }
+async function ensurePlanRaw() {
+  if (media.planRaw) return media.planRaw;
+  const src = await photoDb('get', planRawKey());
+  media.planRaw = src ? await loadLogo(src) : null;
+  return media.planRaw || media.planImg; // mặt bằng tải trước bản này chỉ có ảnh đã xử lý → dùng làm ảnh gốc
+}
+async function openPlanEditor({ raw = null, isNew = false } = {}) {
+  raw = raw || await ensurePlanRaw();
+  if (!raw) { $('planFile').click(); return; }
+  const ed = (!isNew && state.plan?.edit) || {};
+  pe = { raw, isNew, tab: 'crop', quad: (ed.quad || FULL_QUAD).map(p => [...p]), mask: ed.mask ? ed.mask.map(p => [...p]) : [], white: ed.white ?? true, prev: null, prevKey: '', drag: null, applied: false };
+  $('planWhite').checked = pe.white;
+  if (!$('planEditDlg').open) $('planEditDlg').showModal();
+  setPeTab('crop');
+}
+function setPeTab(tab) {
+  pe.tab = tab;
+  document.querySelectorAll('#planEditTabs [data-pe]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.pe === tab)));
+  $('planMaskTools').hidden = tab !== 'mask';
+  $('planCropReset').hidden = tab !== 'crop';
+  $('planEditHint').textContent = tab === 'crop'
+    ? 'Kéo 4 chấm vàng về đúng 4 góc khu dự án trên ảnh. Phần ngoài khung bị cắt bỏ; ảnh chụp xiên sẽ được nắn thẳng lại.'
+    : 'Ảnh sau khi cắt (ô caro = phần trong suốt, sẽ thấy ảnh vệ tinh). Muốn bỏ khung tên, chú thích, dự án bên cạnh: chạm lần lượt quanh ranh dự án (kéo chấm để sửa). Không chạm gì = giữ cả ảnh.';
+  if (tab === 'mask') refreshPePreview();
+  drawPe();
+}
+function refreshPePreview() {
+  const key = JSON.stringify([pe.quad, pe.white]);
+  if (pe.prev && pe.prevKey === key) return;
+  pe.prev = processPlan(pe.raw, { quad: pe.quad, white: pe.white }, 1100);
+  pe.prevKey = key;
+}
+function peView() {
+  const cv = $('planEditCv'), box = cv.parentElement;
+  const img = pe.tab === 'crop' ? pe.raw : pe.prev;
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  const pad = 16;
+  const availW = Math.max(200, box.clientWidth - pad * 2), availH = Math.max(200, Math.min(window.innerHeight * 0.56, 680) - pad * 2);
+  const sc = Math.min(availW / iw, availH / ih);
+  const w = Math.round(iw * sc), h = Math.round(ih * sc);
+  return { img, iw, ih, sc, pad, w, h, W: w + pad * 2, H: h + pad * 2 };
+}
+const CHECK = (() => { // nền ô caro để thấy phần trong suốt
+  const c = document.createElement('canvas'); c.width = c.height = 16;
+  const g = c.getContext('2d'); g.fillStyle = '#d9dde3'; g.fillRect(0, 0, 16, 16); g.fillStyle = '#f3f4f6'; g.fillRect(0, 0, 8, 8); g.fillRect(8, 8, 8, 8);
+  return c;
+})();
+function drawPe() {
+  if (!pe) return;
+  const cv = $('planEditCv'), V = peView();
+  pe.view = V;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (cv.width !== Math.round(V.W * dpr) || cv.height !== Math.round(V.H * dpr)) { cv.width = Math.round(V.W * dpr); cv.height = Math.round(V.H * dpr); }
+  cv.style.width = V.W + 'px'; cv.style.height = V.H + 'px';
+  const g = cv.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.fillStyle = '#11151b'; g.fillRect(0, 0, V.W, V.H);
+  const P = (u, v) => [V.pad + u * V.w, V.pad + v * V.h];
+  if (pe.tab === 'mask') { g.fillStyle = g.createPattern(CHECK, 'repeat'); g.fillRect(V.pad, V.pad, V.w, V.h); }
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(V.img, V.pad, V.pad, V.w, V.h);
+  const pts = pe.tab === 'crop' ? pe.quad : pe.mask;
+  if (pts.length >= 3) { // làm tối phần bị bỏ
+    g.save(); g.beginPath(); g.rect(0, 0, V.W, V.H);
+    pts.forEach(([u, v], i) => { const [x, y] = P(u, v); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+    g.closePath(); g.fillStyle = 'rgba(0,0,0,0.58)'; g.fill('evenodd'); g.restore();
+  }
+  if (pts.length) {
+    g.save();
+    g.beginPath(); pts.forEach(([u, v], i) => { const [x, y] = P(u, v); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+    if (pts.length >= 3) g.closePath();
+    g.lineWidth = 2.5; g.strokeStyle = pe.tab === 'crop' ? '#FFB400' : '#22D3EE'; g.stroke();
+    pts.forEach(([u, v], i) => {
+      const [x, y] = P(u, v);
+      g.beginPath(); g.arc(x, y, pe.tab === 'crop' ? 12 : 8, 0, Math.PI * 2);
+      g.fillStyle = pe.tab === 'crop' ? '#FFB400' : '#22D3EE'; g.fill(); g.lineWidth = 2.5; g.strokeStyle = '#111'; g.stroke();
+      if (pe.tab === 'crop') { g.fillStyle = '#111'; g.font = '800 12px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(i + 1), x, y + 0.5); }
+    });
+    g.restore();
+  }
+  // Kính lúp khi đang kéo (ngón tay che mất góc trên điện thoại)
+  if (pe.drag && pe.drag.moved) {
+    const [u, v] = pts[pe.drag.i];
+    const [x, y] = P(u, v);
+    const R = 56, Z = 3, lx = x < V.W / 2 ? V.W - R - 8 : R + 8, ly = R + 8;
+    g.save();
+    g.beginPath(); g.arc(lx, ly, R, 0, Math.PI * 2); g.closePath();
+    g.fillStyle = '#000'; g.fill(); g.clip();
+    const sx = (u * V.iw) - R / (Z * V.sc), sy = (v * V.ih) - R / (Z * V.sc);
+    g.drawImage(V.img, sx, sy, (2 * R) / (Z * V.sc), (2 * R) / (Z * V.sc), lx - R, ly - R, 2 * R, 2 * R);
+    g.strokeStyle = '#FF3B30'; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(lx - 14, ly); g.lineTo(lx + 14, ly); g.moveTo(lx, ly - 14); g.lineTo(lx, ly + 14); g.stroke();
+    g.restore();
+    g.beginPath(); g.arc(lx, ly, R, 0, Math.PI * 2); g.lineWidth = 3; g.strokeStyle = '#fff'; g.stroke();
+  }
+}
+function peEventUV(e) {
+  const r = $('planEditCv').getBoundingClientRect(), V = pe.view;
+  return [Math.min(1, Math.max(0, (e.clientX - r.left - V.pad) / V.w)), Math.min(1, Math.max(0, (e.clientY - r.top - V.pad) / V.h))];
+}
+function peHit(e) {
+  const r = $('planEditCv').getBoundingClientRect(), V = pe.view;
+  const pts = pe.tab === 'crop' ? pe.quad : pe.mask;
+  let best = -1, bd = 26;
+  pts.forEach(([u, v], i) => { const d = Math.hypot(e.clientX - r.left - (V.pad + u * V.w), e.clientY - r.top - (V.pad + v * V.h)); if (d < bd) { bd = d; best = i; } });
+  return best;
+}
+async function applyPlanEdit() {
+  if (!pe) return;
+  const btn = $('planEditOk');
+  btn.disabled = true; const label = btn.textContent; btn.textContent = 'Đang xử lý ảnh…';
+  await new Promise(r => setTimeout(r, 30));
+  try {
+    const edit = { quad: pe.quad.map(p => p.map(v => Math.round(v * 1e4) / 1e4)), mask: pe.mask.length >= 3 ? pe.mask.map(p => p.map(v => Math.round(v * 1e4) / 1e4)) : null, white: pe.white };
+    const cv = processPlan(pe.raw, edit, PLAN_MAX);
+    const src = planNeedsAlpha(edit) ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.92);
+    const out = await loadLogo(src);
+    if (!out) throw new Error('img');
+    if (pe.isNew || !media.planRaw) await photoDb('put', planRawKey(), pe.raw.src);
+    media.planRaw = pe.raw;
+    await photoDb('put', planKey(), src);
+    const old = pe.isNew ? null : state.plan;
+    const W = cv.width, H = cv.height;
+    if (!old) {
+      // Đặt tạm: tâm ở giữa lô (hoặc căn nhà), hướng Bắc lên trên, rộng ~70% khung đang xem
+      const lot = state.lot?.length >= 3 ? state.lot : null;
+      const ctr = lot ? { lat: lot.reduce((a, p) => a + p.lat, 0) / lot.length, lng: lot.reduce((a, p) => a + p.lng, 0) / lot.length } : state.house;
+      const viewM = FORMATS[state.fmt].LW * metersPerPixelAt(ctr.lat, planZoom);
+      state.plan = { w: W, h: H, lat: ctr.lat, lng: ctr.lng, mpp: (viewM * 0.7) / W, rot: 0, op: 1, pins: [], edit };
+    } else {
+      const geo = JSON.stringify(old.edit?.quad || FULL_QUAD) !== JSON.stringify(edit.quad) || old.w !== W || old.h !== H;
+      // Đổi khung cắt: giữ tâm, hướng và bề ngang thật (m) → khách chỉ cần kéo/khớp lại nhẹ
+      state.plan = { ...old, w: W, h: H, mpp: geo ? (old.w * old.mpp) / W : old.mpp, pins: geo ? [] : old.pins, edit };
+      if (geo) toast('Đã cắt/nắn lại ảnh. Kéo ảnh hoặc "Khớp bằng 2 điểm" lại cho khớp bản đồ.', 4200);
+    }
+    state.planOn = true;
+    media.planImg = out;
+    planHouse = photoKey(state.house);
+    pe.applied = true;
+    $('planEditDlg').close();
+    save(); showPlanUi(); scheduleRebuild();
+    if (!old) {
+      startPlanEdit();
+      toast('Đã đặt tạm mặt bằng. Kéo ảnh tới đúng chỗ, kéo chấm góc để xoay/phóng, hoặc "📌 Khớp bằng 2 điểm".', 4500);
+    } else { dirty = true; updatePlanMsg(); }
+  } catch {
+    toast('Ảnh quá lớn hoặc máy không xử lý được. Thử ảnh nhỏ hơn hoặc chụp màn hình rõ hơn.', 4000);
+  } finally { btn.disabled = false; btn.textContent = label; }
+}
+function initPlanEditor() {
+  const cv = $('planEditCv');
+  document.querySelectorAll('#planEditTabs [data-pe]').forEach(b => b.addEventListener('click', () => setPeTab(b.dataset.pe)));
+  $('planWhite').addEventListener('change', e => { pe.white = e.target.checked; if (pe.tab === 'mask') refreshPePreview(); drawPe(); });
+  $('planCropReset').addEventListener('click', () => { pe.quad = FULL_QUAD.map(p => [...p]); drawPe(); });
+  $('planMaskUndo').addEventListener('click', () => { pe.mask.pop(); drawPe(); });
+  $('planMaskClear').addEventListener('click', () => { pe.mask = []; drawPe(); });
+  $('planEditCancel').addEventListener('click', () => $('planEditDlg').close());
+  $('planEditOk').addEventListener('click', applyPlanEdit);
+  $('planEditDlg').addEventListener('close', () => { pe = null; });
+  window.addEventListener('resize', () => { if (pe) drawPe(); });
+  cv.addEventListener('pointerdown', e => {
+    if (!pe) return;
+    e.preventDefault();
+    const i = peHit(e);
+    pe.drag = { i, x: e.clientX, y: e.clientY, moved: false, id: e.pointerId };
+    try { cv.setPointerCapture(e.pointerId); } catch { /* bỏ qua */ }
+  });
+  cv.addEventListener('pointermove', e => {
+    const d = pe?.drag;
+    if (!d || d.id !== e.pointerId || d.i < 0) return;
+    if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 3) return;
+    d.moved = true;
+    (pe.tab === 'crop' ? pe.quad : pe.mask)[d.i] = peEventUV(e);
+    drawPe();
+  });
+  const end = e => {
+    const d = pe?.drag;
+    if (!d || d.id !== e.pointerId) return;
+    pe.drag = null;
+    if (pe.tab === 'mask' && d.i < 0 && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 8) {
+      if (pe.mask.length >= 40) { toast('Tối đa 40 điểm.'); return; }
+      pe.mask.push(peEventUV(e));
+    }
+    drawPe();
+  };
+  cv.addEventListener('pointerup', end);
+  cv.addEventListener('pointercancel', end);
 }
 // Bước chọn điểm trên ẢNH: hộp thoại hiện ảnh mặt bằng, khách chạm 1 điểm
 function openPlanDlg() {
@@ -1007,16 +1201,61 @@ function planMapTap(ll) {
   state.plan = { ...P, lat: c[0], lng: c[1], mpp: Math.hypot(sr, si), rot: Math.atan2(si, sr), pins: planPick.pts.map(p => ({ ...p })) };
   planPick = null;
   save(); scheduleRebuild(); dirty = true;
-  updatePlanMsg('Đã khớp mặt bằng theo 2 điểm. Kiểm tra trên bản đồ; lệch thì ghim lại hoặc xoay/phóng nhẹ, xong bấm "Xong".');
+  updatePlanMsg('Đã khớp mặt bằng theo 2 điểm. Kiểm tra trên bản đồ; lệch thì kéo/xoay nhẹ hoặc ghim lại, xong bấm "Xong".');
 }
 function nudgePlan(dRot, dScale) {
   if (!state.plan) return;
   state.plan = { ...state.plan, rot: state.plan.rot + dRot, mpp: state.plan.mpp * dScale };
   save(); scheduleRebuild(); dirty = true;
 }
+// Kéo trực tiếp trên bản đồ (chế độ căn mặt bằng): dời / xoay + phóng quanh tâm / 2 ngón
+function planGestureStart(kind, pts) {
+  const P = state.plan;
+  return { kind, P0: { ...P }, F0: localFrame({ lat: P.lat, lng: P.lng }), pts0: pts.map(p => ({ ...p })) };
+}
+function planGestureMove(G, pts) {
+  const { P0, F0 } = G;
+  const m = ll => F0.xy([ll.lat, ll.lng]).map(v => v * 1000); // mét quanh tâm cũ
+  if (G.kind === 'move') {
+    const a = m(G.pts0[0]), b = m(pts[0]);
+    const c = F0.ll((b[0] - a[0]) / 1000, (b[1] - a[1]) / 1000);
+    state.plan = { ...P0, lat: c[0], lng: c[1], pins: [] };
+  } else if (G.kind === 'rot') {
+    const a = m(G.pts0[0]), b = m(pts[0]);
+    const la = Math.hypot(a[0], a[1]), lb = Math.hypot(b[0], b[1]);
+    if (la < 0.5 || lb < 0.5) return;
+    state.plan = { ...P0, mpp: P0.mpp * (lb / la), rot: P0.rot + Math.atan2(b[1], b[0]) - Math.atan2(a[1], a[0]), pins: [] };
+  } else if (G.kind === 'pinch') {
+    // Phép đồng dạng đưa 2 ngón cũ (A,B) → 2 ngón mới (A',B'), áp vào tâm mặt bằng (đang ở gốc toạ độ)
+    const A = m(G.pts0[0]), B = m(G.pts0[1]), A2 = m(pts[0]), B2 = m(pts[1]);
+    const dz = [B[0] - A[0], B[1] - A[1]], dw = [B2[0] - A2[0], B2[1] - A2[1]];
+    const d2 = dz[0] * dz[0] + dz[1] * dz[1];
+    if (d2 < 1) return;
+    const sr = (dw[0] * dz[0] + dw[1] * dz[1]) / d2, si = (dw[1] * dz[0] - dw[0] * dz[1]) / d2;
+    const cx = A2[0] + sr * (0 - A[0]) - si * (0 - A[1]), cy = A2[1] + si * (0 - A[0]) + sr * (0 - A[1]);
+    const c = F0.ll(cx / 1000, cy / 1000);
+    state.plan = { ...P0, lat: c[0], lng: c[1], mpp: P0.mpp * Math.hypot(sr, si), rot: P0.rot + Math.atan2(si, sr), pins: [] };
+  }
+  dirty = true;
+}
+function planHitAt(ll, rect) {
+  // Chấm góc (xoay/phóng) trong 24 px màn hình, hoặc bên trong ảnh (dời)
+  const P = state.plan;
+  if (!P || !media.planImg) return null;
+  const pxM = metersPerPixelAt(ll.lat, planZoom) * FORMATS[state.fmt].LW / rect.width; // mét / px CSS
+  const F = localFrame(ll);
+  for (const [x, y] of [[0, 0], [P.w, 0], [P.w, P.h], [0, P.h]]) {
+    const c = planToLL(x, y);
+    const d = F.xy(c).map(v => v * 1000);
+    if (Math.hypot(d[0], d[1]) / pxM < 24) return 'rot';
+  }
+  const q = llToPlan(ll);
+  return q.x >= 0 && q.y >= 0 && q.x <= P.w && q.y <= P.h ? 'move' : null;
+}
 function removePlan() {
   photoDb('del', planKey());
-  state.plan = null; media.planImg = null;
+  photoDb('del', planRawKey());
+  state.plan = null; media.planImg = null; media.planRaw = null;
   toggleEdit(false);
   save(); showPlanUi(); scheduleRebuild();
 }
@@ -4117,6 +4356,9 @@ function init() {
   // Mặt bằng phân lô
   $('planFile').addEventListener('change', e => { pickPlanFile(e.target.files[0]); e.target.value = ''; });
   $('planEditBtn').addEventListener('click', startPlanEdit);
+  initPlanEditor();
+  $('planImgEdit').addEventListener('click', () => openPlanEditor());
+  $('planImgEdit2').addEventListener('click', () => openPlanEditor());
   $('planOn').addEventListener('change', e => { state.planOn = e.target.checked; save(); scheduleRebuild(); });
   const askRemovePlan = () => { if (confirm('Xoá ảnh mặt bằng phân lô khỏi căn này? Video sẽ không còn mặt bằng.')) { removePlan(); toast('Đã xoá mặt bằng phân lô.'); } };
   $('planDelBtn').addEventListener('click', askRemovePlan);
@@ -4152,28 +4394,75 @@ function init() {
   $('roadDone').addEventListener('click', finishRoadDraw);
   $('roadCancel').addEventListener('click', () => { roadDraft = null; toggleEdit(false); });
   // Kéo để di chuyển khung khi vẽ lô/đường (chạm nhẹ vẫn là chấm điểm)
-  let pan = null, panMoved = false;
+  let pan = null, panMoved = false, planG = null;
+  const touches = new Map(); // ngón đang chạm (chế độ căn mặt bằng: 2 ngón = xoay + phóng)
+  const editZoom = () => (editMode === 'lot' ? lotZoom : editMode === 'poi' ? poiZoom : editMode === 'plan' ? planZoom : roadZoom);
+  const evLL = e => {
+    const rect = canvas.getBoundingClientRect();
+    return editTapToLatLng(editCenter, state.fmt, (e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height, editZoom());
+  };
   canvas.addEventListener('pointerdown', e => {
     if (!editing || editMode === 'pin' || !editCenter) return;
-    pan = { x: e.clientX, y: e.clientY, c: { ...editCenter }, id: e.pointerId };
     panMoved = false;
+    if (editMode === 'plan' && state.plan && !planPick) {
+      touches.set(e.pointerId, evLL(e));
+      if (touches.size === 2) { // ngón thứ 2 → xoay + phóng bằng 2 ngón
+        pan = null;
+        planG = planGestureStart('pinch', [...touches.values()]);
+        planG.ids = [...touches.keys()];
+        try { canvas.setPointerCapture(e.pointerId); } catch { /* bỏ qua */ }
+        return;
+      }
+      const kind = planHitAt(touches.get(e.pointerId), canvas.getBoundingClientRect());
+      if (kind) {
+        planG = planGestureStart(kind, [touches.get(e.pointerId)]);
+        planG.ids = [e.pointerId]; planG.x = e.clientX; planG.y = e.clientY;
+        try { canvas.setPointerCapture(e.pointerId); } catch { /* bỏ qua */ }
+        return;
+      }
+    }
+    pan = { x: e.clientX, y: e.clientY, c: { ...editCenter }, id: e.pointerId };
   });
   canvas.addEventListener('pointermove', e => {
+    if (planG && planG.ids.includes(e.pointerId)) {
+      touches.set(e.pointerId, evLL(e));
+      if (planG.kind !== 'pinch' && !panMoved && Math.hypot(e.clientX - planG.x, e.clientY - planG.y) < 4) return;
+      panMoved = true;
+      planGestureMove(planG, planG.ids.map(id => touches.get(id)));
+      return;
+    }
     if (!pan || e.pointerId !== pan.id) return;
     const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
     if (!panMoved && Math.hypot(dx, dy) < 8) return;
     if (!panMoved) { panMoved = true; try { canvas.setPointerCapture(e.pointerId); } catch { /* bỏ qua */ } }
     const rect = canvas.getBoundingClientRect();
     const k = FORMATS[state.fmt].LW / rect.width;
-    const z = editMode === 'lot' ? lotZoom : editMode === 'poi' ? poiZoom : editMode === 'plan' ? planZoom : roadZoom;
     // Kéo bản đồ theo ngón tay: tâm mới = điểm nằm ngược hướng kéo
-    const ll = editTapToLatLng(pan.c, state.fmt, 0.5 - dx * k / FORMATS[state.fmt].LW, 0.5 - dy * k / FORMATS[state.fmt].LH, z);
+    const ll = editTapToLatLng(pan.c, state.fmt, 0.5 - dx * k / FORMATS[state.fmt].LW, 0.5 - dy * k / FORMATS[state.fmt].LH, editZoom());
     editCenter = ll;
     dirty = true;
   });
-  const endPan = e => { if (pan && e.pointerId === pan.id) pan = null; };
+  const endPan = e => {
+    touches.delete(e.pointerId);
+    if (planG && planG.ids.includes(e.pointerId)) {
+      planG = null;
+      if (panMoved) { save(); scheduleRebuild(); updatePlanMsg(); }
+    }
+    if (pan && e.pointerId === pan.id) pan = null;
+  };
   canvas.addEventListener('pointerup', endPan);
   canvas.addEventListener('pointercancel', endPan);
+  // Lăn chuột = phóng to/thu nhỏ bản đồ khi đang vẽ lô / đường / tiện ích / mặt bằng
+  canvas.addEventListener('wheel', e => {
+    if (!editing || editMode === 'pin') return;
+    e.preventDefault();
+    const d = e.deltaY < 0 ? 0.25 : -0.25;
+    if (editMode === 'lot') lotZoom = Math.min(LOT_ZMAX, Math.max(LOT_ZMIN, lotZoom + d));
+    else if (editMode === 'road') roadZoom = Math.min(ROAD_ZMAX, Math.max(ROAD_ZMIN, roadZoom + d));
+    else if (editMode === 'poi') poiZoom = Math.min(21, Math.max(14, poiZoom + d));
+    else if (editMode === 'plan') planZoom = Math.min(21, Math.max(13, planZoom + d));
+    dirty = true;
+  }, { passive: false });
   $('lotText').value = state.lotText || '';
   $('lotArea').value = state.lotArea || '';
   $('lotText').addEventListener('input', e => { state.lotText = e.target.value; save(); });
@@ -4199,7 +4488,7 @@ function init() {
       return;
     }
     if (editMode === 'plan') {
-      if (!planPick || !/^map/.test(planPick.step)) { toast('Bấm "📌 Khớp bằng 2 điểm" để căn mặt bằng, hoặc dùng các nút xoay/phóng.'); return; }
+      if (!planPick || !/^map/.test(planPick.step)) { updatePlanMsg(); return; }
       const ll = editTapToLatLng(editCenter || state.house, state.fmt, (e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height, planZoom);
       planMapTap(ll);
       return;
@@ -4268,7 +4557,9 @@ function init() {
     else if (h === '#mua') openPricing();
   });
   initTracking();
-  new ResizeObserver(() => layoutCanvas()).observe($('canvasWrap').parentElement);
+  const ro = new ResizeObserver(() => layoutCanvas());
+  ro.observe($('canvasWrap').parentElement);
+  document.querySelectorAll('.stage .lot-bar').forEach(b => ro.observe(b));
   window.addEventListener('resize', layoutCanvas);
   document.addEventListener('visibilitychange', () => { if (document.hidden && playing) pause(); });
 

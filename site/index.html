@@ -141,9 +141,10 @@
           <button id="planRotR" class="chip-btn" type="button" aria-label="Xoay phải 1 độ">⟳ 1°</button>
           <button id="planSmall" class="chip-btn" type="button" aria-label="Thu nhỏ mặt bằng">− 3%</button>
           <button id="planBig" class="chip-btn" type="button" aria-label="Phóng to mặt bằng">+ 3%</button>
-          <label class="plan-op">Độ rõ <input id="planOp" type="range" min="40" max="100" step="2" value="88"></label>
+          <label class="plan-op">Độ rõ <input id="planOp" type="range" min="40" max="100" step="2" value="100"></label>
         </div>
         <div class="plan-tune">
+          <button id="planImgEdit" class="link-btn" type="button">✂️ Cắt, nắn &amp; làm trong nền</button>
           <button id="planChange" class="link-btn" type="button">🔄 Đổi ảnh khác</button>
           <button id="planDel2" class="link-btn danger" type="button">🗑 Xoá mặt bằng</button>
         </div>
@@ -299,6 +300,7 @@
               <img id="planThumb" class="plan-thumb" alt="Mặt bằng phân lô">
               <div class="plan-actions">
                 <button id="planEditBtn" class="link-btn" type="button">📌 Căn chỉnh trên bản đồ</button>
+                <button id="planImgEdit2" class="link-btn" type="button">✂️ Cắt, nắn &amp; làm trong nền</button>
                 <label class="plan-on"><input id="planOn" type="checkbox" checked> Hiện trong video</label>
                 <button id="planDelBtn" class="link-btn danger" type="button">Xoá</button>
               </div>
@@ -629,6 +631,27 @@
   </div>
 </dialog>
 
+<dialog id="planEditDlg" class="dlg dlg-wide" aria-labelledby="planEditTitle">
+  <div class="dlg-card plan-card">
+    <button class="dlg-x" type="button" data-close aria-label="Đóng">×</button>
+    <h3 id="planEditTitle">Chỉnh ảnh mặt bằng phân lô</h3>
+    <div id="planEditTabs" class="seg plan-tabs" role="group" aria-label="Bước chỉnh ảnh">
+      <button type="button" data-pe="crop" aria-pressed="true">✂️ Cắt &amp; nắn 4 góc</button>
+      <button type="button" data-pe="mask" aria-pressed="false">✏️ Khoanh vùng &amp; xem kết quả</button>
+    </div>
+    <p id="planEditHint" class="hint small"></p>
+    <div class="plan-edit-box"><canvas id="planEditCv" aria-label="Ảnh mặt bằng đang chỉnh"></canvas></div>
+    <div class="plan-edit-tools">
+      <label class="plan-on"><input id="planWhite" type="checkbox" checked> Làm trong phần nền trắng (thấy ảnh vệ tinh bên dưới)</label>
+      <button id="planCropReset" class="link-btn" type="button">Lấy cả ảnh</button>
+      <span id="planMaskTools" hidden><button id="planMaskUndo" class="link-btn" type="button">Bỏ điểm cuối</button> <button id="planMaskClear" class="link-btn" type="button">Xoá vùng khoanh</button></span>
+    </div>
+    <div class="plan-dlg-foot">
+      <button id="planEditCancel" class="btn btn-quiet" type="button">Huỷ</button>
+      <button id="planEditOk" class="btn btn-primary" type="button">Xong, đặt lên bản đồ</button>
+    </div>
+  </div>
+</dialog>
 <dialog id="planDlg" class="dlg dlg-wide" aria-labelledby="planDlgTitle">
   <div class="dlg-card plan-card">
     <button class="dlg-x" type="button" data-close aria-label="Đóng">×</button>

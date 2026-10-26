@@ -3352,7 +3352,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   const PL = scene.plan;
   if (PL && PL.img && PL.tl) {
     const hdp = ho.t1 - ho.t0;
-    planA = fadeWin(t, ho.t0 + 0.12 * hdp, ov.t0 + 0.5, 0.8, 0.8) * (PL.op ?? 0.88);
+    planA = fadeWin(t, ho.t0 + 0.12 * hdp, ov.t0 + 0.5, 0.8, 0.8) * (PL.op ?? 1);
     if (planA > 0.01) {
       const a = gLL(v, PL.tl[0], PL.tl[1]), b = gLL(v, PL.tr[0], PL.tr[1]), c = gLL(v, PL.bl[0], PL.bl[1]);
       const iw = PL.img.naturalWidth || PL.img.width, ih = PL.img.naturalHeight || PL.img.height;
@@ -3361,6 +3361,8 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       g.transform((b.x - a.x) / iw, (b.y - a.y) / iw, (c.x - a.x) / ih, (c.y - a.y) / ih, a.x, a.y);
       g.imageSmoothingEnabled = true;
       if ('imageSmoothingQuality' in g) g.imageSmoothingQuality = 'high';
+      // Rõ nét hơn trên nền vệ tinh: tăng nhẹ tương phản + độ đậm màu (trình duyệt không hỗ trợ filter thì bỏ qua)
+      if ('filter' in g) g.filter = 'contrast(1.12) saturate(1.2)';
       g.drawImage(PL.img, 0, 0, iw, ih);
       g.restore();
     }
@@ -3767,7 +3769,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   // Dòng nhỏ khi có mặt bằng phân lô: tránh bị hiểu là bản đồ đo đạc
   if (planA > 0.05) {
     ctx.save();
-    ctx.globalAlpha = Math.min(1, planA / (PL.op ?? 0.88));
+    ctx.globalAlpha = Math.min(1, planA / (PL.op ?? 1));
     ctx.font = `600 ${tl.fmt === 'v' ? 13 : 12}px ${FONT}`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     const txt = 'Mặt bằng phân lô mang tính minh hoạ';
@@ -4249,8 +4251,28 @@ export function renderEdit(ctx, house, fmtKey, { cache, scale = 1, lot = null, m
     ctx.save();
     ctx.globalAlpha = plan.op ?? 0.6;
     ctx.transform((b[0] - a[0]) / iw, (b[1] - a[1]) / iw, (c[0] - a[0]) / ih, (c[1] - a[1]) / ih, a[0], a[1]);
+    ctx.imageSmoothingEnabled = true;
+    if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(plan.img, 0, 0, iw, ih);
     ctx.restore();
+    // Khung + 4 tay nắm góc (kéo góc = xoay + phóng; kéo trong ảnh = dời mặt bằng)
+    if (plan.handles) {
+      const d = [b[0] + c[0] - a[0], b[1] + c[1] - a[1]];
+      const cs = [a, b, d, c];
+      ctx.save();
+      ctx.setLineDash([8, 6]); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 4;
+      ctx.beginPath(); cs.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.stroke();
+      ctx.setLineDash([]);
+      for (const [x, y] of cs) {
+        ctx.beginPath(); ctx.arc(x, y, 11, 0, Math.PI * 2);
+        ctx.fillStyle = '#FFB400'; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = '#111'; ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#111'; ctx.font = `800 13px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('↻', x, y + 0.5);
+      }
+      ctx.restore();
+    }
   }
   // Ranh lô đất đang vẽ
   if (lot && lot.length) {
