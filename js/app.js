@@ -22,7 +22,7 @@ import { speakNumbers, speakPhones } from './vinum.js';
 const $ = id => document.getElementById(id);
 const STORE = 'vitri.project.v1';
 const MAX_POIS = 10;
-const ROAD_DOT = { 3: '#FF7A1A', 2: '#FFB627', 1: '#E9C46A' };
+const ROAD_DOT = { 3: '#FF7A1A', 2: '#FFB627', 1: '#E9C46A', 0: '#8ECAE6' };
 
 const state = {
   coordText: '10.6900, 106.5900',
@@ -60,6 +60,7 @@ const state = {
   base: 'vetinh',    // nền bản đồ
   flow: 'lanluot',   // cách hiện tiện ích: lanluot | radar
   lot: [],           // ranh lô đất khách tự vẽ [{lat,lng}]
+  myRoads: [],       // đường khách tự vẽ (hẻm, đường dân sinh app chưa quét được): [{ id, label, pts: [[lat,lng]…] }]
   lotText: '',       // chữ 3D nằm trên lô
   adminArea: null,   // ranh xã/phường + tỉnh {ward, province} (KHÁC state.area = diện tích khách nhập)
   areaWard: '', areaProv: '', roadWidth: '',
@@ -296,7 +297,8 @@ async function fillRoadGaps(onlyIds = null) {
 }
 function selectedRoads() {
   const hi = state.roadStars || [];
-  return state.roads.filter(r => state.selectedRoads.includes(r.id)).map(r => ({ ...r, ways: stitchedWays(r), hi: hi.includes(r.id) }));
+  const mine = (state.myRoads || []).filter(m => m.pts?.length > 1 && state.selectedRoads.includes(m.id)).map(m => ({ ...myRoadObj(m), hi: hi.includes(m.id) }));
+  return [...state.roads.filter(r => state.selectedRoads.includes(r.id)).map(r => ({ ...r, ways: stitchedWays(r), hi: hi.includes(r.id) })), ...mine];
 }
 // Chữ động (gói MOTION trong js/motion.js) — đang thử: chỉ bật khi mở ?motion=1 (nhớ trên máy, ?motion=0 để tắt)
 // hoặc đăng nhập tài khoản nội bộ @vitristudio.com. Kiểu chữ tự chọn theo toạ độ căn, khách không phải chọn.
@@ -431,7 +433,11 @@ let playing = false;
 let editing = false;
 const poiOpen = new Set(); // nhóm tiện ích đã bấm Xem thêm
 let editMode = 'pin'; // pin | lot
-let lotZoom = 18.5;  // mức phóng khi vẽ lô đất (17–20.5)
+let lotZoom = 18.5;  // mức phóng khi vẽ lô đất (16.5–21.5; trên 19 là phóng to ảnh z19 — mờ dần nhưng chấm chính xác hơn)
+let roadZoom = 18;   // mức phóng khi tự vẽ đường (15–21.5)
+let editCenter = null; // tâm khung khi vẽ lô/đường (khách kéo để di chuyển); null = căn nhà
+let roadDraft = null;  // đường đang vẽ { id|null, label, pts }
+const LOT_ZMIN = 16.5, LOT_ZMAX = 21.5, ROAD_ZMIN = 15, ROAD_ZMAX = 21.5;
 let dirty = true;
 let lastFrame = 0;
 let audioCtx = null;
@@ -500,7 +506,12 @@ function frame(now) {
   const scale = canvas.width / FORMATS[state.fmt].LW;
   if (editing) {
     if (now - lastFrame > 33 || dirty) {
-      renderEdit(ctx, state.house, state.fmt, { cache, scale, lot: state.lot, mode: editMode, zoom: editMode === 'lot' ? lotZoom : null });
+      renderEdit(ctx, state.house, state.fmt, {
+        cache, scale, lot: editMode === 'road' ? null : state.lot, mode: editMode,
+        zoom: editMode === 'lot' ? lotZoom : editMode === 'road' ? roadZoom : null,
+        center: editMode === 'pin' ? null : editCenter,
+        roads: editMode === 'road' ? [...(state.myRoads || []).filter(m => !roadDraft || m.id !== roadDraft.id), ...(roadDraft ? [{ ...roadDraft, active: true }] : [])] : null,
+      });
       lastFrame = now;
       dirty = false;
     }
@@ -628,10 +639,13 @@ function toggleEdit(on, mode = 'pin') {
   const want = on ?? !(editing && editMode === mode);
   editing = want;
   editMode = mode;
-  if (editing) pause();
+  if (editing) { pause(); editCenter = state.house ? { ...state.house } : null; }
+  if (!editing || editMode !== 'road') roadDraft = null;
   $('editPinBtn').setAttribute('aria-pressed', String(editing && editMode === 'pin'));
   $('lotBtn').setAttribute('aria-pressed', String(editing && editMode === 'lot'));
   $('lotBar').hidden = !(editing && editMode === 'lot');
+  $('roadBar').hidden = !(editing && editMode === 'road');
+  updateRoadMsg();
   updateLotMsg();
   if (!editing) scheduleRebuild();
   $('canvasWrap').classList.toggle('editing', editing);
@@ -649,6 +663,77 @@ function updateLotMsg() {
   $('lotBtn').textContent = n >= 3 ? 'Sửa lô đất' : 'Vẽ lô đất';
   $('lotArea').placeholder = n >= 3 ? formatArea(lotAreaM2(state.lot)) : 'Tự tính';
   renderLotStyles();
+}
+
+// ---------- Đường khách tự vẽ (hẻm, đường dân sinh app chưa quét được) ----------
+// Mỗi lần chạm là một điểm ghim; chỗ cua chạm dày hơn. Vẽ xong đường đi vào danh sách trục đường như đường app quét:
+// có cảnh riêng, chữ tên 3D, câu trong kịch bản (mẫu + AI). Gắn với từng căn (xoá khi làm căn mới).
+const ROAD_MAX_PTS = 80;
+function myRoadObj(m) {
+  const H = state.house;
+  let near = 99, len = 0;
+  if (H && m.pts.length > 1) {
+    const F = localFrame(H);
+    for (let i = 1; i < m.pts.length; i++) {
+      const A = F.xy(m.pts[i - 1]), B = F.xy(m.pts[i]);
+      const dx = B[0] - A[0], dy = B[1] - A[1], L2 = dx * dx + dy * dy || 1e-12;
+      len += Math.sqrt(L2);
+      const k = Math.max(0, Math.min(1, -(A[0] * dx + A[1] * dy) / L2));
+      near = Math.min(near, Math.hypot(A[0] + dx * k, A[1] + dy * k));
+    }
+  }
+  return { id: m.id, label: m.label, alt: '', ref: '', name: m.label, level: 1, ways: [m.pts], nearKm: Math.round(near * 1000) / 1000, lenKm: len, manual: true };
+}
+function updateRoadMsg() {
+  const el = $('roadMsg');
+  if (!el) return;
+  const n = roadDraft ? roadDraft.pts.length : 0;
+  let len = 0;
+  if (n > 1) for (let i = 1; i < n; i++) len += haversineKm({ lat: roadDraft.pts[i - 1][0], lng: roadDraft.pts[i - 1][1] }, { lat: roadDraft.pts[i][0], lng: roadDraft.pts[i][1] });
+  el.textContent = n === 0 ? 'Chạm vào đầu con đường, rồi chạm dọc theo đường tới cuối. Chỗ cua chạm dày hơn.'
+    : n === 1 ? 'Chạm tiếp điểm thứ 2 dọc theo đường.'
+    : `${n} điểm · dài khoảng ${formatKm(len)}. Chạm tiếp để vẽ thêm, xong thì đặt tên đường.`;
+}
+function startRoadDraw(id = null) {
+  if (!state.house) { toast('Dán toạ độ căn nhà trước.'); return; }
+  const m = id && (state.myRoads || []).find(x => x.id === id);
+  toggleEdit(true, 'road');
+  roadDraft = m ? { id: m.id, label: m.label, pts: m.pts.map(p => [...p]) } : { id: null, label: '', pts: [] };
+  $('roadName').value = roadDraft.label;
+  if (m) { // mở đúng chỗ con đường đang sửa
+    const mid = m.pts[Math.floor(m.pts.length / 2)];
+    editCenter = { lat: mid[0], lng: mid[1] };
+  }
+  updateRoadMsg();
+  dirty = true;
+  document.querySelector('.stage')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function finishRoadDraw() {
+  if (!roadDraft) { toggleEdit(false); return; }
+  if (roadDraft.pts.length < 2) { toast('Chạm ít nhất 2 điểm dọc theo con đường.'); return; }
+  const label = $('roadName').value.trim().replace(/\s+/g, ' ');
+  if (!label) { toast('Đặt tên cho con đường (vd. Hẻm 12 Đoàn Nguyễn Tuấn).'); $('roadName').focus(); return; }
+  const list = [...(state.myRoads || [])];
+  const id = roadDraft.id || 'my' + Date.now().toString(36);
+  const item = { id, label: label.slice(0, 40), pts: roadDraft.pts };
+  const i = list.findIndex(x => x.id === id);
+  if (i >= 0) list[i] = item; else list.push(item);
+  state.myRoads = list;
+  if (!state.selectedRoads.includes(id)) state.selectedRoads = [...state.selectedRoads, id];
+  roadDraft = null;
+  toggleEdit(false);
+  renderLists();
+  scheduleRebuild();
+  save();
+  toast(`Đã thêm đường "${item.label}" vào video và kịch bản.`, 3000);
+}
+function removeMyRoad(id) {
+  state.myRoads = (state.myRoads || []).filter(x => x.id !== id);
+  state.selectedRoads = state.selectedRoads.filter(x => x !== id);
+  state.roadStars = (state.roadStars || []).filter(x => x !== id);
+  renderLists();
+  scheduleRebuild();
+  save();
 }
 
 // ---------- Toạ độ sổ đỏ (VN-2000) → lô đất ----------
@@ -976,15 +1061,16 @@ const HOUSE_INFO = [['price', 'priceInput'], ['area', 'areaInput'], ['thoCu', 't
 // Nhớ thông tin căn vừa bị để trống: khách lỡ sửa toạ độ rồi dán lại đúng căn cũ (lệch < 30 m) thì tự điền lại
 const houseMemo = [];
 function resetHouseInfo(prev) {
-  const has = HOUSE_INFO.some(([k]) => state[k]) || state.lot?.length || state.stars?.length;
+  const has = HOUSE_INFO.some(([k]) => state[k]) || state.lot?.length || state.stars?.length || state.myRoads?.length;
   if (has && prev) {
-    houseMemo.unshift({ house: prev, lot: state.lot || [], lotSrc: state.lotSrc || '', stars: state.stars || [], areaFor: state.areaFor || '', info: Object.fromEntries(HOUSE_INFO.map(([k]) => [k, state[k] || ''])) });
+    houseMemo.unshift({ house: prev, lot: state.lot || [], lotSrc: state.lotSrc || '', stars: state.stars || [], myRoads: state.myRoads || [], areaFor: state.areaFor || '', info: Object.fromEntries(HOUSE_INFO.map(([k]) => [k, state[k] || ''])) });
     houseMemo.length = Math.min(houseMemo.length, 5);
   }
   for (const [k, id] of HOUSE_INFO) { state[k] = ''; const el = $(id); if (el) el.value = ''; }
   state.lot = [];
   state.lotSrc = '';
   state.stars = [];
+  state.myRoads = [];
   state.pois = state.pois.filter(p => !p.manual);
   state.selected = state.selected.filter(id => state.pois.some(p => p.id === id));
   updateAreaPlaceholders();
@@ -996,6 +1082,8 @@ function restoreHouseInfo(h) {
   const [m] = houseMemo.splice(i, 1);
   for (const [k, id] of HOUSE_INFO) { state[k] = m.info[k] || ''; const el = $(id); if (el) el.value = state[k]; }
   state.lot = m.lot; state.lotSrc = m.lotSrc || ''; state.stars = m.stars; state.areaFor = m.areaFor;
+  state.myRoads = m.myRoads || [];
+  if (state.myRoads.length) state.selectedRoads = [...new Set([...state.selectedRoads, ...state.myRoads.map(x => x.id)])];
   updateAreaPlaceholders();
   toast('Đã điền lại thông tin của căn này.', 2500);
   return true;
@@ -1344,7 +1432,7 @@ async function scan() {
     state.adminArea = res.area || null;
     updateAreaPlaceholders();
     state.selected = [...autoPick(res.pois), ...manual.map(p => p.id)].slice(0, MAX_POIS);
-    state.selectedRoads = autoPickRoads(state.roads);
+    state.selectedRoads = [...autoPickRoads(state.roads), ...(state.myRoads || []).map(m => m.id)];
     // 24/10: mặc định gắn ★ điểm nhấn cho 2 trục đường lớn gần nhà nhất để video đầu tiên đã đẹp (khách bỏ ★ được)
     const keepStars = (state.roadStars || []).filter(id => state.selectedRoads.includes(id));
     state.roadStars = !newHouse && keepStars.length ? keepStars : autoHiRoads();
@@ -1473,7 +1561,21 @@ function renderLists() {
         <span class="km">${formatKm(r.nearKm, true)}</span>
         <button type="button" class="road-star" data-road-star="${esc(r.id)}" aria-pressed="${(state.roadStars || []).includes(r.id)}" title="Chọn làm tuyến điểm nhấn: vẽ nổi như ranh TP.HCM" aria-label="Tuyến điểm nhấn">★</button>
       </label>`).join('')
-    : '<p class="hint">Không có quốc lộ, cao tốc hay đường chính trong bán kính này.</p>';
+    : (state.myRoads || []).length ? '' : '<p class="hint">Không có quốc lộ, cao tốc hay đường chính trong bán kính này. Có thể tự vẽ đường bên dưới.</p>';
+  // Đường khách tự vẽ: chọn/bỏ, ★ điểm nhấn, sửa lại nét vẽ, xoá
+  rl.innerHTML += (state.myRoads || []).map(m => {
+    const r = myRoadObj(m);
+    return `
+      <label class="road-chip mine${(state.roadStars || []).includes(m.id) ? ' hi' : ''}">
+        <input type="checkbox" autocomplete="off" data-road="${esc(m.id)}" ${state.selectedRoads.includes(m.id) ? 'checked' : ''}>
+        <span class="dot" style="background:${ROAD_DOT[0]}"></span>
+        <span>${esc(m.label)}<small class="alt"> · tự vẽ</small></span>
+        <span class="km">${formatKm(r.nearKm, true)}</span>
+        <button type="button" class="road-edit" data-myroad-edit="${esc(m.id)}" title="Sửa nét vẽ, đổi tên" aria-label="Sửa đường">✏️</button>
+        <button type="button" class="road-del" data-myroad-del="${esc(m.id)}" title="Xoá đường này" aria-label="Xoá đường">×</button>
+        <button type="button" class="road-star" data-road-star="${esc(m.id)}" aria-pressed="${(state.roadStars || []).includes(m.id)}" title="Chọn làm tuyến điểm nhấn" aria-label="Tuyến điểm nhấn">★</button>
+      </label>`;
+  }).join('');
 
   const groups = {};
   for (const p of state.pois) (groups[p.cat] ||= []).push(p);
@@ -1906,7 +2008,7 @@ async function aiRewrite() {
     const poiById = Object.fromEntries(selectedPois().map(p => [p.id, p]));
     const segments = Object.fromEntries(segs.map(sg => {
       const [kind, id] = sg.key.split(':');
-      if (kind === 'road' && roadById[id]) { const r = roadById[id]; return [sg.key, { canh: 'Trục đường lớn', ten: r.label, ten_khac: r.alt || '', cach: kmSpeak(r.nearKm) }]; }
+      if (kind === 'road' && roadById[id]) { const r = roadById[id]; return [sg.key, { canh: r.manual ? 'Đường nhỏ quanh nhà (môi giới tự vẽ trên bản đồ)' : 'Trục đường lớn', ten: r.label, ten_khac: r.alt || '', cach: kmSpeak(r.nearKm) }]; }
       if (kind === 'poi' && poiById[id]) {
         const p = poiById[id], km = p.route ? p.route.km : p.km;
         return [sg.key, { canh: 'Tiện ích', ten: p.name, nhom: CATEGORIES[p.cat]?.label || '', cach: kmSpeak(km), phut_xe_may: Math.max(1, Math.round(p.route?.min || km * 60 / 22)) }];
@@ -2512,7 +2614,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal', 'highlights', 'buyer',
-  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'lotStyle', 'lotColor', 'lotSrc', 'lotDims', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'myRoads', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'lotStyle', 'lotColor', 'lotSrc', 'lotDims', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -3400,6 +3502,15 @@ function init() {
   });
   // ★ Tuyến điểm nhấn: khách tự ghim tuyến quan trọng, video vẽ nổi kiểu ranh TP.HCM (tự chọn luôn tuyến đó)
   $('roadList').addEventListener('click', e => {
+    const ed = e.target.closest('[data-myroad-edit]');
+    if (ed) { e.preventDefault(); startRoadDraw(ed.dataset.myroadEdit); return; }
+    const dl = e.target.closest('[data-myroad-del]');
+    if (dl) {
+      e.preventDefault();
+      const m = (state.myRoads || []).find(x => x.id === dl.dataset.myroadDel);
+      if (m && confirm(`Xoá đường "${m.label}" khỏi video?`)) removeMyRoad(m.id);
+      return;
+    }
     const b = e.target.closest('.road-star');
     if (!b) return;
     e.preventDefault();
@@ -3693,8 +3804,41 @@ function init() {
   });
   $('editPinBtn').addEventListener('click', () => toggleEdit(undefined, 'pin'));
   $('lotBtn').addEventListener('click', () => toggleEdit(undefined, 'lot'));
-  $('lotZoomIn').addEventListener('click', () => { lotZoom = Math.min(20.5, lotZoom + 0.5); dirty = true; });
-  $('lotZoomOut').addEventListener('click', () => { lotZoom = Math.max(16.5, lotZoom - 0.5); dirty = true; });
+  $('lotZoomIn').addEventListener('click', () => { lotZoom = Math.min(LOT_ZMAX, lotZoom + 0.5); dirty = true; });
+  $('lotZoomOut').addEventListener('click', () => { lotZoom = Math.max(LOT_ZMIN, lotZoom - 0.5); dirty = true; });
+  $('lotHome').addEventListener('click', () => { editCenter = { ...state.house }; dirty = true; });
+  // Tự vẽ đường
+  $('myRoadAdd').addEventListener('click', () => startRoadDraw());
+  $('roadZoomIn').addEventListener('click', () => { roadZoom = Math.min(ROAD_ZMAX, roadZoom + 0.5); dirty = true; });
+  $('roadZoomOut').addEventListener('click', () => { roadZoom = Math.max(ROAD_ZMIN, roadZoom - 0.5); dirty = true; });
+  $('roadHome').addEventListener('click', () => { editCenter = { ...state.house }; dirty = true; });
+  $('roadUndo').addEventListener('click', () => { if (roadDraft) { roadDraft.pts.pop(); updateRoadMsg(); dirty = true; } });
+  $('roadClear').addEventListener('click', () => { if (roadDraft) { roadDraft.pts = []; updateRoadMsg(); dirty = true; } });
+  $('roadDone').addEventListener('click', finishRoadDraw);
+  $('roadCancel').addEventListener('click', () => { roadDraft = null; toggleEdit(false); });
+  // Kéo để di chuyển khung khi vẽ lô/đường (chạm nhẹ vẫn là chấm điểm)
+  let pan = null, panMoved = false;
+  canvas.addEventListener('pointerdown', e => {
+    if (!editing || editMode === 'pin' || !editCenter) return;
+    pan = { x: e.clientX, y: e.clientY, c: { ...editCenter }, id: e.pointerId };
+    panMoved = false;
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!pan || e.pointerId !== pan.id) return;
+    const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+    if (!panMoved && Math.hypot(dx, dy) < 8) return;
+    if (!panMoved) { panMoved = true; try { canvas.setPointerCapture(e.pointerId); } catch { /* bỏ qua */ } }
+    const rect = canvas.getBoundingClientRect();
+    const k = FORMATS[state.fmt].LW / rect.width;
+    const z = editMode === 'lot' ? lotZoom : roadZoom;
+    // Kéo bản đồ theo ngón tay: tâm mới = điểm nằm ngược hướng kéo
+    const ll = editTapToLatLng(pan.c, state.fmt, 0.5 - dx * k / FORMATS[state.fmt].LW, 0.5 - dy * k / FORMATS[state.fmt].LH, z);
+    editCenter = ll;
+    dirty = true;
+  });
+  const endPan = e => { if (pan && e.pointerId === pan.id) pan = null; };
+  canvas.addEventListener('pointerup', endPan);
+  canvas.addEventListener('pointercancel', endPan);
   $('lotText').value = state.lotText || '';
   $('lotArea').value = state.lotArea || '';
   $('lotText').addEventListener('input', e => { state.lotText = e.target.value; save(); });
@@ -3710,12 +3854,21 @@ function init() {
   $('bigPlay').addEventListener('click', e => { e.stopPropagation(); play(); });
   canvas.addEventListener('click', e => {
     if (!editing) { playing ? pause() : play(); return; }
+    if (panMoved) { panMoved = false; return; } // vừa kéo bản đồ, không chấm điểm
     const rect = canvas.getBoundingClientRect();
     if (editMode === 'lot') {
       if (state.lot.length >= 12) { toast('Tối đa 12 góc.'); return; }
       state.lotSrc = 'tay';
-      state.lot.push(editTapToLatLng(state.house, state.fmt, (e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height, lotZoom));
+      state.lot.push(editTapToLatLng(editCenter || state.house, state.fmt, (e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height, lotZoom));
       dirty = true; updateLotMsg(); save();
+      return;
+    }
+    if (editMode === 'road') {
+      if (!roadDraft) return;
+      if (roadDraft.pts.length >= ROAD_MAX_PTS) { toast(`Tối đa ${ROAD_MAX_PTS} điểm cho một con đường.`); return; }
+      const ll = editTapToLatLng(editCenter || state.house, state.fmt, (e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height, roadZoom);
+      roadDraft.pts.push([Math.round(ll.lat * 1e6) / 1e6, Math.round(ll.lng * 1e6) / 1e6]);
+      dirty = true; updateRoadMsg();
       return;
     }
     const ll = editTapToLatLng(state.house, state.fmt, (e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height);

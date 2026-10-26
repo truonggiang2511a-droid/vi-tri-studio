@@ -90,6 +90,7 @@
           <button id="lotZoomOut" class="chip-btn" type="button" aria-label="Thu nhỏ">−</button>
           <button id="lotZoomIn" class="chip-btn" type="button" aria-label="Phóng to">+</button>
         </span>
+        <button id="lotHome" class="link-btn" type="button">📍 Về căn nhà</button>
         <button id="lotUndo" class="link-btn" type="button">Bỏ góc cuối</button>
         <button id="lotClear" class="link-btn" type="button">Xoá hết</button>
         <button id="vnOpen" class="link-btn vn-open" type="button" hidden>📄 Nhập toạ độ sổ đỏ</button>
@@ -98,6 +99,21 @@
           <label class="field"><span class="field-label">Diện tích hiển thị</span><input id="lotArea" class="input" type="text" maxlength="16" placeholder="Tự tính" autocomplete="off"></label>
         </div>
         <button id="lotDone" class="btn btn-primary" type="button">Xong</button>
+      </div>
+      <div id="roadBar" class="lot-bar road-bar" hidden>
+        <span id="roadMsg" class="hint"></span>
+        <span class="lot-zoom" role="group" aria-label="Phóng to thu nhỏ">
+          <button id="roadZoomOut" class="chip-btn" type="button" aria-label="Thu nhỏ">−</button>
+          <button id="roadZoomIn" class="chip-btn" type="button" aria-label="Phóng to">+</button>
+        </span>
+        <button id="roadHome" class="link-btn" type="button">📍 Về căn nhà</button>
+        <button id="roadUndo" class="link-btn" type="button">Bỏ điểm cuối</button>
+        <button id="roadClear" class="link-btn" type="button">Xoá hết</button>
+        <div class="lot-fields">
+          <label class="field"><span class="field-label">Tên đường</span><input id="roadName" class="input" type="text" maxlength="40" placeholder="VD: Hẻm 12 Đoàn Nguyễn Tuấn" autocomplete="off"></label>
+        </div>
+        <button id="roadCancel" class="link-btn" type="button">Huỷ</button>
+        <button id="roadDone" class="btn btn-primary" type="button">Xong, thêm vào video</button>
       </div>
       <div id="lookPick" class="look-pick" hidden>
         <div class="look-head"><strong>Chọn kiểu video</strong><span class="hint small">Bấm một kiểu để xem ngay — đổi lại lúc nào cũng được</span>
@@ -178,6 +194,7 @@
         <p class="hint road-hi-hint">Tuyến có ★ được vẽ nổi bật: một line phát sáng nổi lên khỏi mặt đường, có xung sáng chạy dọc tuyến (khác kiểu ranh tỉnh để dễ phân biệt), cảnh dài hơn. Các tuyến khác vẽ bình thường.</p>
         <div class="field hi-theme"><span class="field-label">Màu line tuyến điểm nhấn ★</span><div class="swatches" id="hiThemeRow" role="radiogroup" aria-label="Màu line tuyến điểm nhấn"></div></div>
         <div id="roadList" class="road-list"></div>
+        <button id="myRoadAdd" class="btn btn-quiet my-road-add" type="button">✏️ Tự vẽ đường app chưa quét được (hẻm, đường dân sinh)</button>
         <div class="sub-head" id="regionHead" hidden>Kết nối vùng <span class="sub-note">điểm mốc lớn + hạ tầng đang thi công</span></div>
         <div id="regionBox" class="region-box" hidden></div>
         <div class="sub-head">Tiện ích <span class="sub-note">tối đa 10 điểm</span></div>

@@ -125,8 +125,10 @@ export const LOT_STYLES = {
 export const LOT_COLORS = { auto: { label: 'Màu gợi ý' }, ...HI_THEMES };
 let HI_ROAD = { ...HI_THEMES.dien, w: 5.4 };
 function useHiTheme(key) { HI_ROAD = { ...(HI_THEMES[key] || HI_THEMES.dien), w: 5.4 }; }
+// Đường khách tự vẽ: vàng đậm, dày như đường cấp 2 để nổi trên ảnh vệ tinh khi máy quay cận (khách vẽ là vì muốn khoe đường này)
+const MANUAL_ROAD = { core: '#FFD54A', glow: '#FFA200', w: 3.8 };
 function roadStyleOf(scene, r) {
-  return r && r.hi ? HI_ROAD : roadStyle(scene, r ? r.level : 1);
+  return r && r.hi ? HI_ROAD : r && r.manual ? MANUAL_ROAD : roadStyle(scene, r ? r.level : 1);
 }
 function routeStyle(scene) {
   const th = LINE_THEMES[scene.routeTheme] || LINE_THEMES.vang;
@@ -600,6 +602,14 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   // 1 khung camRoads nên máy gần như đứng yên ~10 s). Khung = nhà + đoạn trục gần nhà, cận hơn, góc nghiêng xen kẽ.
   roads.forEach((r, i) => {
     if (r.cam) return;
+    // Đường khách tự vẽ (hẻm, đường dân sinh, thường ngắn vài trăm mét): khung ôm nhà + CẢ con đường, cho phép cận tới z17,4
+    if (r.manual) {
+      const pts = [H];
+      for (let j = 0; j < r.samples.length; j += Math.max(1, Math.floor(r.samples.length / 16))) pts.push(r.samples[j]);
+      if (r.samples.length) pts.push(r.samples[r.samples.length - 1]);
+      r.cam = fitCam(pts, LW, LH, roadPad, i % 2 ? 48 : 40, 12, 17.4);
+      return;
+    }
     const near = r.samples.filter(q => q.dist <= r.nearKm + 1.1);
     const pts = [H, r.P];
     for (let j = 0; j < near.length; j += Math.max(1, Math.floor(near.length / 12))) pts.push(near[j]);
@@ -859,7 +869,8 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
 
 function makeHook(scene, roads, pois) {
   const info = infoData(scene);
-  const byNear = roads.slice().sort((a, b) => a.nearKm - b.nearKm);
+  // Đường khách tự vẽ không dùng cho thẻ mở đầu (tránh khẳng định "Mặt tiền …" từ nét vẽ tay)
+  const byNear = roads.filter(r => !r.manual).sort((a, b) => a.nearKm - b.nearKm);
   const major = byNear.find(r => r.level >= 2 && r.nearKm <= 3) || byNear[0];
   let fact = '';
   if (major && major.nearKm <= 5) fact = major.nearKm < 0.12 ? `Mặt tiền ${major.label}` : `Cách ${major.label} ${formatKm(major.nearKm)}`;
@@ -4181,9 +4192,17 @@ export function lotAreaM2(pts) {
 }
 export const formatArea = m2 => (m2 >= 10000 ? (m2 / 10000).toFixed(2).replace('.', ',') + ' ha' : Math.round(m2).toLocaleString('vi-VN') + ' m²');
 
-export function renderEdit(ctx, house, fmtKey, { cache, scale = 1, lot = null, mode = 'pin', zoom: zIn = null }, zoom = zIn ?? (mode === 'lot' ? 18.5 : 17)) {
+// center: tâm khung đang xem (khách kéo để di chuyển khi vẽ lô/đường), mặc định là căn nhà.
+// roads: đường khách tự vẽ [{ pts: [[lat,lng]…], label, active }] — active = đường đang vẽ (có chấm từng điểm ghim).
+export function renderEdit(ctx, house, fmtKey, { cache, scale = 1, lot = null, mode = 'pin', zoom: zIn = null, center = null, roads = null }, zoom = zIn ?? (mode === 'lot' ? 18.5 : 17)) {
   const { LW, LH } = FORMATS[fmtKey];
-  const cam = { lat: house.lat, lng: house.lng, zoom };
+  const ctr = center || house;
+  const cam = { lat: ctr.lat, lng: ctr.lng, zoom };
+  // Khi sửa ghim/vẽ lô/vẽ đường luôn dùng ẢNH VỆ TINH (thấy được hẻm, mái nhà mà bản đồ đường phố chưa có),
+  // bất kể nền khách chọn cho video. render() tự đặt lại nền của video ở khung kế tiếp.
+  useBase('vetinh');
+  const c0 = project(ctr.lat, ctr.lng, zoom);
+  const toXY = p => { const q = project(Array.isArray(p) ? p[0] : p.lat, Array.isArray(p) ? p[1] : p.lng, zoom); return [LW / 2 + q.x - c0.x, LH / 2 + q.y - c0.y]; };
   ctx.setTransform(scale, 0, 0, scale, LW / 2 * scale, LH / 2 * scale);
   drawTiles(ctx, cache, cam, { x0: -LW / 2, x1: LW / 2, y0: -LH / 2, y1: LH / 2 }, scale, true);
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
@@ -4191,8 +4210,7 @@ export function renderEdit(ctx, house, fmtKey, { cache, scale = 1, lot = null, m
   ctx.fillRect(0, 0, LW, LH);
   // Ranh lô đất đang vẽ
   if (lot && lot.length) {
-    const c = project(house.lat, house.lng, zoom);
-    const xy = lot.map(p => { const q = project(p.lat, p.lng, zoom); return [LW / 2 + q.x - c.x, LH / 2 + q.y - c.y]; });
+    const xy = lot.map(toXY);
     ctx.save();
     ctx.beginPath();
     xy.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
@@ -4206,11 +4224,39 @@ export function renderEdit(ctx, house, fmtKey, { cache, scale = 1, lot = null, m
     }
     ctx.restore();
   }
-  // Ghim căn nhà luôn hiện (cả khi vẽ lô) để khách biết đang ở đúng chỗ
-  drawHousePin(ctx, LW / 2, LH / 2, 1, (typeof performance !== 'undefined' ? performance.now() : 0) / 1000, mode === 'lot' ? 0.8 : 1);
+  // Đường khách tự vẽ (hẻm, đường dân sinh): đường đang vẽ màu cam có chấm từng điểm ghim, đường đã vẽ màu xanh nhạt
+  if (roads && roads.length) {
+    ctx.save();
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const r of roads) {
+      if (!r.pts || !r.pts.length) continue;
+      const xy = r.pts.map(toXY);
+      const col = r.active ? '#FF9F1C' : '#7FDBFF';
+      ctx.beginPath();
+      xy.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = r.active ? 9 : 7; ctx.stroke();
+      ctx.strokeStyle = col; ctx.lineWidth = r.active ? 5 : 4; ctx.stroke();
+      if (r.active) {
+        xy.forEach(([x, y], i) => {
+          ctx.beginPath(); ctx.arc(x, y, i === xy.length - 1 ? 7 : 5, 0, Math.PI * 2);
+          ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 2.5; ctx.strokeStyle = i === xy.length - 1 ? '#E8590C' : col; ctx.stroke();
+        });
+      }
+      if (r.label) {
+        const [x, y] = xy[Math.floor((xy.length - 1) / 2)];
+        chip(ctx, x, y - 18, r.label, 1, col);
+      }
+    }
+    ctx.restore();
+  }
+  // Ghim căn nhà luôn hiện (cả khi vẽ lô/đường) để khách biết đang ở đúng chỗ
+  const hp = toXY(house);
+  drawHousePin(ctx, hp[0], hp[1], 1, (typeof performance !== 'undefined' ? performance.now() : 0) / 1000, mode === 'pin' ? 1 : 0.8);
   ctx.save();
   ctx.font = `700 14px ${FONT}`;
-  const txt = mode === 'lot' ? 'Chạm lần lượt từng góc lô đất' : 'Chạm vào đúng căn nhà để dời ghim';
+  const txt = mode === 'lot' ? 'Chạm từng góc lô đất · kéo để di chuyển'
+    : mode === 'road' ? 'Chạm dọc theo đường · chỗ cua chạm dày hơn · kéo để di chuyển'
+    : 'Chạm vào đúng căn nhà để dời ghim';
   const w = ctx.measureText(txt).width + 28;
   roundRect(ctx, (LW - w) / 2, 18, w, 34, 17);
   ctx.fillStyle = 'rgba(14,18,24,0.88)'; ctx.fill();
