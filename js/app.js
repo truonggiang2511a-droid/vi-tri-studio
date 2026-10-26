@@ -3666,22 +3666,40 @@ function init() {
     updateCount();
     scheduleRebuild();
   });
+  // Ô xác nhận (tên + nhóm + Thêm vào video) chỉ hiện khi đã có 1 điểm cụ thể (chọn kết quả tìm, dán link hoặc toạ độ)
+  const showAddPick = (name, lat, lng, cat) => {
+    $('addName').value = name || '';
+    $('addCoord').value = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    $('addCat').value = cat || guessCategory({ name: name || '' });
+    $('addCat').dataset.touched = '';
+    $('addPick').hidden = false;
+    (name ? $('addBtn') : $('addName')).focus();
+  };
   const runAddSearch = async () => {
     const q = $('addSearch').value.trim();
     const box = $('addResults');
     const msg = $('addMsg');
     if (!q) { $('addSearch').focus(); return; }
     msg.textContent = ''; msg.className = 'hint';
+    $('addPick').hidden = true;
+    // Dán thẳng toạ độ "10.75, 106.62"
+    if (/^\s*-?\d{1,2}\.\d+\s*[,;\s]\s*-?\d{2,3}\.\d+\s*$/.test(q)) {
+      const c = parseCoords(q);
+      if (c.error) { msg.textContent = c.error; msg.className = 'hint err'; return; }
+      box.innerHTML = '';
+      showAddPick('', c.lat, c.lng);
+      msg.textContent = `Toạ độ cách căn nhà ${formatKm(haversineKm(state.house, c), true)}. Đặt tên rồi bấm Thêm vào video.`;
+      msg.className = 'hint ok';
+      return;
+    }
     if (SHORT_LINK.test(q) || /google\.[a-z.]+\/maps|@-?\d+\.\d+,/.test(q)) {
       box.innerHTML = '<p class="hint">Đang đọc link…</p>';
       try {
         const r = (await resolveMapsLink(q)) || (() => { const c = parseCoords(q); if (c.error) throw new Error(c.error); const nm = q.match(/\/maps\/place\/([^/@?]+)/); return { ...c, name: nm ? decodeURIComponent(nm[1].replace(/\+/g, ' ')) : '' }; })();
         box.innerHTML = '';
-        $('addCoord').value = `${r.lat.toFixed(6)}, ${r.lng.toFixed(6)}`;
-        if (r.name) { $('addName').value = r.name; $('addCat').value = guessCategory({ name: r.name }); }
-        msg.textContent = r.name ? 'Đã điền tên và toạ độ từ link. Kiểm tra nhóm rồi bấm Thêm vào video.' : 'Đã điền toạ độ từ link. Nhập tên điểm rồi bấm Thêm vào video.';
+        showAddPick(r.name || '', r.lat, r.lng);
+        msg.textContent = r.name ? 'Đã đọc link. Kiểm tra nhóm rồi bấm Thêm vào video.' : 'Đã đọc toạ độ từ link. Đặt tên rồi bấm Thêm vào video.';
         msg.className = 'hint ok';
-        (r.name ? $('addBtn') : $('addName')).focus();
       } catch (e) { box.innerHTML = ''; msg.textContent = e.message; msg.className = 'hint err'; }
       return;
     }
@@ -3692,23 +3710,23 @@ function init() {
       box.innerHTML = list.length ? list.map((x, i) => `<button type="button" class="add-hit" data-i="${i}">
           <span class="add-hit-name">${esc(x.name)}</span><span class="add-hit-km">${formatKm(x.km, true)}</span>
           <span class="add-hit-where">${esc(x.where || '')}</span></button>`).join('')
-        : '<p class="hint">Không tìm thấy trên bản đồ mở. Mở Google Maps, bấm Chia sẻ địa điểm đó rồi dán link vào ô trên.</p>';
+        : '<p class="hint">Không tìm thấy. Thử "📍 Chạm trên bản đồ", hoặc mở Google Maps → Chia sẻ địa điểm → dán link vào ô trên.</p>';
     } catch { box.innerHTML = '<p class="hint err">Tìm kiếm đang lỗi, thử lại sau hoặc dán link Google Maps.</p>'; }
   };
   $('addSearchBtn').addEventListener('click', runAddSearch);
+  // Khách gõ tên (vd. sau khi dán toạ độ) thì đoán lại nhóm, trừ khi khách đã tự chọn nhóm
+  $('addName').addEventListener('input', e => { if (!$('addCat').dataset.touched) $('addCat').value = guessCategory({ name: e.target.value }); });
+  $('addCat').addEventListener('change', () => { $('addCat').dataset.touched = '1'; });
   $('addSearch').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); runAddSearch(); } });
   $('addResults').addEventListener('click', e => {
     const b = e.target.closest('button[data-i]');
     if (!b) return;
     const x = window.__addResults?.[+b.dataset.i];
     if (!x) return;
-    $('addName').value = x.name;
-    $('addCoord').value = `${x.lat.toFixed(6)}, ${x.lng.toFixed(6)}`;
-    $('addCat').value = guessCategory(x);
     $('addResults').innerHTML = '';
+    showAddPick(x.name, x.lat, x.lng, guessCategory(x));
     $('addMsg').textContent = 'Đã chọn. Kiểm tra nhóm rồi bấm Thêm vào video.';
     $('addMsg').className = 'hint ok';
-    $('addBtn').focus();
   });
   $('addBtn').addEventListener('click', async () => {
     const msg = $('addMsg');
@@ -3728,8 +3746,8 @@ function init() {
     const p = { id: 'm' + Date.now(), name, cat: $('addCat').value, kind: 'manual', lat: r.lat, lng: r.lng, km, manual: true };
     state.pois.push(p);
     if (state.selected.length < MAX_POIS) state.selected.push(p.id);
-    $('addName').value = ''; $('addCoord').value = '';
-    msg.textContent = `Đã thêm, cách căn nhà ${formatKm(km, true)}.`;
+    $('addName').value = ''; $('addCoord').value = ''; $('addSearch').value = ''; $('addPick').hidden = true;
+    msg.textContent = `Đã thêm "${name}", cách căn nhà ${formatKm(km, true)}.`;
     msg.className = 'hint ok';
     renderLists();
     queueRoutes();

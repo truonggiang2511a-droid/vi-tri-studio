@@ -844,3 +844,12 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .pick-row.on { opacity: .65; }
 .pick-own { grid-template-areas: "c n n" "c s s"; cursor: default; }
 .pick-own #poiOwnName { grid-area: n; min-width: 0; }
+
+/* Ô "Thiếu tiện ích?" gộp 2 cách thêm: chạm bản đồ / tìm tên hoặc dán link */
+.addpoi-box { display: grid; gap: 8px; margin-top: 10px; padding: 12px 14px; border: 1px dashed var(--line); border-radius: var(--r); }
+.addpoi-box .my-road-add { margin-top: 0; }
+.addpoi-head { font-weight: 600; font-size: 14px; }
+.add-pick { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 150px); gap: 8px; }
+.add-pick[hidden] { display: none; }
+.add-pick #addBtn { grid-column: 1 / -1; }
+.addpoi-box #addMsg:empty { display: none; }

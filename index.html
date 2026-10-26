@@ -210,23 +210,19 @@
         <div id="regionBox" class="region-box" hidden></div>
         <div class="sub-head">Tiện ích <span class="sub-note">tối đa 10 điểm</span></div>
         <div id="poiList" class="poi-list"></div>
-        <button id="poiTapAdd" class="btn btn-quiet my-road-add" type="button">📍 Chạm trên bản đồ để thêm tiện ích app chưa quét được</button>
-        <details class="more addpoi">
-          <summary>Thêm điểm chưa có trong danh sách</summary>
-          <div class="more-body">
-            <label class="field"><span class="field-label">Tìm theo tên hoặc dán link Google Maps</span>
-              <div class="input-row"><input autocomplete="off" id="addSearch" class="input" type="text" placeholder="VD: KCN Lê Minh Xuân" spellcheck="false"><button id="addSearchBtn" class="btn btn-quiet" type="button">Tìm</button></div>
-            </label>
-            <div id="addResults" class="add-results"></div>
-            <div class="grid2">
-              <label class="field"><span class="field-label">Tên</span><input autocomplete="off" id="addName" class="input" type="text" maxlength="60" placeholder="Chợ Bình Chánh"></label>
-              <label class="field"><span class="field-label">Nhóm</span><select id="addCat" class="input" autocomplete="off"></select></label>
-            </div>
-            <label class="field"><span class="field-label">Toạ độ điểm</span><input autocomplete="off" id="addCoord" class="input mono" type="text" placeholder="10.6800, 106.5800"></label>
-            <button id="addBtn" class="btn btn-quiet" type="button">Thêm vào video</button>
-            <p id="addMsg" class="hint"></p>
+        <div class="addpoi-box">
+          <div class="addpoi-head">Thiếu tiện ích? <span class="sub-note">thêm bằng 1 trong 2 cách</span></div>
+          <button id="poiTapAdd" class="btn btn-quiet my-road-add" type="button">📍 Chạm trên bản đồ — app gợi ý tên quanh chỗ chạm</button>
+          <div class="input-row"><input autocomplete="off" id="addSearch" class="input" type="text" placeholder="🔎 Hoặc gõ tên, dán link Maps" spellcheck="false"><button id="addSearchBtn" class="btn btn-quiet" type="button">Tìm</button></div>
+          <div id="addResults" class="add-results"></div>
+          <div id="addPick" class="add-pick" hidden>
+            <input autocomplete="off" id="addName" class="input" type="text" maxlength="60" placeholder="Tên tiện ích" aria-label="Tên tiện ích">
+            <select id="addCat" class="input" autocomplete="off" aria-label="Nhóm tiện ích"></select>
+            <input id="addCoord" type="hidden">
+            <button id="addBtn" class="btn btn-primary" type="button">Thêm vào video</button>
           </div>
-        </details>
+          <p id="addMsg" class="hint"></p>
+        </div>
         <p class="hint small">Khoảng cách theo đường đi thật; dấu <span class="mono">~</span> là đường chim bay. Dữ liệu OpenStreetMap, Overture — soát lại trước khi đăng.</p>
       </div>
     </article>
