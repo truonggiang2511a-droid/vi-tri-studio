@@ -94,6 +94,7 @@
         <button id="lotUndo" class="link-btn" type="button">Bỏ góc cuối</button>
         <button id="lotClear" class="link-btn" type="button">Xoá hết</button>
         <button id="vnOpen" class="link-btn vn-open" type="button" hidden>📄 Nhập toạ độ sổ đỏ</button>
+        <button id="lotPlanBtn" class="link-btn" type="button">🗺️ Mặt bằng phân lô</button>
         <div class="lot-fields">
           <label class="field"><span class="field-label">Chữ trên lô đất</span><input id="lotText" class="input" type="text" maxlength="24" placeholder="LÔ ĐẤT" autocomplete="off"></label>
           <label class="field"><span class="field-label">Diện tích hiển thị</span><input id="lotArea" class="input" type="text" maxlength="16" placeholder="Tự tính" autocomplete="off"></label>
@@ -125,6 +126,24 @@
         <div id="poiPickList" class="poi-pick"></div>
         <button id="poiDone" class="link-btn" type="button">Xong</button>
         <button id="poiAddBtn" class="btn btn-primary" type="button">Thêm vào video</button>
+      </div>
+      <div id="planBar" class="lot-bar plan-bar" hidden>
+        <span id="planMsg" class="hint"></span>
+        <span class="lot-zoom" role="group" aria-label="Phóng to thu nhỏ bản đồ">
+          <button id="planZoomOut" class="chip-btn" type="button" aria-label="Thu nhỏ bản đồ">−</button>
+          <button id="planZoomIn" class="chip-btn" type="button" aria-label="Phóng to bản đồ">+</button>
+        </span>
+        <button id="planHome" class="link-btn" type="button">📍 Về căn nhà</button>
+        <button id="planPin" class="btn btn-primary plan-pin" type="button">📌 Khớp bằng 2 điểm</button>
+        <div class="plan-tune">
+          <span class="plan-tune-label">Tinh chỉnh</span>
+          <button id="planRotL" class="chip-btn" type="button" aria-label="Xoay trái 1 độ">⟲ 1°</button>
+          <button id="planRotR" class="chip-btn" type="button" aria-label="Xoay phải 1 độ">⟳ 1°</button>
+          <button id="planSmall" class="chip-btn" type="button" aria-label="Thu nhỏ mặt bằng">− 3%</button>
+          <button id="planBig" class="chip-btn" type="button" aria-label="Phóng to mặt bằng">+ 3%</button>
+          <label class="plan-op">Độ rõ <input id="planOp" type="range" min="40" max="100" step="2" value="88"></label>
+        </div>
+        <button id="planDone" class="btn btn-primary" type="button">Xong</button>
       </div>
       <div id="lookPick" class="look-pick" hidden>
         <div class="look-head"><strong>Chọn kiểu video</strong><span class="hint small">Bấm một kiểu để xem ngay — đổi lại lúc nào cũng được</span>
@@ -267,6 +286,21 @@
             <label class="photo-add" id="clipAdd"><input autocomplete="off" id="clipFile" type="file" accept="video/*" multiple><span aria-hidden="true">+</span><span>Thêm video</span></label>
           </div>
           <span class="hint small" id="clipHint">Quay mặt tiền, phòng khách, phòng ngủ, sân thượng… mỗi đoạn 5–15 giây, cầm máy chậm và chắc tay. Chọn nhãn dưới mỗi đoạn, app tự xếp: mặt tiền → phòng khách → bếp → phòng ngủ → toilet. Đoạn mặt tiền mở đầu video; các đoạn còn lại chiếu liền nhau ở cuối video, sau lời mời xem nhà. Video chỉ nằm trên máy này, không tải lên mạng.</span>
+        </div>
+        <div class="field" id="planField">
+          <span class="field-label">Mặt bằng phân lô <em>đất nền dự án — tuỳ chọn</em></span>
+          <div class="plan-row">
+            <label class="btn btn-quiet plan-add"><input autocomplete="off" id="planFile" type="file" accept="image/*"><span id="planAddLabel">＋ Tải ảnh mặt bằng phân lô</span></label>
+            <div id="planThumbWrap" class="plan-thumb-wrap" hidden>
+              <img id="planThumb" class="plan-thumb" alt="Mặt bằng phân lô">
+              <div class="plan-actions">
+                <button id="planEditBtn" class="link-btn" type="button">📌 Căn chỉnh trên bản đồ</button>
+                <label class="plan-on"><input id="planOn" type="checkbox" checked> Hiện trong video</label>
+                <button id="planDelBtn" class="link-btn danger" type="button">Xoá</button>
+              </div>
+            </div>
+          </div>
+          <span class="hint small">Ảnh JPG/PNG hoặc chụp màn hình trang mặt bằng (PDF thì chụp màn hình). App dán dẹt mặt bằng xuống mặt đất ở cảnh bay sát lô, ranh lô đang bán vẫn sáng nổi bên trên. Khớp vị trí bằng 2 điểm: chạm 1 điểm trên ảnh rồi chạm đúng chỗ đó trên bản đồ, làm 2 lần (nên chọn 2 góc lô hoặc 2 góc ngã tư cách xa nhau). Ảnh chỉ nằm trên máy này.</span>
         </div>
         <div class="field">
           <span class="field-label">Khu vực &amp; đường trước nhà <em>xã/phường, tỉnh/thành tự điền theo vị trí mỗi lần quét căn mới — sai thì sửa lại</em></span>
@@ -591,6 +625,15 @@
   </div>
 </dialog>
 
+<dialog id="planDlg" class="dlg dlg-wide" aria-labelledby="planDlgTitle">
+  <div class="dlg-card plan-card">
+    <button class="dlg-x" type="button" data-close aria-label="Đóng">×</button>
+    <h3 id="planDlgTitle">Chạm điểm ① trên ảnh mặt bằng</h3>
+    <p class="hint small">Chọn điểm dễ nhận ra cả trên ảnh lẫn ảnh vệ tinh: góc lô đang bán, góc ngã tư, đầu đường nội khu. Sau đó app đưa anh/chị ra bản đồ để chạm đúng chỗ đó.</p>
+    <div class="plan-dlg-box"><div class="plan-dlg-inner"><img id="planDlgImg" alt="Mặt bằng phân lô"><div id="planDlgMarks" class="plan-dlg-marks"></div></div></div>
+    <div class="plan-dlg-foot"><button id="planDlgCancel" class="btn btn-quiet" type="button">Huỷ</button></div>
+  </div>
+</dialog>
 <dialog id="vnDlg" class="dlg dlg-wide" aria-labelledby="vnTitle">
   <div class="dlg-card vn-card">
     <button class="dlg-x" type="button" data-close aria-label="Đóng">×</button>

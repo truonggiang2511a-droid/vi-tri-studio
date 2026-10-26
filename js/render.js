@@ -567,7 +567,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   const lot = Array.isArray(scene.lot) && scene.lot.length >= 3 ? scene.lot : null;
   // Có ranh lô đất: cảnh căn nhà bay sát vào lô (khung ôm lô, chừa chỗ chữ), rồi mới lùi ra bán kính
   const camHouse = lot
-    ? fitCam(lot, LW, LH, { left: safe.x + 46, right: safe.x + 46, top: safe.top + 130, bottom: safe.bottom + 150 }, PITCH.house, 16.2, 19.8)
+    ? fitCam(lot, LW, LH, { left: safe.x + 46, right: safe.x + 46, top: safe.top + 130, bottom: safe.bottom + 150 }, PITCH.house, 16.2, scene.plan ? 18.6 : 19.8)
     : anchorCam(H.lat, H.lng, 17.3, PITCH.house, LW, LH, 0.5, fmtKey === 'v' ? 0.58 : 0.6); // không có lô: vẫn sát căn nhà
   const dLat = R / 111.32, dLng = R / (111.32 * Math.cos(H.lat * Math.PI / 180));
   const ringPts = [
@@ -3346,8 +3346,28 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     flatName(pName, pNameA, 64, 48);
   }
 
+  // Mặt bằng phân lô (ảnh khách tải, đã khớp lên bản đồ): dán DẸT xuống mặt đất (canvas mặt đất → phối cảnh như ảnh vệ tinh),
+  // CHỈ trong cảnh bay sát lô (Giang chốt 26/10 — giữ video tự nhiên). Ranh lô đang bán vẫn sáng nổi phía trên.
+  let planA = 0;
+  const PL = scene.plan;
+  if (PL && PL.img && PL.tl) {
+    const hdp = ho.t1 - ho.t0;
+    planA = fadeWin(t, ho.t0 + 0.12 * hdp, ov.t0 + 0.5, 0.8, 0.8) * (PL.op ?? 0.88);
+    if (planA > 0.01) {
+      const a = gLL(v, PL.tl[0], PL.tl[1]), b = gLL(v, PL.tr[0], PL.tr[1]), c = gLL(v, PL.bl[0], PL.bl[1]);
+      const iw = PL.img.naturalWidth || PL.img.width, ih = PL.img.naturalHeight || PL.img.height;
+      g.save();
+      g.globalAlpha = planA;
+      g.transform((b.x - a.x) / iw, (b.y - a.y) / iw, (c.x - a.x) / ih, (c.y - a.y) / ih, a.x, a.y);
+      g.imageSmoothingEnabled = true;
+      if ('imageSmoothingQuality' in g) g.imageSmoothingQuality = 'high';
+      g.drawImage(PL.img, 0, 0, iw, ih);
+      g.restore();
+    }
+  }
+
   // Đường quanh nhà kiểu đường nhựa (viền sáng, mặt nhựa, vạch giữa) ở cảnh giới thiệu căn nhà
-  const STR = scene.showStreets === false ? null : scene.streets;
+  const STR = scene.showStreets === false || planA > 0.3 ? null : scene.streets;
   let streetLabBox = null;
   if (STR && STR.lines && STR.lines.length) {
     const hd0 = ho.t1 - ho.t0;
@@ -3744,6 +3764,20 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   // Tường sáng dựng đứng trên trục đường điểm nhấn (line "nổi" như ranh TP.HCM trong video mẫu)
   for (const W of hiWalls) drawHiWall(ctx, P, v, W, t, LW, LH);
   if (lotFx && LOT) drawLotRise(ctx, LOT.map(p => S(p.lat, p.lng)), lotFx, t);
+  // Dòng nhỏ khi có mặt bằng phân lô: tránh bị hiểu là bản đồ đo đạc
+  if (planA > 0.05) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, planA / (PL.op ?? 0.88));
+    ctx.font = `600 ${tl.fmt === 'v' ? 13 : 12}px ${FONT}`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    const txt = 'Mặt bằng phân lô mang tính minh hoạ';
+    const tw = ctx.measureText(txt).width + 20, y = safe.top + (tl.fmt === 'v' ? 122 : 92); // dưới dải tiêu đề (đáy khung là thẻ giá)
+    roundRect(ctx, (LW - tw) / 2, y - 16, tw, 22, 11);
+    ctx.fillStyle = 'rgba(10,14,20,0.62)'; ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.fillText(txt, LW / 2, y);
+    ctx.restore();
+  }
 
   // Chữ 3D tên trục đường lớn: vẽ TRÊN MÀN HÌNH (không vẽ vào canvas mặt đất nữa — chữ ra ngoài vùng canvas
   // mặt đất lúc máy lia sẽ bị cắt cụt). Dùng phép biến đổi phối cảnh cục bộ tại vị trí chữ nên vẫn trông in dẹt trên đường.
@@ -4194,7 +4228,7 @@ export const formatArea = m2 => (m2 >= 10000 ? (m2 / 10000).toFixed(2).replace('
 
 // center: tâm khung đang xem (khách kéo để di chuyển khi vẽ lô/đường), mặc định là căn nhà.
 // roads: đường khách tự vẽ [{ pts: [[lat,lng]…], label, active }] — active = đường đang vẽ (có chấm từng điểm ghim).
-export function renderEdit(ctx, house, fmtKey, { cache, scale = 1, lot = null, mode = 'pin', zoom: zIn = null, center = null, roads = null, marks = null }, zoom = zIn ?? (mode === 'lot' ? 18.5 : 17)) {
+export function renderEdit(ctx, house, fmtKey, { cache, scale = 1, lot = null, mode = 'pin', zoom: zIn = null, center = null, roads = null, marks = null, plan = null }, zoom = zIn ?? (mode === 'lot' ? 18.5 : 17)) {
   const { LW, LH } = FORMATS[fmtKey];
   const ctr = center || house;
   const cam = { lat: ctr.lat, lng: ctr.lng, zoom };
@@ -4208,6 +4242,16 @@ export function renderEdit(ctx, house, fmtKey, { cache, scale = 1, lot = null, m
   ctx.setTransform(scale, 0, 0, scale, 0, 0);
   ctx.fillStyle = 'rgba(8,12,18,0.12)';
   ctx.fillRect(0, 0, LW, LH);
+  // Mặt bằng phân lô đang căn chỉnh (ảnh mờ để nhìn xuyên thấy ảnh vệ tinh)
+  if (plan && plan.img && plan.tl) {
+    const a = toXY(plan.tl), b = toXY(plan.tr), c = toXY(plan.bl);
+    const iw = plan.img.naturalWidth || plan.img.width, ih = plan.img.naturalHeight || plan.img.height;
+    ctx.save();
+    ctx.globalAlpha = plan.op ?? 0.6;
+    ctx.transform((b[0] - a[0]) / iw, (b[1] - a[1]) / iw, (c[0] - a[0]) / ih, (c[1] - a[1]) / ih, a[0], a[1]);
+    ctx.drawImage(plan.img, 0, 0, iw, ih);
+    ctx.restore();
+  }
   // Ranh lô đất đang vẽ
   if (lot && lot.length) {
     const xy = lot.map(toXY);
@@ -4271,6 +4315,7 @@ export function renderEdit(ctx, house, fmtKey, { cache, scale = 1, lot = null, m
   const txt = mode === 'lot' ? 'Chạm từng góc lô đất · kéo để di chuyển'
     : mode === 'road' ? 'Chạm dọc theo đường · chỗ cua chạm dày hơn · kéo để di chuyển'
     : mode === 'poi' ? 'Chạm vào chỗ có tiện ích · kéo để di chuyển'
+    : mode === 'plan' ? 'Căn mặt bằng phân lô · kéo để di chuyển bản đồ'
     : 'Chạm vào đúng căn nhà để dời ghim';
   const w = ctx.measureText(txt).width + 28;
   roundRect(ctx, (LW - w) / 2, 18, w, 34, 17);

@@ -853,3 +853,23 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .add-pick[hidden] { display: none; }
 .add-pick #addBtn { grid-column: 1 / -1; }
 .addpoi-box #addMsg:empty { display: none; }
+
+/* Mặt bằng phân lô (26/10) */
+.plan-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+.plan-add { position: relative; overflow: hidden; cursor: pointer; }
+.plan-add input { position: absolute; inset: 0; width: 1px; height: 1px; opacity: 0; }
+.plan-thumb-wrap { display: flex; gap: 10px; align-items: center; min-width: 0; flex: 1 1 220px; }
+.plan-thumb { width: 84px; height: 84px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line, #ddd); flex: none; }
+.plan-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 0; }
+.plan-on { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+.plan-bar .plan-tune { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex: 1 1 100%; }
+.plan-tune-label { font-size: 12px; font-weight: 700; opacity: .7; }
+.plan-op { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; min-width: 0; }
+.plan-op input { width: 110px; max-width: 34vw; }
+.plan-pin { white-space: normal; }
+.plan-dlg-box { position: relative; margin: 10px 0; max-height: 64vh; overflow: auto; border-radius: 10px; background: #fff; }
+.plan-dlg-inner { position: relative; }
+.plan-dlg-box img { display: block; width: 100%; height: auto; cursor: crosshair; touch-action: manipulation; }
+.plan-dlg-marks { position: absolute; inset: 0; pointer-events: none; }
+.plan-mk { position: absolute; transform: translate(-50%, -50%); width: 26px; height: 26px; border-radius: 50%; background: #FF9F1C; color: #111; font: 800 13px/26px system-ui, sans-serif; text-align: center; border: 2px solid #111; box-shadow: 0 0 0 3px rgba(255,159,28,.35); }
+.plan-dlg-foot { display: flex; justify-content: flex-end; }
