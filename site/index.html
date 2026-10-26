@@ -94,7 +94,7 @@
         <button id="lotUndo" class="link-btn" type="button">Bỏ góc cuối</button>
         <button id="lotClear" class="link-btn" type="button">Xoá hết</button>
         <button id="vnOpen" class="link-btn vn-open" type="button" hidden>📄 Nhập toạ độ sổ đỏ</button>
-        <button id="lotPlanBtn" class="link-btn" type="button">🗺️ Mặt bằng phân lô</button>
+        <button id="lotPlanBtn" class="link-btn" type="button">🗺️ Thêm mặt bằng phân lô</button>
         <div class="lot-fields">
           <label class="field"><span class="field-label">Chữ trên lô đất</span><input id="lotText" class="input" type="text" maxlength="24" placeholder="LÔ ĐẤT" autocomplete="off"></label>
           <label class="field"><span class="field-label">Diện tích hiển thị</span><input id="lotArea" class="input" type="text" maxlength="16" placeholder="Tự tính" autocomplete="off"></label>
@@ -142,6 +142,10 @@
           <button id="planSmall" class="chip-btn" type="button" aria-label="Thu nhỏ mặt bằng">− 3%</button>
           <button id="planBig" class="chip-btn" type="button" aria-label="Phóng to mặt bằng">+ 3%</button>
           <label class="plan-op">Độ rõ <input id="planOp" type="range" min="40" max="100" step="2" value="88"></label>
+        </div>
+        <div class="plan-tune">
+          <button id="planChange" class="link-btn" type="button">🔄 Đổi ảnh khác</button>
+          <button id="planDel2" class="link-btn danger" type="button">🗑 Xoá mặt bằng</button>
         </div>
         <button id="planDone" class="btn btn-primary" type="button">Xong</button>
       </div>

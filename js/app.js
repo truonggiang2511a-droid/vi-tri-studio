@@ -907,6 +907,7 @@ function showPlanUi() {
   $('planAddLabel').textContent = has ? 'Đổi ảnh mặt bằng' : '＋ Tải ảnh mặt bằng phân lô';
   if (has) $('planThumb').src = media.planImg.src;
   $('planOn').checked = state.planOn !== false;
+  $('lotPlanBtn').textContent = has ? '🗺️ Sửa / xoá mặt bằng phân lô' : '🗺️ Thêm mặt bằng phân lô';
 }
 async function pickPlanFile(file) {
   if (!file) return;
@@ -4117,7 +4118,10 @@ function init() {
   $('planFile').addEventListener('change', e => { pickPlanFile(e.target.files[0]); e.target.value = ''; });
   $('planEditBtn').addEventListener('click', startPlanEdit);
   $('planOn').addEventListener('change', e => { state.planOn = e.target.checked; save(); scheduleRebuild(); });
-  $('planDelBtn').addEventListener('click', () => { if (confirm('Xoá ảnh mặt bằng phân lô khỏi căn này?')) removePlan(); });
+  const askRemovePlan = () => { if (confirm('Xoá ảnh mặt bằng phân lô khỏi căn này? Video sẽ không còn mặt bằng.')) { removePlan(); toast('Đã xoá mặt bằng phân lô.'); } };
+  $('planDelBtn').addEventListener('click', askRemovePlan);
+  $('planDel2').addEventListener('click', askRemovePlan);
+  $('planChange').addEventListener('click', () => $('planFile').click());
   $('planZoomIn').addEventListener('click', () => { planZoom = Math.min(21, planZoom + 0.5); dirty = true; });
   $('planZoomOut').addEventListener('click', () => { planZoom = Math.max(13, planZoom - 0.5); dirty = true; });
   $('planHome').addEventListener('click', () => { editCenter = { ...state.house }; dirty = true; });
