@@ -413,14 +413,14 @@
       <div class="subpane" data-pane="sound" hidden>
         <!-- Một module: chọn cách viết → chọn giọng → một nút tạo cả kịch bản + giọng đọc -->
         <div class="vo-card" id="voCard">
-          <div class="vo-head"><strong>🎙️ Kịch bản &amp; giọng đọc</strong><span id="voState" class="vo-state">Chưa tạo</span></div>
-          <span class="field-label">① Cách viết kịch bản</span>
-          <div class="vo-src" id="scriptSrcSeg" role="radiogroup" aria-label="Cách viết kịch bản">
-            <button type="button" role="radio" data-v="ai" class="src-ai"><b>✨ AI viết kịch bản</b><small>Hay hơn, mỗi lần một kiểu · Khuyên dùng</small></button>
+          <div class="vo-head"><strong>📝 Bước 1 · Kịch bản</strong><span id="scrState" class="vo-state">Kịch bản mẫu</span></div>
+          <div class="vo-src vo-src3" id="scriptSrcSeg" role="radiogroup" aria-label="Cách có kịch bản">
+            <button type="button" role="radio" data-v="ai" class="src-ai"><b>✨ AI viết</b><small>Mỗi lần một kiểu · khuyên dùng</small></button>
             <button type="button" role="radio" data-v="mau" class="src-mau"><b>📝 Kịch bản mẫu</b><small>Câu có sẵn, gọn</small></button>
+            <button type="button" role="radio" data-v="tu" class="src-tu"><b>✍️ Tự viết</b><small>Gõ hoặc dán lời của mình</small></button>
           </div>
           <div id="aiToneWrap">
-            <span class="field-label">Chọn phong cách kịch bản <em id="toneNeed">bấm chọn 1 kiểu</em></span>
+            <span class="field-label">Chọn phong cách <em id="toneNeed">bấm chọn 1 kiểu</em></span>
             <div class="seg seg-wrap ai-tones" id="aiToneSeg" role="radiogroup" aria-label="Phong cách kịch bản">
               <button type="button" role="radio" data-v="hai-huoc">😄 Hài hước</button>
               <button type="button" role="radio" data-v="ke-chuyen">💬 Kể chuyện</button>
@@ -429,8 +429,24 @@
               <button type="button" role="radio" data-v="sang-trong">💎 Sang trọng</button>
               <button type="button" role="radio" data-v="chot-sale">🔥 Chốt sale</button>
             </div>
+            <button id="aiWriteBtn" class="btn btn-primary btn-block vo-write" type="button">✨ AI viết kịch bản</button>
           </div>
-          <span class="field-label">② Giọng đọc</span>
+          <div id="mauWrap" hidden>
+            <button id="mauApply" class="btn btn-quiet btn-block vo-write" type="button">🔄 Đổi sang cách viết khác</button>
+          </div>
+          <div id="tuWrap" hidden>
+            <p class="hint small">Sửa trực tiếp lời từng cảnh ở danh sách bên dưới. Hoặc dán cả bài vào ô này: mỗi đoạn (xuống dòng) là lời của 1 cảnh, theo đúng thứ tự các cảnh.</p>
+            <p id="tuScenes" class="hint small"></p>
+            <textarea id="pasteScript" class="input" rows="4" autocomplete="off" placeholder="Dán cả kịch bản của anh/chị ở đây…"></textarea>
+            <button id="pasteApply" class="btn btn-quiet btn-block" type="button">📋 Chia bài đã dán vào từng cảnh</button>
+          </div>
+          <span class="field-label">Lời đọc từng cảnh <em>sửa trực tiếp ở đây — giọng đọc đọc đúng lời này</em></span>
+          <div id="scriptList" class="script-list"></div>
+          <p id="scrMsg" class="hint" aria-live="polite"></p>
+        </div>
+        <div class="vo-card" id="voiceCard">
+          <div class="vo-head"><strong>🎙️ Bước 2 · Giọng đọc</strong><span id="voState" class="vo-state">Chưa tạo</span></div>
+          <span class="field-label">Chọn giọng</span>
           <div class="seg seg-wrap" id="voiceSeg" role="radiogroup" aria-label="Giọng đọc">
             <button type="button" role="radio" data-v="nu-nam">Nữ miền Nam</button>
             <button type="button" role="radio" data-v="nam-nam">Nam miền Nam</button>
@@ -459,8 +475,17 @@
             <p id="vbeeOwnMsg" class="hint small" aria-live="polite"></p>
             <p class="hint small">Khoá chỉ lưu trên máy này và gửi kèm khi tạo giọng — Vị Trí Studio không lưu khoá. Tiền giọng Vbee trừ vào tài khoản Vbee của anh/chị, không trừ lượt tạo giọng của app (xuất video vẫn tính lượt như thường). Giọng có ⭐ là giọng riêng/giọng nhân bản của anh/chị.</p>
           </details>
-          <button id="ttsBtn" class="btn btn-primary btn-lg btn-block vo-go" type="button">🎙️ Tạo kịch bản &amp; giọng đọc</button>
-          <button id="voVoiceOnly" class="link-btn vo-only" type="button" hidden>Đã sửa lời? Chỉ đọc lại giọng (giữ nguyên kịch bản)</button>
+          <div class="field">
+            <span class="field-label">Tốc độ đọc</span>
+            <div class="seg" id="vspeedSeg" role="radiogroup" aria-label="Tốc độ đọc">
+              <button type="button" role="radio" data-v="-1">Chậm</button>
+              <button type="button" role="radio" data-v="0">Vừa</button>
+              <button type="button" role="radio" data-v="1">Nhanh</button>
+            </div>
+          </div>
+          <button id="ttsBtn" class="btn btn-primary btn-lg btn-block vo-go" type="button">🎙️ Tạo giọng đọc theo kịch bản ở Bước 1</button>
+          <p class="hint small vo-note">Nút này chỉ đọc đúng lời ở Bước 1, không tự viết lại kịch bản.</p>
+          <button id="voVoiceOnly" class="link-btn vo-only" type="button" hidden></button>
           <button id="noVoiceBtn" class="btn btn-quiet btn-block vo-skip" type="button">🎵 Không cần giọng đọc, chỉ nhạc nền + SFX →</button>
           <p id="ttsMsg" class="hint" aria-live="polite"></p>
           <p id="aiStatus" class="hint small">Đang kiểm tra giọng đọc AI…</p>
@@ -476,7 +501,7 @@
             </button>
             <label class="btn btn-quiet file-btn">Tải file đã đọc<input autocomplete="off" id="ownVoiceFile" type="file" accept="audio/*,video/mp4"></label>
           </div>
-          <p id="ownVoiceMsg" class="hint" aria-live="polite">Đọc đúng lời đọc từng cảnh (xem &amp; sửa ở mục "✏️ Xem &amp; sửa từng câu"), nghỉ một nhịp giữa các câu. App sẽ cắt từng câu và cho mỗi cảnh chạy đúng theo lời anh/chị.</p>
+          <p id="ownVoiceMsg" class="hint" aria-live="polite">Đọc đúng lời đọc từng cảnh (xem &amp; sửa ở Bước 1 · Kịch bản), nghỉ một nhịp giữa các câu. App sẽ cắt từng câu và cho mỗi cảnh chạy đúng theo lời anh/chị.</p>
         </div>
         <div class="field music-box">
           <span class="field-label">🎵 Nhạc nền <em>không lo bản quyền</em></span>
@@ -484,21 +509,10 @@
           <label class="vol"><span>Âm lượng</span><input autocomplete="off" id="musicVol" type="range" min="0" max="1" step="0.05" value="0.8"></label>
         </div>
         <details class="more">
-          <summary>✏️ Xem &amp; sửa từng câu, tốc độ đọc, nhạc riêng</summary>
+          <summary>⚙️ Tuỳ chọn thêm: nhạc riêng, hiệu ứng âm thanh, giọng tự ghi âm</summary>
           <div class="more-body">
             <label class="check"><input autocomplete="off" id="aiVoiceOn" type="checkbox" checked> Dùng giọng AI trong video (bỏ tick nếu tự thu âm)</label>
-            <div class="field">
-              <span class="field-label">Tốc độ đọc</span>
-              <div class="seg" id="vspeedSeg" role="radiogroup" aria-label="Tốc độ đọc">
-                <button type="button" role="radio" data-v="-1">Chậm</button>
-                <button type="button" role="radio" data-v="0">Vừa</button>
-                <button type="button" role="radio" data-v="1">Nhanh</button>
-              </div>
-            </div>
-            <div class="field">
-              <span class="field-label">Lời đọc từng cảnh <span class="lbl-acts"><button id="altScriptBtn" class="link-btn" type="button">Đổi cách viết</button><button id="aiScriptBtn" class="link-btn" type="button" hidden>✨ AI viết kịch bản hay hơn</button></span></span>
-              <div id="scriptList" class="script-list"></div>
-            </div>
+            <button id="altScriptBtn" class="link-btn" type="button" hidden></button><button id="aiScriptBtn" class="link-btn" type="button" hidden></button>
             <div class="field">
               <span class="field-label">Nhạc của anh/chị</span>
               <div class="file-row">

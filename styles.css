@@ -883,3 +883,16 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .plan-edit-tools { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-bottom: 8px; }
 .plan-edit-tools .plan-on { white-space: normal; min-width: 0; }
 .plan-dlg-foot { gap: 8px; flex-wrap: wrap; }
+/* Kịch bản & giọng đọc tách 2 bước (26/10) */
+.vo-src.vo-src3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.vo-src.vo-src3 button { padding: 9px 10px; }
+.vo-src.vo-src3 .src-mau b, .vo-src.vo-src3 .src-tu b { font-size: 14px; font-weight: 700; }
+.vo-write { white-space: normal; }
+.vo-note { margin: -4px 0 0; text-align: center; }
+#voiceCard { margin-top: 0; }
+#tuWrap { display: grid; gap: 8px; }
+#tuWrap[hidden], #mauWrap[hidden], #aiToneWrap[hidden] { display: none; }
+#aiToneWrap { display: grid; gap: 8px; }
+.vo-go.pulse { animation: install-pulse 1s ease-out 3; }
+@media (max-width: 420px) { .vo-src.vo-src3 button small { display: none; } }
+.vo-card .vo-go { white-space: normal; line-height: 1.25; min-width: 0; }
