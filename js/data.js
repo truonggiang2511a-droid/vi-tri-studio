@@ -1145,6 +1145,38 @@ export async function searchPlaces(q, center, signal) {
   return out;
 }
 
+// Địa điểm có tên quanh 1 chỗ khách chạm trên bản đồ (thêm tiện ích app chưa quét được).
+// Nguồn: ô bản đồ OSM z14 (TẤT CẢ điểm có tên — quét căn chỉ giữ các nhóm tiện ích chính) + Overture (poi/, tệp tĩnh).
+// Gần như không ra gì thì hỏi thêm Vietmap (/api/map/nearby bán kính 0,5 km, có nhớ đệm) — tốn lượt gọi Vietmap nên chỉ khi cần.
+// (Vietmap Reverse v3 đã thử 26/10: chỉ trả 1 địa chỉ số nhà, không có tên tiện ích → không dùng.)
+export async function placesNear(ll, km = 0.3, signal) {
+  const [area, ovt] = await Promise.all([
+    loadArea(ll, km, signal).catch(e => { if (signal?.aborted) throw e; return { pois: [] }; }),
+    loadOverture(ll, km, signal).catch(e => { if (signal?.aborted) throw e; return []; }),
+  ]);
+  const list = [
+    ...area.pois.filter(p => p.name && p.cls !== 'place').map(p => ({ name: p.name, lat: p.lat, lng: p.lng, cat: guessCategory({ key: p.cls, value: p.sub, name: p.name }), src: 'osm' })),
+    ...ovt.map(p => ({ name: p.name, lat: p.lat, lng: p.lng, cat: p.cat, src: 'ovt' })),
+  ].filter(p => haversineKm(p, ll) <= km);
+  // Bỏ tên đường/địa chỉ (khách cần tên tiện ích; đường đã có mục "Tự vẽ đường")
+  const roadNames = new Set((area.roads || []).map(r => dkey(r.name || '')).filter(Boolean));
+  for (let i = list.length - 1; i >= 0; i--) {
+    const n = list[i].name;
+    if (/^(\d|số\s*\d|đường\b|hẻm\b|kiệt\b|ngõ\b|ngách\b|quốc lộ\b|tỉnh lộ\b|đại lộ\b)/i.test(n) || roadNames.has(dkey(n))) list.splice(i, 1);
+  }
+  if (list.length < 3) {
+    const vm = await loadVietmap(ll, 0.5, signal).catch(e => { if (signal?.aborted) throw e; return []; });
+    for (const p of vm) if (haversineKm(p, ll) <= Math.max(km, 0.5)) list.push({ name: p.name, lat: p.lat, lng: p.lng, cat: p.cat, src: 'vm', where: p.address });
+  }
+  const out = [];
+  for (const p of list.sort((a, b) => haversineKm(a, ll) - haversineKm(b, ll))) {
+    const k = dkey(p.name);
+    if (!k || out.some(o => dkey(o.name) === k && haversineKm(o, p) < 0.3)) continue;
+    out.push(p);
+  }
+  return out.slice(0, 12);
+}
+
 // Gợi ý nhóm cho điểm tìm được
 export function guessCategory(x) {
   const fake = { cls: x.key, sub: x.value, name: x.name };

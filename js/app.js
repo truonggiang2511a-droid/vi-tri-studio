@@ -1,6 +1,6 @@
 // Điều khiển giao diện: nhập toạ độ → quét → chọn → xem trước → xuất video.
 import { parseCoords, haversineKm, formatKm } from './geo.js';
-import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, guessCategory, stitchWays, bridgeWays, localFrame, pickHubs, loadInfra, simplifyLine } from './data.js';
+import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, placesNear, guessCategory, stitchWays, bridgeWays, localFrame, pickHubs, loadInfra, simplifyLine } from './data.js';
 import { ICON_PATHS } from './icons.js';
 import {
   FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, HI_THEMES, LOT_STYLES, LOT_COLORS, STYLES, BASES,
@@ -745,7 +745,8 @@ function removeMyRoad(id) {
 
 // ---------- Thêm tiện ích bằng cách chạm trên bản đồ (app chưa quét được) ----------
 // Khách chạm vào chỗ có tiện ích trên ảnh vệ tinh → app gợi ý tên các địa điểm quanh chỗ chạm: điểm app đã quét nhưng chưa chọn
-// (trong 250 m) + Vietmap Reverse v3 (/api/map/near, ≤ 10 địa điểm). Khách tick → thêm vào video + kịch bản như tiện ích quét được.
+// (trong 250 m) + mọi địa điểm có tên trong 300 m từ ô bản đồ OSM + Overture (placesNear, data.js; ít quá thì hỏi thêm Vietmap).
+// Khách tick → thêm vào video + kịch bản như tiện ích quét được.
 // Không có tên nào đúng thì tự đặt tên tại chỗ chạm. Tiện ích thêm tay là `manual` (gắn với căn, xoá khi làm căn mới).
 function poiMarks() {
   const sel = new Set(state.selected);
@@ -775,17 +776,14 @@ async function findPoisAt(ll) {
   renderPoiCands();
   updatePoiMsg('Đang tìm tên địa điểm quanh chỗ chạm…');
   let remote = [];
-  try {
-    const res = await fetch(`/api/map/near?lat=${ll.lat.toFixed(6)}&lng=${ll.lng.toFixed(6)}`);
-    if (res.ok) remote = (await res.json()).items || [];
-  } catch { /* bỏ qua */ }
+  try { remote = await placesNear(poiTap, 0.3); } catch { /* bỏ qua */ }
   if (my !== poiReq) return; // khách đã chạm chỗ khác
   const norm = s => String(s).normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim();
   const have = new Set(local.map(x => norm(x.name)));
   for (const x of remote) {
-    if (have.has(norm(x.name)) || haversineKm(x, poiTap) > 0.4) continue;
+    if (have.has(norm(x.name))) continue;
     have.add(norm(x.name));
-    poiCands.push({ name: x.name, lat: x.lat, lng: x.lng, km: haversineKm(state.house, x), cat: guessCategory({ name: x.name }), src: 'vm', where: x.address });
+    poiCands.push({ name: x.name, lat: x.lat, lng: x.lng, km: haversineKm(state.house, x), cat: x.cat && CATEGORIES[x.cat] ? x.cat : guessCategory({ name: x.name }), src: x.src, where: x.where || '' });
   }
   poiCands.sort((a, b) => haversineKm(a, poiTap) - haversineKm(b, poiTap));
   poiCands = poiCands.slice(0, 10);
