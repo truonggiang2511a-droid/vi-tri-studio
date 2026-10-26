@@ -1707,10 +1707,11 @@ function scriptSegments() {
   const scarce = pick(['Vị trí như thế này không có nhiều.', 'Vị trí đẹp thế này không dễ tìm đâu.', 'Cơ hội sở hữu vị trí này không còn nhiều.'], 4);
   const phone = phoneDisplay(state.phone);
   const brand = (state.brand || '').trim() ? nameSpeak(state.brand.trim()) : '';
-  const cta = phone && brand ? `Gọi ngay ${brand}, số ${phone}, để đi xem nhà trực tiếp!`
-    : phone ? `Gọi ngay số ${phone} để đi xem nhà trực tiếp!`
-    : brand ? `Liên hệ ${brand} để đi xem nhà ngay hôm nay!`
-    : 'Liên hệ ngay để đi xem nhà trực tiếp nhé!';
+  const xem = isLandType() ? 'xem đất' : 'xem nhà';
+  const cta = phone && brand ? `Gọi ngay ${brand}, số ${phone}, để đi ${xem} trực tiếp!`
+    : phone ? `Gọi ngay số ${phone} để đi ${xem} trực tiếp!`
+    : brand ? `Liên hệ ${brand} để đi ${xem} ngay hôm nay!`
+    : `Liên hệ ngay để đi ${xem} trực tiếp nhé!`;
   // 24/10 tối (Giang): cảnh kết kêu gọi xem nhà đứng trước; video/ảnh thực tế nằm CUỐI CÙNG, chiếu liền nhau → câu mời xem
   add('outro', 'Kết', `${scarce} ${cta}`);
   const endClips = Math.max(0, media.clips.length - (hasFrontClip() ? 1 : 0));
@@ -1898,9 +1899,9 @@ async function aiRewrite() {
     };
     // KHÔNG gửi câu mẫu (AI sẽ chép lại y chang) — chỉ gửi hình đang hiện + dữ liệu của từng cảnh
     const SCENE = { intro: 'Mở đầu: trung cảnh ghim bất động sản, xã/phường sáng lên', province: 'Cả tỉnh/thành phố hiện lên', house: 'Cận cảnh bất động sản, máy lượn quanh',
-      reel: 'Bản đồ đã xong, chuyển sang video thực tế căn nhà: 1 câu mời người xem cùng xem video (và hình ảnh) thực tế', overview: 'Toàn cảnh vòng bán kính quanh nhà', region: 'Kết nối vùng: đường đi + số phút lái xe tới trung tâm, sân bay, cảng, ga', infra: 'Hạ tầng đang thi công gần nhà (nét đứt)', iso: 'Vùng lái xe 5, 10, 15 phút quanh nhà sáng lên lần lượt', boundary: 'Ranh giới sang tỉnh/thành bên cạnh', summary: 'Tổng kết tất cả tiện ích', photos: 'Ảnh thực tế của bất động sản', outro: 'Kết video, kêu gọi đi xem nhà' };
-    if (hasFrontClip()) SCENE.intro = 'Mở đầu: video thực tế mặt tiền căn nhà chiếu toàn khung (chưa vào bản đồ). Câu móc + giới thiệu căn';
-    if (media.photos.length) SCENE.photos = media.clips.length > (hasFrontClip() ? 1 : 0) ? 'Thêm ảnh thực tế của căn nhà' : 'Bản đồ đã xong, chuyển sang ảnh thực tế: 1 câu mời người xem cùng xem hình ảnh thực tế';
+      reel: `Bản đồ đã xong, chuyển sang video thực tế ${realWord()}: 1 câu mời người xem cùng xem video (và hình ảnh) thực tế`, overview: 'Toàn cảnh vòng bán kính quanh nhà', region: 'Kết nối vùng: đường đi + số phút lái xe tới trung tâm, sân bay, cảng, ga', infra: 'Hạ tầng đang thi công gần nhà (nét đứt)', iso: 'Vùng lái xe 5, 10, 15 phút quanh nhà sáng lên lần lượt', boundary: 'Ranh giới sang tỉnh/thành bên cạnh', summary: 'Tổng kết tất cả tiện ích', photos: 'Ảnh thực tế của bất động sản', outro: `Kết video, kêu gọi đi ${isLandType() ? 'xem đất' : 'xem nhà'}` };
+    if (hasFrontClip()) SCENE.intro = `Mở đầu: video thực tế mặt tiền ${realWord()} chiếu toàn khung (chưa vào bản đồ). Câu móc + giới thiệu ${realWord()}`;
+    if (media.photos.length) SCENE.photos = media.clips.length > (hasFrontClip() ? 1 : 0) ? `Thêm ảnh thực tế của ${realWord()}` : 'Bản đồ đã xong, chuyển sang ảnh thực tế: 1 câu mời người xem cùng xem hình ảnh thực tế';
     const roadById = Object.fromEntries(selectedRoads().map(r => [r.id, r]));
     const poiById = Object.fromEntries(selectedPois().map(p => [p.id, p]));
     const segments = Object.fromEntries(segs.map(sg => {
@@ -2723,13 +2724,26 @@ function photoDb(mode, key, value) {
 // 24/10 tối (Giang): ảnh/video thực tế xếp theo phòng: mặt tiền → phòng khách → bếp → phòng ngủ → toilet → khác.
 // Mỗi ảnh/video có nhãn phòng (khách chọn dưới ô ảnh). Mặc định gán theo thứ tự tải lên đúng thứ tự gợi ý trên.
 const ROOMS = [['mattien', 'Mặt tiền'], ['khach', 'Phòng khách'], ['bep', 'Bếp'], ['ngu', 'Phòng ngủ'], ['wc', 'Toilet'], ['khac', 'Khác']];
+// Lô đất: dùng lại đúng các khoá trên (thứ tự xếp, 'mattien' mở đầu video, dữ liệu đã lưu không đổi), chỉ đổi chữ hiện ra
+// [khoá, chữ hiện trên video, chữ ngắn trong ô chọn 74 px]
+const LAND_ROOMS = [['mattien', 'Mặt tiền lô đất', 'Mặt tiền'], ['khach', 'Toàn cảnh lô đất', 'Toàn cảnh'], ['bep', 'Đường trước lô', 'Đường trước'],
+  ['ngu', 'Hiện trạng lô đất', 'Hiện trạng'], ['wc', 'Khu xung quanh', 'Xung quanh'], ['khac', 'Khác', 'Khác']];
+const isLandType = () => /LÔ ĐẤT/.test(state.typeLabel || '');
+const roomList = () => (isLandType() ? LAND_ROOMS : ROOMS);
+const realWord = () => (TYPE_WORD[state.typeLabel] || 'Căn nhà').toLowerCase();
 // Đoạn video đầu chỉ mở đầu video khi là mặt tiền (khớp render.js: frontClip)
 const hasFrontClip = () => !!(media.clips[0] && (!media.clips[0].room || media.clips[0].room === 'mattien'));
 const ROOM_IDX = Object.fromEntries(ROOMS.map(([k], i) => [k, i]));
-function roomLabel(r) { return r && r !== 'khac' ? (ROOMS.find(x => x[0] === r) || [])[1] || '' : ''; }
+function roomLabel(r) { return r && r !== 'khac' ? (roomList().find(x => x[0] === r) || [])[1] || '' : ''; }
 function guessRoom(name, list) {
   const n = String(name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
   if (/mat.?tien|facade|front|ngoai/.test(n)) return 'mattien';
+  if (isLandType()) {
+    if (/toan.?canh|flycam|drone|tren.?cao/.test(n)) return 'khach';
+    if (/duong|hem|road|street/.test(n)) return 'bep';
+    if (/hien.?trang|thuc.?te|cay|vuon/.test(n)) return 'ngu';
+    if (/xung.?quanh|hang.?xom|lan.?can|around/.test(n)) return 'wc';
+  }
   if (/khach|living/.test(n)) return 'khach';
   if (/bep|kitchen/.test(n)) return 'bep';
   if (/ngu|bed/.test(n)) return 'ngu';
@@ -2739,7 +2753,17 @@ function guessRoom(name, list) {
   return (ROOMS.find(([k]) => k !== 'khac' && !used.has(k)) || ['khac'])[0];
 }
 const sortRooms = list => list.map((x, i) => [x, i]).sort((a, b) => (ROOM_IDX[a[0].room] ?? 5) - (ROOM_IDX[b[0].room] ?? 5) || a[1] - b[1]).map(p => p[0]);
-const roomSelect = (cur, i, kind) => `<select class="room-sel" data-room-${kind}="${i}" aria-label="Nhãn phòng">${ROOMS.map(([k, l]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+const roomSelect = (cur, i, kind) => `<select class="room-sel" data-room-${kind}="${i}" aria-label="Nhãn ảnh/video">${roomList().map(([k, l, sh]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${sh || l}</option>`).join('')}</select>`;
+// Tiêu đề + hướng dẫn mục ảnh/video đổi theo loại bất động sản
+function syncRoomUi() {
+  const land = isLandType(), w = realWord();
+  const order = land ? 'mặt tiền → toàn cảnh → đường trước lô → hiện trạng → xung quanh' : 'mặt tiền → phòng khách → bếp → phòng ngủ → toilet';
+  const set = (id, t) => { const el = $(id); if (el && el.textContent !== t) el.textContent = t; };
+  set('clipTitle', `Video thực tế ${w}`);
+  set('photoHint', `Chọn nhãn dưới mỗi ảnh, app tự xếp: ${order}. Ảnh mặt tiền làm nền cảnh mở đầu; cả bộ chiếu ở cuối video, sau lời mời xem ${land ? 'đất' : 'nhà'}.`);
+  set('clipHint', (land ? 'Quay mặt tiền lô, toàn cảnh, đường trước lô, hiện trạng đất, khu xung quanh…' : 'Quay mặt tiền, phòng khách, phòng ngủ, sân thượng…')
+    + ` mỗi đoạn 5–15 giây, cầm máy chậm và chắc tay. Chọn nhãn dưới mỗi đoạn, app tự xếp: ${order}. Đoạn mặt tiền mở đầu video; các đoạn còn lại chiếu liền nhau ở cuối video, sau lời mời xem ${land ? 'đất' : 'nhà'}. Video chỉ nằm trên máy này, không tải lên mạng.`);
+}
 let photoHouse = '';
 function savePhotos() {
   const k = photoKey(state.house);
@@ -2811,6 +2835,7 @@ function removePhoto(i) {
   scheduleRebuild();
 }
 function showPhotos() {
+  syncRoomUi();
   const row = $('photoRow');
   if (!row) return;
   for (const el of row.querySelectorAll('.photo-th')) el.remove();
@@ -3298,7 +3323,7 @@ function init() {
   $('brandInput').value = state.brand;
   $('musicVol').value = state.musicVol;
   $('fitVoice').checked = state.fitVoice;
-  setSeg('typeSeg', state.typeLabel);
+  setSeg('typeSeg', state.typeLabel); syncRoomUi();
   setSeg('fmtSeg', state.fmt);
   setSeg('speedSeg', state.speed);
   if (['cungluc', 'tiaxa'].includes(state.flow)) state.flow = 'radar';
@@ -3325,7 +3350,8 @@ function init() {
     }
   });
   bindSeg('typeSeg', v => {
-    state.typeLabel = v; state.label = v; $('labelInput').value = v; scheduleRebuild();
+    state.typeLabel = v; state.label = v; $('labelInput').value = v;
+    showPhotos(); showClips(); scheduleRebuild();
   });
   $('labelInput').addEventListener('input', e => { state.label = e.target.value; scheduleRebuild(); });
   $('subInput').addEventListener('input', e => { state.sub = e.target.value.trim(); scheduleRebuild(); });
