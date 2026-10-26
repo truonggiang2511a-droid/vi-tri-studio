@@ -2610,7 +2610,6 @@ function updateVoCard() {
   $('aiToneWrap').hidden = mode !== 'ai';
   $('mauWrap').hidden = mode !== 'mau';
   $('tuWrap').hidden = mode !== 'tu';
-  if (mode === 'tu') { const sl = scriptSegments().map(x => x.label); $('tuScenes').textContent = `Video hiện có ${sl.length} cảnh, theo thứ tự: ${sl.join(' → ')}.`; }
   $('toneNeed').hidden = !needTone();
   // Bước 1: lời đang dùng đến từ đâu
   const src = $('scrState');
