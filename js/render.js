@@ -832,6 +832,55 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     k *= f;
     total *= f;
   }
+  // 26/10 (Giang): lời đọc dài làm cảnh kéo dài → máy chỉ zoom chậm 1 chỗ, nhàm. Cảnh dài thì tự chia thành nhiều cú máy
+  // kiểu flycam (dùng chung camShots như kết nối vùng): căn nhà/dự án = cận → toàn cảnh dự án → góc thấp lệch → lia dọc đường
+  // trước nhà → trung cảnh → cận lại; cảnh khác = khung gốc → lùi rộng → đẩy vào lệch. Cảnh ngắn (không giọng) giữ y như cũ.
+  const offCam = (c, dx, dy, dz = 0, pitch = c.pitch) => {
+    const z = c.zoom + dz, mpp = metersPerPixel(c.lat, z);
+    return { lat: c.lat - dy * mpp / 110540, lng: c.lng + dx * mpp / (111320 * Math.cos(c.lat * Math.PI / 180)), zoom: z, pitch: Math.max(0, Math.min(PMAX, pitch)) };
+  };
+  const SHOT_SEC = 3.8; // mỗi cú máy ~3,8 giây
+  const mkShots = (list, real) => {
+    const n = list.length;
+    return list.map((sh, i) => ({ move: 0.55, ...sh, s: i / n, e: (i + 1) / n }));
+  };
+  for (const p of raw) {
+    const real = p.d * k;
+    if (p.type === 'house' && real > 5.6) {
+      const n = Math.max(2, Math.min(7, Math.round(real / SHOT_SEC)));
+      const C = p.to, ph0 = C.pitch || PITCH.house;
+      const up = Math.max(0, Math.min(0.55, 19.4 - C.zoom)); // cận hơn nhưng không quá z19,4 (ảnh vệ tinh mờ)
+      const seq = [
+        { cam: C, side: 1, move: 0.6 },                                            // bay sát căn nhà / lô
+        { cam: offCam(C, 0, -LH * 0.04, -2.3, 0), side: -1 },                      // toàn cảnh dự án, nhìn thẳng từ trên xuống
+        { cam: offCam(C, -LW * 0.22, 0, up, PMAX), side: 1 },                      // góc thấp, nhà lệch sang phải khung
+      ];
+      // lia dọc đường trước nhà (có dữ liệu đường): đáp ở một đầu rồi trượt sang đầu kia
+      const fp = scene.streets?.front?.pts;
+      if (fp && fp.length >= 2) {
+        const A = fp[0], B = fp[fp.length - 1];
+        const mid = (q, f) => ({ lat: H.lat + (q[0] - H.lat) * f, lng: H.lng + (q[1] - H.lng) * f });
+        const a = mid(A, 0.55), b = mid(B, 0.55);
+        seq.push({ cam: { ...C, lat: a.lat, lng: a.lng, zoom: C.zoom - 0.5, pitch: 38 }, side: 0, move: 0.5 });
+        seq.push({ cam: { ...C, lat: b.lat, lng: b.lng, zoom: C.zoom - 0.5, pitch: 38 }, slide: true });
+      } else seq.push({ cam: offCam(C, LW * 0.22, LH * 0.05, -0.3, 36), side: -1 }); // nhà lệch sang trái khung
+      seq.push({ cam: offCam(C, 0, LH * 0.1, -1.1, 22), side: -1 });               // trung cảnh
+      seq.push({ cam: offCam(C, LW * 0.12, 0, up * 0.6, Math.min(PMAX, ph0 + 8)), side: 1 }); // cận lại, góc khác
+      const list = seq.slice(0, n);
+      if (list.length < n) for (let i = list.length; i < n; i++) list.push({ ...seq[(i % (seq.length - 1)) + 1] });
+      p.shots = mkShots(list, real);
+    } else if (['overview', 'road', 'poi', 'summary', 'outro', 'iso', 'boundary'].includes(p.type) && !p.radar && !p.shots && real > 6.2) {
+      const n = Math.max(2, Math.min(4, Math.round(real / 4.2)));
+      const C = p.to, pc = C.pitch || 30;
+      const seq = [
+        { cam: C, side: p.side || 1, move: p.move || 0.6 },
+        { cam: offCam(C, 0, 0, -0.75, Math.max(8, pc - 14)), side: -(p.side || 1) },  // lùi rộng, nhìn thẳng hơn
+        { cam: offCam(C, (p.side || 1) * LW * 0.07, 0, 0.12, Math.min(PMAX, pc + 6)), side: p.side || 1 }, // đẩy vào, lệch nhẹ
+        { cam: offCam(C, -(p.side || 1) * LW * 0.06, -LH * 0.03, -0.35, pc), side: -(p.side || 1) },
+      ];
+      p.shots = mkShots(seq.slice(0, n), real);
+    }
+  }
   let t = 0;
   let prev = camRegion;
   const phases = raw.map(p => {

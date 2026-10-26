@@ -4,7 +4,7 @@ import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, p
 import { ICON_PATHS } from './icons.js';
 import {
   FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, HI_THEMES, LOT_STYLES, LOT_COLORS, STYLES, BASES,
-  CLIP_MAX, clipTime,
+  CLIP_MAX, clipTime, camAt,
 } from './render.js';
 import { sfxEvents } from './sfx.js';
 import { stretchBuffer } from './stretch.js';
@@ -458,7 +458,7 @@ let audioSrc = null;
 let exporting = false;
 
 // Cho phép soát lỗi từ bảng điều khiển trình duyệt
-window.__vitri = { get tl() { return tl; }, get editCenter() { return editCenter; }, get planZoom() { return planZoom; }, get t() { return t; }, state, scanArea, SAMPLE_KEYS: () => SAMPLE_KEYS, pause: () => pause(), aiRewrite: () => aiRewrite() };
+window.__vitri = { get tl() { return tl; }, camAt: x => camAt(tl, x), get editCenter() { return editCenter; }, get planZoom() { return planZoom; }, get t() { return t; }, state, scanArea, SAMPLE_KEYS: () => SAMPLE_KEYS, pause: () => pause(), aiRewrite: () => aiRewrite() };
 
 function rebuild() {
   if (photoKey(state.house) !== photoHouse) { restorePhotos(); showPageResult(); }
