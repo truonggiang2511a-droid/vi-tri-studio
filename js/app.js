@@ -2494,7 +2494,10 @@ function renderVoices(list) {
       return items.length ? `<optgroup label="${esc(name)} (${items.length})">${items.map(opt).join('')}</optgroup>` : '';
     }).join('');
   }
-  if (!list.some(v => v.id === state.voiceId)) {
+  // Giọng Vbee đã chọn mà danh sách lần này thiếu (Vbee trả chậm/thiếu trang khi tải lại) → GIỮ nguyên, đừng đổi giọng:
+  // đổi giọng làm toàn bộ giọng đã tạo không còn khớp (26/10 Giang: tải lại web là mất giọng)
+  const keepVb = String(state.voiceId || '').startsWith('vb:') && !!vbeeKey();
+  if (!keepVb && !list.some(v => v.id === state.voiceId)) {
     const male = /^(g-)?nam/.test(state.voiceId);
     const pool = base.length ? base : vb;
     state.voiceId = (pool.find(v => /^(g-)?nam/.test(v.id) === male) || pool[0]).id;
@@ -3451,7 +3454,7 @@ function rememberVoices() {
     if (c && c.buffer === v.buffer) { c.t = now; continue; }
     media.voiceCache.set(v.ck, { buffer: v.buffer, speed: v.speed, own: !!v.own, t: now });
   }
-  if (state.sample || !photoKey(state.house)) return; // video mẫu có file giọng riêng
+  if (!photoKey(state.house)) return;
   clearTimeout(voiceSaveTimer);
   const hk = photoKey(state.house);
   voiceSaveTimer = setTimeout(() => saveVoices(hk), 600);
@@ -3463,14 +3466,14 @@ async function saveVoices(hk) {
     for (let i = 0; i < f.length; i++) { const x = Math.max(-1, Math.min(1, f[i])); pcm[i] = x < 0 ? x * 32768 : x * 32767; }
     return { ck, speed: c.speed ?? null, own: c.own, t: c.t || 0, sr: c.buffer.sampleRate, pcm: pcm.buffer };
   });
-  await voiceDb('put', hk, { t: Date.now(), items });
+  await voiceDb('put', hk, { t: Date.now(), voiceId: state.voiceId, items });
   const all = await voiceDb('list');
   if (all && all.length > VOICE_HOUSES) for (const [k] of all.sort((a, b) => b[1] - a[1]).slice(VOICE_HOUSES)) await voiceDb('del', k);
 }
 async function restoreVoices() {
   const hk = photoKey(state.house);
   voiceHouse = hk;
-  if (!hk || state.sample) return;
+  if (!hk) return;
   const rec = await voiceDb('get', hk);
   if (voiceHouse !== photoKey(state.house) || !rec?.items?.length) return;
   for (const it of rec.items) {
@@ -3482,6 +3485,13 @@ async function restoreVoices() {
       buf.copyToChannel(f, 0);
       media.voiceCache.set(it.ck, { buffer: buf, speed: it.speed, own: it.own, t: it.t });
     } catch { /* bỏ câu hỏng */ }
+  }
+  // Giọng đang chọn khác giọng lúc tạo (vd. danh sách giọng tải lại bị đổi mặc định) mà không câu nào khớp
+  // → trả lại giọng đã tạo để không mất giọng
+  if (rec.voiceId && rec.voiceId !== state.voiceId) {
+    const segs = scriptSegments().filter(sg => speakable(sg.text));
+    const hit = id => segs.filter(sg => media.voiceCache.has(speakable(sg.text) + '|' + id)).length;
+    if (!hit(state.voiceId) && hit(rec.voiceId)) { state.voiceId = rec.voiceId; syncVoiceUi(); save(); }
   }
   media.mixKey = '';
   renderScript();
