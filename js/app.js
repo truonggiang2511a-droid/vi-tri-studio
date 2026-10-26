@@ -113,7 +113,7 @@ const state = {
   useBoundary: true,
   scannedAt: null,
 };
-const media = { music: null, voice: null, musicName: '', voiceName: '', mixed: null, mixKey: '', voiceSegs: new Map(), logo: null, photos: [], clips: [], planImg: null, planRaw: null };
+const media = { music: null, voice: null, musicName: '', voiceName: '', mixed: null, mixKey: '', voiceSegs: new Map(), voiceCache: new Map(), logo: null, photos: [], clips: [], planImg: null, planRaw: null };
 const LOGO_STORE = 'vitri.logo.v1';
 const ai = { tts: false, ttsProvider: null, script: false, gated: true, voices: null };
 
@@ -450,6 +450,7 @@ let poiReq = 0;
 let planZoom = 17.5;   // mức phóng khi căn mặt bằng phân lô
 let planPick = null;   // đang ghim 2 điểm: { step: 'img1'|'map1'|'img2'|'map2', pts: [{x,y,lat,lng}] }
 let planHouse = '';
+let voiceHouse = '';
 let dirty = true;
 let lastFrame = 0;
 let audioCtx = null;
@@ -462,6 +463,7 @@ window.__vitri = { get tl() { return tl; }, get editCenter() { return editCenter
 function rebuild() {
   if (photoKey(state.house) !== photoHouse) { restorePhotos(); showPageResult(); }
   if (photoKey(state.house) !== planHouse) restorePlan();
+  if (photoKey(state.house) !== voiceHouse) restoreVoices();
   if (photoKey(state.house) !== clipHouse) restoreClips();
   if (!state.house) return;
   tl = buildTimeline(buildScene(), state.fmt, timelineOpts());
@@ -1571,6 +1573,7 @@ function resetHouseScoped() {
   Object.assign(state, { areaWard: '', areaProv: '', areaFor: '', roadWidth: '', sub: '', lotText: '', lotArea: '',
     scriptEdits: {}, scriptAi: false, scriptOwn: false, voSig: '', adminArea: null, admin: null, roadStars: [], roadFills: {}, iso: null, isoFor: '', region: null, regionFor: '', regionOff: [] });
   media.voiceSegs.clear();
+  media.voiceCache.clear();
   media.mixKey = '';
   for (const [id, v] of [['areaWardInput', ''], ['areaProvInput', ''], ['roadWidthInput', ''], ['subInput', ''], ['lotText', ''], ['lotArea', '']]) { const el = $(id); if (el) el.value = v; }
   updateAreaPlaceholders();
@@ -2161,11 +2164,23 @@ function speakable(text) {
 // Khoá khớp giọng: lời + giọng (KHÔNG gồm tốc độ đọc — đổi tốc độ thì co giãn giọng sẵn có, không phải tạo lại)
 const voiceKey = text => speakable(text) + '|' + state.voiceId;
 const VOICE_RATE = { '-1': 0.9, 0: 1, 1: 1.1 }; // khớp speakingRate bên máy chủ (lib/tts.js)
-const voiceOk = sg => { const v = media.voiceSegs.get(sg.key); return !!(v && v.ck === voiceKey(sg.text)); };
+// Giọng đã tạo được nhớ theo LỜI + GIỌNG (media.voiceCache, lưu cả vào máy — IndexedDB 'vitri-voices' theo căn):
+// sửa/thêm vài câu thì chỉ đọc câu mới; đổi lại lời cũ, AI viết rồi quay lại, tải lại trang… đều dùng lại giọng đã có, không tốn thêm.
+function voiceEntry(sg) {
+  const ck = voiceKey(sg.text);
+  const v = media.voiceSegs.get(sg.key);
+  if (v && v.ck === ck) return v;
+  const c = media.voiceCache.get(ck);
+  if (!c) return null;
+  const e = { ck, buffer: c.buffer, speed: c.speed, own: c.own };
+  media.voiceSegs.set(sg.key, e);
+  return e;
+}
+const voiceOk = sg => !!voiceEntry(sg);
 // Giọng của một câu theo tốc độ đọc hiện tại: đúng tốc độ lúc tạo thì dùng luôn, khác thì co giãn (giữ cao độ) và nhớ lại
 function voiceBuf(sg) {
-  const v = media.voiceSegs.get(sg.key);
-  if (!v || v.ck !== voiceKey(sg.text)) return null;
+  const v = voiceEntry(sg);
+  if (!v) return null;
   const sp = state.voiceSpeed || 0;
   if (v.own || v.speed == null || v.speed === sp) return v.buffer;
   v.st = v.st || {};
@@ -2501,7 +2516,6 @@ function altScript() {
   state.scriptSeed = (state.scriptSeed || 0) + 1;
   state.scriptEdits = {};
   state.scriptAi = false;
-  media.voiceSegs.clear();
   renderScript(); scheduleRebuild(); save();
   $('scrMsg').textContent = 'Đã đổi sang cách viết khác. Sửa câu nào chưa ưng ngay trong danh sách, rồi bấm "Tạo giọng đọc" ở Bước 2.';
 }
@@ -2558,7 +2572,7 @@ async function aiRewrite() {
     state.scriptAi = true;
     renderScript(); scheduleRebuild(); save();
     $('scrMsg').textContent = 'AI đã viết xong kịch bản.';
-    media.voiceSegs.clear(); // kịch bản mới thì giọng cũ không còn khớp
+    // Không xoá giọng cũ: câu nào lời giữ nguyên thì dùng lại, đổi lời thì voiceOk tự báo thiếu
     return true;
   } catch (e) {
     $('scrMsg').textContent = 'AI viết kịch bản chưa dùng được (' + e.message + '), lời hiện tại giữ nguyên.';
@@ -2800,6 +2814,7 @@ async function generateVoices() {
       const whole = await new OfflineAudioContext(1, 48000, 48000).decodeAudioData(ab);
       const pieces = splitVoice(whole, parts);
       grp.forEach((s, i) => media.voiceSegs.set(s.key, { ck: voiceKey(s.text), buffer: pieces[i], speed: state.voiceSpeed || 0 }));
+      rememberVoices(); // lưu ngay từng phần: lỗi giữa chừng/tải lại trang không mất phần đã tạo
       made += grp.length;
       renderScript();
     }
@@ -3399,6 +3414,79 @@ function showLogo() {
 // Thu nhỏ còn cạnh dài 1600px (đủ nét cho video 1080p), lưu IndexedDB theo toạ độ căn để mở lại vẫn còn.
 const PHOTO_MAX = 6;
 const photoKey = h => h ? `${h.lat.toFixed(5)},${h.lng.toFixed(5)}` : '';
+// ---------- Lưu giọng đã tạo trên máy (IndexedDB 'vitri-voices', theo căn) ----------
+// Mỗi câu: lời+giọng (ck), tốc độ lúc tạo, PCM 16-bit. Tối đa VOICE_KEEP câu mỗi căn, VOICE_HOUSES căn gần nhất.
+const VOICE_KEEP = 160, VOICE_HOUSES = 8;
+function voiceDb(mode, key, value) {
+  return new Promise(resolve => {
+    try {
+      const req = indexedDB.open('vitri-voices', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('house');
+      req.onerror = () => resolve(null);
+      req.onsuccess = () => {
+        try {
+          const db = req.result;
+          const tx = db.transaction('house', mode === 'get' || mode === 'list' ? 'readonly' : 'readwrite');
+          const st = tx.objectStore('house');
+          if (mode === 'list') { // [khoá, thời điểm] để bỏ căn cũ
+            const out = []; const cur = st.openCursor();
+            cur.onsuccess = () => { const c = cur.result; if (c) { out.push([c.key, c.value?.t || 0]); c.continue(); } else resolve(out); };
+            cur.onerror = () => resolve([]);
+            return;
+          }
+          const r = mode === 'get' ? st.get(key) : mode === 'del' ? st.delete(key) : st.put(value, key);
+          r.onsuccess = () => resolve(mode === 'get' ? r.result || null : true);
+          r.onerror = () => resolve(null);
+        } catch { resolve(null); }
+      };
+    } catch { resolve(null); }
+  });
+}
+let voiceSaveTimer = 0;
+function rememberVoices() {
+  const now = Date.now();
+  for (const v of media.voiceSegs.values()) {
+    if (!v?.ck || !v.buffer) continue;
+    const c = media.voiceCache.get(v.ck);
+    if (c && c.buffer === v.buffer) { c.t = now; continue; }
+    media.voiceCache.set(v.ck, { buffer: v.buffer, speed: v.speed, own: !!v.own, t: now });
+  }
+  if (state.sample || !photoKey(state.house)) return; // video mẫu có file giọng riêng
+  clearTimeout(voiceSaveTimer);
+  const hk = photoKey(state.house);
+  voiceSaveTimer = setTimeout(() => saveVoices(hk), 600);
+}
+async function saveVoices(hk) {
+  if (hk !== photoKey(state.house)) return;
+  const items = [...media.voiceCache.entries()].sort((a, b) => (b[1].t || 0) - (a[1].t || 0)).slice(0, VOICE_KEEP).map(([ck, c]) => {
+    const f = c.buffer.getChannelData(0), pcm = new Int16Array(f.length);
+    for (let i = 0; i < f.length; i++) { const x = Math.max(-1, Math.min(1, f[i])); pcm[i] = x < 0 ? x * 32768 : x * 32767; }
+    return { ck, speed: c.speed ?? null, own: c.own, t: c.t || 0, sr: c.buffer.sampleRate, pcm: pcm.buffer };
+  });
+  await voiceDb('put', hk, { t: Date.now(), items });
+  const all = await voiceDb('list');
+  if (all && all.length > VOICE_HOUSES) for (const [k] of all.sort((a, b) => b[1] - a[1]).slice(VOICE_HOUSES)) await voiceDb('del', k);
+}
+async function restoreVoices() {
+  const hk = photoKey(state.house);
+  voiceHouse = hk;
+  if (!hk || state.sample) return;
+  const rec = await voiceDb('get', hk);
+  if (voiceHouse !== photoKey(state.house) || !rec?.items?.length) return;
+  for (const it of rec.items) {
+    if (media.voiceCache.has(it.ck)) continue;
+    try {
+      const pcm = new Int16Array(it.pcm), f = new Float32Array(pcm.length);
+      for (let i = 0; i < pcm.length; i++) f[i] = pcm[i] / 32768;
+      const buf = new AudioBuffer({ length: Math.max(1, f.length), numberOfChannels: 1, sampleRate: it.sr || 48000 });
+      buf.copyToChannel(f, 0);
+      media.voiceCache.set(it.ck, { buffer: buf, speed: it.speed, own: it.own, t: it.t });
+    } catch { /* bỏ câu hỏng */ }
+  }
+  media.mixKey = '';
+  renderScript();
+  scheduleRebuild();
+}
 function photoDb(mode, key, value) {
   return new Promise(resolve => {
     try {
@@ -3884,6 +3972,7 @@ async function applyOwnVoice(buf, marks) {
   const pieces = marks && marks.length === segs.length - 1 ? splitAt(buf, marks) : splitVoice(buf, parts);
   media.voiceSegs.clear();
   segs.forEach((sg, i) => media.voiceSegs.set(sg.key, { ck: voiceKey(sg.text), buffer: pieces[i], own: true }));
+  rememberVoices();
   // Bỏ file giọng liền (nếu có) để không phát chồng
   if (media.voice) { media.voice = null; media.voiceName = ''; $('voiceName').textContent = 'Chưa có'; $('voiceClear').hidden = true; }
   state.aiVoiceOn = true; $('aiVoiceOn').checked = true;
