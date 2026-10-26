@@ -1264,7 +1264,7 @@ function removePlan() {
 }
 
 // ---------- Toạ độ sổ đỏ (VN-2000) → lô đất ----------
-// Đang thử: chỉ hiện khi mở link có ?vn2000=1 (nhớ trên máy; ?vn2000=0 để tắt). Không gửi toạ độ lên máy chủ.
+// Mở cho mọi khách từ 27/10. Dán toạ độ tính ngay trên máy (không gửi lên máy chủ); chụp ảnh → /api/so-ocr (phải đăng nhập).
 let vnRes = null;
 let vnOcr = null; // kết quả AI đọc ảnh: { labels, edges, area, unsure }
 function vnEnabled() {
@@ -1490,8 +1490,8 @@ async function vnSnap(file) {
     say('AI chưa đọc được ảnh (' + e.message + '). Thử lại, hoặc chép tay bảng toạ độ bên dưới.');
   } finally { btn.disabled = false; }
 }
-// Hiện lối vào khi mở link ?vn2000=1 hoặc đăng nhập tài khoản nội bộ (@vitristudio.com); khách thường chưa thấy
-const vnVisible = () => vnEnabled() || /@vitristudio\.com$/i.test(String(account.profile?.login || ''));
+// 27/10 (Giang): mở cho MỌI khách. ?vn2000=0 ẩn trên 1 máy (khi cần thử giao diện không có mục này)
+const vnVisible = () => { try { if (new URLSearchParams(location.search).get('vn2000') === '0') return false; } catch { /* bỏ qua */ } return true; };
 function syncVnEntry() {
   const on = vnVisible();
   $('vnOpen').hidden = !on;
