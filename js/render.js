@@ -1474,6 +1474,74 @@ function glossyText(ctx, text, size, faceKey, depth, ex, ey, sweep, k = 1) {
 
 // Chữ in nằm trên mặt đất theo hướng trục đường (sau khi bẻ phối cảnh sẽ nằm nghiêng theo mặt đất)
 // opt.face: kiểu chữ bóng; opt.scale: hiệu ứng vào/ra; opt.sweep: vệt sáng 0..1; opt.k: độ phân giải canvas đất
+// Bề rộng chữ tên đường (đo thật bằng font, tính cho cỡ 1) — để biết chữ có tràn khung không
+const LAB_W = new Map();
+let labCtx = null;
+function labelWidth1(text) {
+  let w = LAB_W.get(text);
+  if (w == null) {
+    try {
+      labCtx ||= (typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(8, 8) : document.createElement('canvas')).getContext('2d');
+      labCtx.font = `800 100px ${FONT}`;
+      w = spacedWidth(labCtx, text, 7) / 100;
+    } catch { w = text.length * 0.68; }
+    LAB_W.set(text, w);
+  }
+  return w;
+}
+// 27/10 (Giang): chữ tên trục đường phải nằm TRỌN trong khung. Trả về { du: trượt dọc đường (đơn vị mặt đất),
+// size: cỡ chữ (thu nhỏ khi dài hơn khung), ok: false khi không cách nào vừa → ẩn chữ thay vì để cụt chữ }.
+function fitRoadLabel(P, v, L, LW, LH, safe) {
+  const q = gLL(v, L.at.lat, L.at.lng);
+  const a = gLL(v, L.a[0], L.a[1]), b = gLL(v, L.b[0], L.b[1]);
+  const ang = Math.atan2(b.y - a.y, b.x - a.x), cx = Math.cos(ang), cy = Math.sin(ang);
+  const M = 8, X0 = M, X1 = LW - M, Y0 = M, Y1 = LH - M;
+  const w1 = labelWidth1(L.text);
+  let size = L.size, du = 0, box = null;
+  const measure = () => {
+    const half = (w1 * size) / 2 + size * 0.25; // nửa bề rộng chữ + bóng đổ
+    const e1 = g2s(P, q.x + cx * (du - half), q.y + cy * (du - half));
+    const e2 = g2s(P, q.x + cx * (du + half), q.y + cy * (du + half));
+    if (e1.w <= 0.05 || e2.w <= 0.05) return null;
+    const r1 = size * 0.62 / e1.w, r2 = size * 0.62 / e2.w; // nửa chiều cao chữ trên màn hình (cả khối dâng ~ thêm 0,6)
+    return {
+      half, e1, e2,
+      x0: Math.min(e1.x - r1, e2.x - r2), x1: Math.max(e1.x + r1, e2.x + r2),
+      y0: Math.min(e1.y - r1 * 1.6, e2.y - r2 * 1.6), y1: Math.max(e1.y + r1, e2.y + r2),
+    };
+  };
+  for (let it = 0; it < 6; it++) {
+    box = measure();
+    if (!box) return { du: 0, size: L.size, ok: false };
+    const ox = box.x0 < X0 ? X0 - box.x0 : box.x1 > X1 ? X1 - box.x1 : 0;
+    const oy = box.y0 < Y0 ? Y0 - box.y0 : box.y1 > Y1 ? Y1 - box.y1 : 0;
+    if (Math.abs(ox) < 0.5 && Math.abs(oy) < 0.5) return { du, size, ok: true };
+    // dài hơn khung → thu nhỏ cho vừa (tối đa còn 55%)
+    const fx = (X1 - X0) / (box.x1 - box.x0), fy = (Y1 - Y0) / (box.y1 - box.y0);
+    const f = Math.min(fx, fy);
+    if (f < 1) { size = Math.max(L.size * 0.55, size * f * 0.97); continue; }
+    // trượt dọc theo đường: đổi độ lệch trên màn hình ra độ dài trên mặt đất
+    const dx = box.e2.x - box.e1.x, dy = box.e2.y - box.e1.y, len = Math.hypot(dx, dy) || 1;
+    const ux = dx / len, uy = dy / len, perG = (2 * box.half) / len;
+    let t = 0;
+    if (ox && Math.abs(ux) > 0.25) t = ox / ux;
+    else if (oy && Math.abs(uy) > 0.25) t = oy / uy;
+    if (!t) { size = Math.max(L.size * 0.55, size * 0.85); if (size <= L.size * 0.55 + 1e-6) break; continue; }
+    du += t * perG;
+    const lim = labelWidth1(L.text) * L.size * 0.9; // không trượt quá ~1 bề rộng chữ (đường cong thì chữ lệch khỏi line)
+    if (Math.abs(du) > lim) { du = Math.sign(du) * lim; size = Math.max(L.size * 0.55, size * 0.88); }
+  }
+  box = measure();
+  const ok = !!box && box.x0 >= X0 - 1.5 && box.x1 <= X1 + 1.5 && box.y0 >= Y0 - 1.5 && box.y1 <= Y1 + 1.5;
+  return { du, size, ok };
+}
+// (bộ thử) khung chữ trên màn hình tại vị trí đã trượt
+function fitRoadLabelBox(P, v, L, q) {
+  const a = gLL(v, L.a[0], L.a[1]), b = gLL(v, L.b[0], L.b[1]);
+  const ang = Math.atan2(b.y - a.y, b.x - a.x), half = labelWidth1(L.text) * L.size / 2;
+  const e1 = g2s(P, q.x - Math.cos(ang) * half, q.y - Math.sin(ang) * half), e2 = g2s(P, q.x + Math.cos(ang) * half, q.y + Math.sin(ang) * half);
+  return { x0: Math.min(e1.x, e2.x), x1: Math.max(e1.x, e2.x), y0: Math.min(e1.y, e2.y), y1: Math.max(e1.y, e2.y) };
+}
 function groundText(g, v, L, color, alpha, rise, opt = null) {
   if (alpha <= 0.01) return;
   const p = gLL(v, L.at.lat, L.at.lng);
@@ -3841,12 +3909,17 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       const d = ph.t1 - ph.t0;
       const rise = clamp01((t - ph.t0 - 0.5 * d) / 0.7);
       if (rise <= 0) return;
-      const q = gLL(v, L.at.lat, L.at.lng);
-      const s0 = g2s(P, q.x, q.y);
-      if (s0.w <= 0.05) return;
-      // các điểm dọc thân chữ (toạ độ mặt đất) → màn hình, mỗi điểm một bán kính theo phối cảnh
+      // 27/10 (Giang): chữ phải nằm TRỌN trong khung. Chữ đặt theo khung lúc máy dừng, sau đó máy còn đẩy vào/lia ngang
+      // → chữ tràn mép, mất chữ cuối. Mỗi khung: trượt chữ dọc theo đường vào trong, dài quá thì thu nhỏ; không vừa thì mờ đi.
+      const fit = fitRoadLabel(P, v, L, LW, LH, safe);
+      const q0 = gLL(v, L.at.lat, L.at.lng);
       const a = gLL(v, L.a[0], L.a[1]), b = gLL(v, L.b[0], L.b[1]);
       const ang = Math.atan2(b.y - a.y, b.x - a.x);
+      const q = { x: q0.x + Math.cos(ang) * fit.du, y: q0.y + Math.sin(ang) * fit.du };
+      const s0 = g2s(P, q.x, q.y);
+      if (s0.w <= 0.05) return;
+      if (fit.size !== L.size) L = { ...L, size: fit.size };
+      // các điểm dọc thân chữ (toạ độ mặt đất) → màn hình, mỗi điểm một bán kính theo phối cảnh
       const half = L.text.length * L.size * 0.36, rad = L.size * 0.62;
       const pts = [];
       for (let k = -4; k <= 4; k++) {
@@ -3855,12 +3928,12 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
         if (sp.w > 0.05) pts.push({ x: sp.x, y: sp.y, r: rad / sp.w });
       }
       const prio = L.road === curRoad && !L.sum ? 0 : L.sum && inSum ? 0.5 : isHi ? 1 : 2 + L.road;
-      items.push({ L, li, labA, rise, q, s0, pts, prio });
+      items.push({ L, li, labA, rise, q, s0, pts, prio, out: !fit.ok });
     });
     const hitPts = (A, B) => A.pts.some(p => B.pts.some(q => Math.hypot(p.x - q.x, p.y - q.y) < (p.r + q.r) * 0.92));
     const shown = [];
     for (const it of items.slice().sort((x, y) => x.prio - y.prio)) {
-      it.ok = !shown.some(o => hitPts(it, o));
+      it.ok = !it.out && !shown.some(o => hitPts(it, o));
       if (it.ok) shown.push(it);
     }
     tl._labVis ||= new Map();
@@ -3879,6 +3952,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
         occBox(ctx, Math.min(...xs) - r, Math.min(...ys) - r * 1.6, Math.max(...xs) + r, Math.max(...ys) + r);
       }
       const { L, q, s0 } = it;
+      if (globalThis.__labDbg && it.vis * it.labA > 0.3) globalThis.__labDbg.push({ t, text: L.text, size: L.size, base: tl.roadLabels[it.li].size, ...fitRoadLabelBox(P, v, L, q) });
       const st = roadStyleOf(scene, tl.roads[L.road]);
       // Kiểu cũ (Giang chốt 23/10): chữ 3D in đậm, mặt trắng hoặc vàng, thân khối tối, viền đen dày; dâng khối khi hiện
       const sx = g2s(P, q.x + 1, q.y), sy = g2s(P, q.x, q.y + 1);
