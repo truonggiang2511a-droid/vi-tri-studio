@@ -144,11 +144,39 @@ function traceRect(ctx, x, y, w, h, p, color, lw, A) {
   ctx.beginPath(); ctx.moveTo(x + w / 2, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y); ctx.closePath(); ctx.stroke();
   ctx.restore();
 }
-function fitText(ctx, text, maxW) {
-  if (ctx.measureText(text).width <= maxW) return text;
+// 27/10 (khách báo "Cách Cao tốc Khánh Hòa – Buôn Ma…" mất chữ "Thuột" và mất luôn số km): chữ dài hơn khung thì
+// THU NHỎ cho vừa (đổi luôn ctx.font, còn tối thiểu 66%); dài quá nữa mới cắt "…" ở ranh giới từ.
+const fontPx = ctx => { const m = /([\d.]+)px/.exec(ctx.font); return m ? +m[1] : 0; };
+const setPx = (ctx, px) => { ctx.font = ctx.font.replace(/[\d.]+px/, px.toFixed(2) + 'px'); };
+function fitText(ctx, text, maxW, minF = 0.66) {
+  const w = ctx.measureText(text).width;
+  if (w <= maxW) return text;
+  const px = fontPx(ctx);
+  if (px) {
+    setPx(ctx, px * Math.max(minF, (maxW / w) * 0.99));
+    if (ctx.measureText(text).width <= maxW) return text;
+  }
   let s = text;
   while (s.length > 1 && ctx.measureText(s + '…').width > maxW) s = s.slice(0, -1);
-  return s + '…';
+  const sp = s.lastIndexOf(' ');
+  if (sp > s.length * 0.6) s = s.slice(0, sp);
+  return s.trimEnd() + '…';
+}
+// Dòng phụ thẻ mở đầu: vừa thì 1 dòng (thu nhỏ tối đa còn 82%), dài hơn thì xuống 2 dòng ở chỗ cách gần giữa nhất
+function fitLines(ctx, text, maxW) {
+  const px = fontPx(ctx), w = ctx.measureText(text).width;
+  if (w <= maxW) return [text];
+  if (px && maxW / w >= 0.82) { setPx(ctx, px * (maxW / w) * 0.99); return [text]; }
+  const words = text.split(' ');
+  if (words.length < 2) return [fitText(ctx, text, maxW)];
+  let best = null;
+  for (let i = 1; i < words.length; i++) {
+    const a = words.slice(0, i).join(' '), b = words.slice(i).join(' ');
+    const m = Math.max(ctx.measureText(a).width, ctx.measureText(b).width);
+    if (!best || m < best.m) best = { a, b, m };
+  }
+  if (px && best.m > maxW) setPx(ctx, px * Math.max(0.7, (maxW / best.m) * 0.99));
+  return [fitText(ctx, best.a, maxW, 1), fitText(ctx, best.b, maxW, 1)];
 }
 function dim(ctx, LW, LH, A, k, glow) {
   ctx.save();
@@ -233,8 +261,9 @@ export const MOTION = {
         if (a <= 0) return;
         ctx.globalAlpha = A * a; ctx.fillStyle = '#F4EFE6';
         ctx.font = `600 ${25 * k}px ${BODY}`; ctx.textAlign = 'center';
-        ctx.fillText(fitText(ctx, s, maxW), cx, y + (1 - ease.out(a)) * 10);
-        y += 38 * k;
+        const ls = fitLines(ctx, s, maxW), lh = fontPx(ctx) * 1.25;
+        ls.forEach((ln, j) => ctx.fillText(ln, cx, y + j * lh + (1 - ease.out(a)) * 10));
+        y += 38 * k + (ls.length - 1) * lh;
       });
       ctx.restore();
     },
@@ -391,8 +420,9 @@ export const MOTION = {
         if (a <= 0) return;
         ctx.globalAlpha = A * a; ctx.fillStyle = '#F7F1E6';
         ctx.font = `${i ? 'italic ' : ''}500 ${(i ? 23 : 24) * k}px ${i ? SERIF : BODY}`; ctx.textAlign = 'center';
-        ctx.fillText(fitText(ctx, s, maxW), cx, y);
-        y += 36 * k;
+        const ls = fitLines(ctx, s, maxW), lh = fontPx(ctx) * 1.25;
+        ls.forEach((ln, j) => ctx.fillText(ln, cx, y + j * lh));
+        y += 36 * k + (ls.length - 1) * lh;
       });
       ctx.restore();
     },
