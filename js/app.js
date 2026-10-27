@@ -1781,6 +1781,7 @@ function autoPlaySample() {
     if (playing && !started) { started = true; startAudio(); } // đang phát: bật tiếng đúng chỗ đang chạy
     setTimeout(() => {
       if (!audioCtx || audioCtx.state !== 'running') { started = false; return; }
+      if (snd && !snd.hidden) funnel('mau_tieng'); // phễu: khách đã bật được tiếng video mẫu
       if (snd) snd.hidden = true;
       for (const ev of EVS) document.removeEventListener(ev, unlock, true);
     }, 450);
