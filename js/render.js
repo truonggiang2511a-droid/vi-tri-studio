@@ -343,9 +343,6 @@ function drawTiles(g, cache, cam, rect, gs, request) {
   // Ô ảnh thường bị thu nhỏ khi vẽ (zoom lẻ): làm mượt chất lượng cao để chi tiết không bị nhoè/răng cưa
   g.imageSmoothingEnabled = true;
   if ('imageSmoothingQuality' in g) g.imageSmoothingQuality = 'high';
-  // Lọc màu cho ảnh tươi, rõ (trình duyệt không hỗ trợ thì bỏ qua)
-  const fx = BASE.fx && BASE.fx !== 'none' ? BASE.fx : '';
-  if (fx) try { g.filter = fx; } catch { /* bỏ qua */ }
   const ds = 256 * T.kt;
   for (let ty = T.y0; ty <= T.y1; ty++) {
     for (let tx = T.x0; tx <= T.x1; tx++) {
@@ -367,7 +364,22 @@ function drawTiles(g, cache, cam, rect, gs, request) {
       }
     }
   }
-  if (fx) try { g.filter = 'none'; } catch { /* bỏ qua */ }
+  // Lọc màu cho ảnh tươi, rõ — MỘT lần cho cả vùng ô ảnh vừa vẽ (trước khi vẽ line/ranh lô lên mặt đất).
+  // 27/10: trước đây đặt g.filter rồi vẽ TỪNG ô → bộ lọc chạy ~100–260 lần mỗi khung; trên iPhone/máy không có GPU
+  // bộ lọc canvas chạy bằng CPU nên xuất video 2,5 phút mất ~30 phút. Đo máy thử 1080p: 7,9 s → 0,23 s/khung, màu như cũ.
+  const fx = BASE.fx && BASE.fx !== 'none' ? BASE.fx : '';
+  if (fx) {
+    try {
+      const m = g.getTransform();
+      const X0 = Math.max(0, Math.floor(m.a * rect.x0 + m.e)), Y0 = Math.max(0, Math.floor(m.d * rect.y0 + m.f));
+      const X1 = Math.min(g.canvas.width, Math.ceil(m.a * rect.x1 + m.e)), Y1 = Math.min(g.canvas.height, Math.ceil(m.d * rect.y1 + m.f));
+      g.save();
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.filter = fx;
+      if (g.filter === fx && X1 > X0 && Y1 > Y0) g.drawImage(g.canvas, X0, Y0, X1 - X0, Y1 - Y0, X0, Y0, X1 - X0, Y1 - Y0);
+      g.restore();
+    } catch { /* trình duyệt không hỗ trợ bộ lọc canvas thì bỏ qua (như trước) */ }
+  }
 }
 
 function groundRect(P) {
