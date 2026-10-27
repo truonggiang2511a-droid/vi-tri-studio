@@ -33,6 +33,7 @@ const state = {
   sub: '',
   radiusKm: 5,
   title: 'Vị trí & tiện ích',
+  showTitle: true,   // 27/10: khách tắt được dải tiêu đề trên đầu video (giữ chữ đã gõ)
   brand: '',
   phone: '',
   price: '',         // thông tin căn nhà hiện trên video + giọng đọc
@@ -335,7 +336,7 @@ function buildScene() {
     house: state.house,
     label: (state.label || 'VỊ TRÍ').toUpperCase(),
     sub: state.sub,
-    title: state.title,
+    title: state.showTitle === false ? '' : state.title,
     brand: state.brand,
     phone: phoneDisplay(state.phone),
     logo: media.logo,
@@ -353,7 +354,7 @@ function buildScene() {
     boundary: state.useBoundary && state.admin?.boundary ? { ...state.admin.boundary, route: state.routes.__ranh || null } : null,
     provinceShort: state.admin?.provinceShort || '',
     commune: state.admin?.commune || '',
-    titleSub: state.sub,
+    titleSub: state.showTitle === false ? '' : state.sub,
     style: state.style,
     base: state.base,
     flow: state.flow,
@@ -3234,7 +3235,7 @@ async function stepNext() {
 }
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
-const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'brand', 'phone', 'price', 'area', 'beds', 'legal', 'highlights', 'buyer',
+const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'showTitle', 'brand', 'phone', 'price', 'area', 'beds', 'legal', 'highlights', 'buyer',
   'scriptSeed', 'scriptEdits', 'scriptAi', 'scriptOwn', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'myRoads', 'plan', 'planOn', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'lotStyle', 'lotColor', 'lotSrc', 'lotDims', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
@@ -4124,6 +4125,8 @@ function init() {
   $('subInput').value = state.sub;
   $('radiusInput').value = state.radiusKm;
   $('titleInput').value = state.title;
+  $('showTitle').checked = state.showTitle !== false;
+  $('titleInput').disabled = state.showTitle === false;
   $('brandInput').value = state.brand;
   $('musicVol').value = state.musicVol;
   $('fitVoice').checked = state.fitVoice;
@@ -4354,6 +4357,7 @@ function init() {
   bindSeg('flowSeg', v => { state.flow = v; scheduleRebuild(); });
   bindSeg('qualSeg', v => { state.quality = v; save(); });
   $('titleInput').addEventListener('input', e => { state.title = e.target.value; scheduleRebuild(); });
+  $('showTitle').addEventListener('change', e => { state.showTitle = e.target.checked; $('titleInput').disabled = !e.target.checked; save(); scheduleRebuild(); });
   $('showStreets').checked = state.showStreets !== false;
   $('showStreets').addEventListener('change', e => { state.showStreets = e.target.checked; scheduleRebuild(); });
   $('sweepOn').checked = !!state.showSweep;

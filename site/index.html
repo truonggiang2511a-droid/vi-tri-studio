@@ -318,10 +318,15 @@
           <label class="check"><input autocomplete="off" id="showStreets" type="checkbox" checked> Vẽ đường quanh nhà (kiểu đường nhựa)</label>
           <span class="hint small">Vị trí và hướng đường lấy từ bản đồ thật; bề rộng chỉ hiện khi anh/chị nhập (app không tự đoán số mét).</span>
         </div>
+        <div class="field">
+          <span class="field-label">Tiêu đề trên đầu video <em>dòng chữ lớn ở trên cùng lúc mở đầu, kèm tên xã/tỉnh nhỏ bên dưới</em></span>
+          <label class="check"><input autocomplete="off" id="showTitle" type="checkbox" checked> Hiện tiêu đề trên đầu video</label>
+          <input autocomplete="off" id="titleInput" class="input" type="text" maxlength="40" placeholder="Ghi theo ý anh/chị, VD: Nhà phố 5x20 khu Sadeco">
+          <span class="hint small">Bỏ tick để video không có dòng tiêu đề này. Tên xã/tỉnh nhỏ bên dưới sửa ở ô "Dòng phụ" (bước 1).</span>
+        </div>
         <details class="more">
-          <summary>Tiêu đề &amp; thương hiệu</summary>
+          <summary>Thương hiệu cuối video</summary>
           <div class="more-body">
-            <label class="field"><span class="field-label">Tiêu đề mở đầu</span><input autocomplete="off" id="titleInput" class="input" type="text" maxlength="40"></label>
             <label class="field"><span class="field-label">Tên kênh / sàn cuối video</span><input autocomplete="off" id="brandInput" class="input" type="text" maxlength="40" placeholder="Nhà Đất Bình Chánh"></label>
           </div>
         </details>
