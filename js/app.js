@@ -14,7 +14,7 @@ import { MOTION } from './motion.js';
 import { processPlan, FULL_QUAD, planNeedsAlpha } from './planimg.js';
 import { onAccountChange, initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount } from './account.js';
 import { splitVoice, joinForTts, splitAt } from './voicesplit.js';
-import { loadConfig, initTracking, countVisit } from './track.js';
+import { loadConfig, initTracking, countVisit, funnel } from './track.js';
 import { initInstall } from './install.js';
 import { initLeads, downloadPageQr, pageUrl, openLeads } from './leads.js';
 import { SB_URL, SB_KEY } from './sb.js';
@@ -1550,6 +1550,7 @@ function applyCoords(text, { silent = false } = {}) {
       state.coordText = t;
       state.coordSet = true;
       $('coordInput').value = t;
+      funnel('toado');
       msg.textContent = `Đã đọc từ link${r.name ? ' (' + r.name + ')' : ''}: ${t}`;
       msg.className = 'hint ok';
     }).catch(e => { msg.textContent = e.message; msg.className = 'hint err'; });
@@ -1563,7 +1564,7 @@ function applyCoords(text, { silent = false } = {}) {
   }
   setHouse({ lat: r.lat, lng: r.lng }, { fresh: !silent });
   state.coordText = text;
-  if (!silent) state.coordSet = true;
+  if (!silent) { state.coordSet = true; funnel('toado'); }
   msg.textContent = `Đã đọc: ${r.lat.toFixed(6)}, ${r.lng.toFixed(6)}`;
   msg.className = 'hint ok';
   return true;
@@ -1765,6 +1766,7 @@ function leaveSample() {
 // Phát video mẫu. Trình duyệt chặn tiếng khi khách chưa chạm vào trang → phát hình trước, nút "Bật tiếng" nháy;
 // chạm bất kỳ đâu là có nhạc ngay đúng chỗ đang phát.
 function autoPlaySample() {
+  funnel('mau');
   const tg = $('sampleTag');
   if (tg) tg.hidden = false;
   const snd = $('sampleSound');
@@ -1791,6 +1793,7 @@ function autoPlaySample() {
   setTimeout(showLooks, 2500);
 }
 async function trySample() {
+  funnel('thu');
   // Có dữ liệu mẫu quét sẵn: ghi vào máy rồi mở lại trang → phát ngay (nhanh hơn quét thật ~20 s)
   const d = await fetchSample();
   if (d && d.pois?.length) {
@@ -1821,6 +1824,7 @@ async function trySample() {
 // ---------- Mời mua đúng lúc: xem thử tới khoảng 60% video thì hiện lời mời (không chặn xem) ----------
 let nudgeDone = false;
 function maybeNudge() {
+  if (tl && t >= tl.duration * 0.6) funnel(state.sample ? 'mau60' : 'xem60');
   if (nudgeDone || !tl || t < tl.duration * 0.6) return;
   nudgeDone = true;
   try { if (sessionStorage.getItem('vitri.nudge')) return; sessionStorage.setItem('vitri.nudge', '1'); } catch { /* bỏ qua */ }
@@ -1958,6 +1962,7 @@ async function scan() {
     const manual = state.pois.filter(p => p.manual);
     state.pois = [...res.pois, ...manual];
     state.roads = res.roads;
+    if (!state.sample && res.pois.length) funnel('quet');
     state.streets = res.streets || null;
     state.adminArea = res.area || null;
     updateAreaPlaceholders();
@@ -2771,6 +2776,7 @@ async function ttsRequest(text, onWait, attempt = 0) {
 }
 
 async function generateVoices() {
+  if (!state.sample) funnel('giong');
   if (ttsBusy) return;
   if (!ai.tts) { await checkAi(); if (!ai.tts) { toast('Giọng AI chưa bật trên máy chủ.', 3500); return; } }
   if (ai.gated && !account.profile && !(await requireLogin('Đăng nhập để tạo giọng đọc AI. Tài khoản mới có lượt dùng thử miễn phí.'))) return;
@@ -3019,6 +3025,7 @@ let gating = false;
 let exportAudioCtx = null;
 async function doExport() {
   if (!state.house) { toast('Nhập toạ độ căn nhà trước.'); return; }
+  funnel(state.sample ? 'xuat_mau' : 'xuat');
   if (exporting || gating) return;
   // Mở khoá âm thanh ngay trong cú bấm (iPhone), dùng khi phải quay thời gian thực
   exportAudioCtx?.close?.().catch?.(() => {});
@@ -3147,6 +3154,7 @@ function stepDone(n) {
 function showStep(n, { scroll = true } = {}) {
   if (n === 3 && !ai.script) checkAi(); // khoá AI vừa thêm trên máy chủ thì thẻ AI tự hiện
   step = Math.max(1, Math.min(4, n));
+  if (scroll && step >= 3 && !state.sample) funnel('buoc' + step); // chỉ tính khi khách tự chuyển bước (lúc mở app không tính)
   for (const a of document.querySelectorAll('.steps > .step')) a.classList.toggle('on', +a.dataset.step === step);
   if (scroll) {
     const panel = $('panel');

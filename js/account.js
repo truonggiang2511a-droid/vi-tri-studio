@@ -1,7 +1,7 @@
 // Tài khoản khách hàng: đăng ký/đăng nhập, số lượt, mua thêm lượt bằng VietQR.
 // Mọi kiểm tra lượt nằm ở các hàm vt_* trên Supabase; trình duyệt chỉ gọi và hiển thị.
 import qrcode from 'qrcode-generator';
-import { track, firstSource } from './track.js';
+import { track, firstSource, funnel } from './track.js';
 import { deviceId, fingerprint } from './device.js';
 
 import { SB_URL, SB_KEY } from './sb.js';
@@ -242,6 +242,10 @@ function setAuthTab(tab) {
 export function requireLogin(reason = '', tab) {
   if (S.profile) return Promise.resolve(true);
   loadInfo();
+  // phễu: hộp đăng ký mở ra vì việc gì
+  funnel('dk_' + (!reason ? (tab === 'login' ? 'nut_dn' : 'nut') : /hết hạn/i.test(reason) ? 'hethan' : /xuất video/i.test(reason) ? 'xuat'
+    : /giọng/i.test(reason) ? 'giong' : /kịch bản/i.test(reason) ? 'ai' : /sơ đồ thửa/i.test(reason) ? 'sodo'
+    : /trang web/i.test(reason) ? 'web' : /lưu|mở lại/i.test(reason) ? 'luu' : /mua/i.test(reason) ? 'mua' : 'khac'));
   return new Promise(resolve => {
     authResolve?.(false);
     authResolve = resolve;
@@ -270,9 +274,11 @@ async function submitAuth(e) {
   try {
     let r;
     if (authTab === 'register') {
+      funnel('dk_gui');
       const [dev, fp] = await Promise.all([deviceId().catch(() => null), fingerprint().catch(() => null)]);
       r = await rpc('vt_signup2', { p_login: login, p_password: pass, p_name: $('authName').value.trim(), p_ref: getRef(), p_device: dev, p_fp: fp });
       track('register', { login });
+      funnel('dk_ok');
       rpc('vt_set_source', { p_token: r.token, p_source: firstSource() || (getRef() ? 'gioi-thieu-ban' : 'truc-tiep') }).catch(() => {});
       try { localStorage.removeItem(REF_KEY); } catch { /* bỏ qua */ }
     } else {
@@ -293,6 +299,7 @@ async function submitAuth(e) {
     const f = authResolve; authResolve = null; f?.(true);
   } catch (err) {
     msg.textContent = err.message;
+    if (authTab === 'register') funnel(err.hint === 'EXISTS' ? 'dk_trung' : 'dk_loi');
     if (err.hint === 'EXISTS') setTimeout(() => { setAuthTab('login'); $('authMsg').textContent = err.message; }, 0);
   } finally {
     btn.disabled = false;
@@ -614,7 +621,7 @@ export async function initAccount(opts = {}) {
   $('acctBtn').addEventListener('click', () => (S.profile ? openAccount() : requireLogin()));
   $('authTabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) setAuthTab(b.dataset.tab); });
   $('authForm').addEventListener('submit', submitAuth);
-  $('authDlg').addEventListener('close', () => { const f = authResolve; authResolve = null; f?.(false); });
+  $('authDlg').addEventListener('close', () => { const f = authResolve; authResolve = null; if (f && !S.profile) funnel('dk_dong'); f?.(false); });
   for (const d of document.querySelectorAll('dialog.dlg')) {
     d.addEventListener('click', e => {
       if (e.target === d || e.target.closest('[data-close]')) d.close();

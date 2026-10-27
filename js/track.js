@@ -49,6 +49,22 @@ export function countVisit(page) {
   } catch { /* bỏ qua */ }
   rpcFire('vt_visit', { p_page: page, p_source: s });
 }
+// ---------- Phễu nội bộ (27/10): khách bỏ ở bước nào trước khi đăng ký ----------
+// Mỗi bước đếm 1 lần/phiên, gộp theo ngày + nguồn vào vt_visits với tên trang 'f_<bước>' (không lưu thông tin cá nhân).
+// KHÔNG gửi gì cho Meta/TikTok — không ảnh hưởng sự kiện quảng cáo. Máy đã từng có tài khoản → nguồn 'co-tk'.
+const fnDone = new Set();
+export function funnel(step) {
+  if (fnDone.has(step)) return;
+  fnDone.add(step);
+  try {
+    const k = 'vitri.fn.' + step;
+    if (sessionStorage.getItem(k)) return;
+    sessionStorage.setItem(k, '1');
+  } catch { /* bỏ qua */ }
+  let had = false;
+  try { had = !!localStorage.getItem('vitri.hasAcct'); } catch { /* bỏ qua */ }
+  rpcFire('vt_visit', { p_page: 'f_' + step, p_source: had ? 'co-tk' : (readSrc() || detectSource() || 'truc-tiep') });
+}
 let cfgPromise = null;
 let loaded = false;
 let loaded_pixel = '';

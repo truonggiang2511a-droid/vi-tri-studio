@@ -1,5 +1,5 @@
 // Trang giới thiệu (/gioi-thieu): video mẫu chạy thật bằng chính bộ dựng của app, bảng giá lấy từ máy chủ.
-import { initTracking, track, countVisit } from './track.js';
+import { initTracking, track, countVisit, funnel } from './track.js';
 import { SB_URL, SB_KEY } from './sb.js';
 import { initInstall } from './install.js';
 const REF_KEY = 'vitri.ref.v1';
@@ -98,7 +98,7 @@ initTracking().then(() => track('view'));
 Promise.all([loadInfo(), refValid(ref)]).then(([info, ok]) => renderInfo(info, ok));
 setupDemo();
 document.addEventListener('click', e => {
-  if (e.target.closest('[data-cta]')) track('trial_click');
+  if (e.target.closest('[data-cta]')) { track('trial_click'); funnel('cta'); }
 });
 $('year').textContent = new Date().getFullYear();
 
