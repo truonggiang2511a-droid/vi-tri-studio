@@ -25,6 +25,7 @@ const STORE = 'vitri.project.v1';
 const MAX_POIS = 10;
 const ROAD_DOT = { 3: '#FF7A1A', 2: '#FFB627', 1: '#E9C46A', 0: '#8ECAE6' };
 
+const DEFAULT_TITLE = 'Vị trí & tiện ích';
 const state = {
   coordText: '10.6900, 106.5900',
   house: { lat: 10.69, lng: 106.59 },
@@ -32,7 +33,7 @@ const state = {
   label: 'VỊ TRÍ CĂN NHÀ',
   sub: '',
   radiusKm: 5,
-  title: 'Vị trí & tiện ích',
+  title: DEFAULT_TITLE,
   showTitle: true,   // 27/10: khách tắt được dải tiêu đề trên đầu video (giữ chữ đã gõ)
   brand: '',
   phone: '',
@@ -344,7 +345,7 @@ function buildScene() {
     photos: media.photos.map(p => p.img),
     photoLabels: media.photos.map(p => roomLabel(p.room)),
     clips: media.clips.map(c => ({ el: c.el, dur: c.dur, room: c.room || '', label: roomLabel(c.room) })),
-    info: { price: state.price, area: state.area, thoCu: state.thoCu, beds: state.beds, legal: state.legal },
+    info: { price: state.price, area: state.area, thoCu: state.thoCu, beds: isLandType() ? '' : state.beds, legal: state.legal },
     radiusKm: state.radiusKm,
     speed: state.speed,
     pois: selectedPois(),
@@ -1593,10 +1594,12 @@ const houseMemo = [];
 function resetHouseInfo(prev) {
   const has = HOUSE_INFO.some(([k]) => state[k]) || state.lot?.length || state.stars?.length || state.myRoads?.length;
   if (has && prev) {
-    houseMemo.unshift({ house: prev, lot: state.lot || [], lotSrc: state.lotSrc || '', stars: state.stars || [], myRoads: state.myRoads || [], plan: state.plan || null, areaFor: state.areaFor || '', info: Object.fromEntries(HOUSE_INFO.map(([k]) => [k, state[k] || ''])) });
+    houseMemo.unshift({ house: prev, lot: state.lot || [], lotSrc: state.lotSrc || '', stars: state.stars || [], myRoads: state.myRoads || [], plan: state.plan || null, areaFor: state.areaFor || '', title: state.title, info: Object.fromEntries(HOUSE_INFO.map(([k]) => [k, state[k] || ''])) });
     houseMemo.length = Math.min(houseMemo.length, 5);
   }
   for (const [k, id] of HOUSE_INFO) { state[k] = ''; const el = $(id); if (el) el.value = ''; }
+  // 27/10 (khách: lô đất mà tiêu đề vẫn "Nhà 4 tầng…" của căn trước): tiêu đề gõ tay gắn với từng căn → căn mới về mặc định
+  state.title = DEFAULT_TITLE; if ($('titleInput')) $('titleInput').value = DEFAULT_TITLE;
   state.lot = [];
   state.lotSrc = '';
   state.stars = [];
@@ -1613,6 +1616,7 @@ function restoreHouseInfo(h) {
   const [m] = houseMemo.splice(i, 1);
   for (const [k, id] of HOUSE_INFO) { state[k] = m.info[k] || ''; const el = $(id); if (el) el.value = state[k]; }
   state.lot = m.lot; state.lotSrc = m.lotSrc || ''; state.stars = m.stars; state.areaFor = m.areaFor;
+  if (m.title != null) { state.title = m.title; if ($('titleInput')) $('titleInput').value = m.title; }
   state.myRoads = m.myRoads || [];
   state.plan = m.plan || null;
   if (state.myRoads.length) state.selectedRoads = [...new Set([...state.selectedRoads, ...state.myRoads.map(x => x.id)])];
@@ -2239,7 +2243,7 @@ function infoSentence(pick, skipPrice = false) {
   if (thoCu) parts.push(/thổ cư/i.test(thoCu) ? thoCu : thoCu + ' thổ cư');
   if (!isLand && floors) parts.push(/^\d+$/.test(floors) ? floors + ' tầng' : floors);
   if (!isLand && beds) parts.push(/^\d+$/.test(beds) ? beds + ' phòng ngủ' : beds);
-  if (rw) parts.push('đường trước nhà ' + (/^\d+([.,]\d+)?$/.test(rw) ? rw + ' mét' : rw.replace(/(\d)\s*m\b/i, '$1 mét')));
+  if (rw) parts.push((isLand ? 'đường trước lô ' : 'đường trước nhà ') + (/^\d+([.,]\d+)?$/.test(rw) ? rw + ' mét' : rw.replace(/(\d)\s*m\b/i, '$1 mét')));
   if (legal) parts.push(legal.charAt(0).toLowerCase() + legal.slice(1));
   if (c(state.price) && !skipPrice) parts.push(pick(['giá chỉ ', 'giá bán '], 5) + c(state.price));
   if (!parts.length) return '';
@@ -2540,8 +2544,8 @@ async function aiRewrite() {
     const facts = {
       loai_bds: TYPE_WORD[state.typeLabel] || 'Căn nhà', tieu_de: state.title, dong_phu: state.sub, thuong_hieu: state.brand,
       so_dien_thoai_lien_he: phoneDisplay(state.phone) || null,
-      thong_tin_nha: { gia: state.price || null, dien_tich: state.area || null, tho_cu: state.thoCu || null, so_tang: state.floors || null,
-        phong_ngu: state.beds || null, phap_ly: state.legal || null, duong_truoc_nha: state.roadWidth || null, gia_moi_m2: pricePerM2(), dien_tich_m2: areaFromText(state.area) || null },
+      thong_tin_nha: { gia: state.price || null, dien_tich: state.area || null, tho_cu: state.thoCu || null, so_tang: (!isLandType() && state.floors) || null,
+        phong_ngu: (!isLandType() && state.beds) || null, phap_ly: state.legal || null, duong_truoc_nha: state.roadWidth || null, gia_moi_m2: pricePerM2(), dien_tich_m2: areaFromText(state.area) || null },
       diem_noi_bat: highlightLines(), khach_muc_tieu: state.buyer || null,
       ban_kinh_km: state.radiusKm, tinh_thanh: provName(), xa_phuong: wardName(),
       duong_lon: selectedRoads().map(r => ({ ten: r.label, ten_duong: r.alt || '', cach_km: +r.nearKm.toFixed(2) })),
@@ -3564,6 +3568,7 @@ function syncRoomUi() {
   const order = land ? 'mặt tiền → toàn cảnh → đường trước lô → hiện trạng → xung quanh' : 'mặt tiền → phòng khách → bếp → phòng ngủ → toilet';
   const set = (id, t) => { const el = $(id); if (el && el.textContent !== t) el.textContent = t; };
   set('clipTitle', `Video thực tế ${w}`);
+  for (const id of ['floorsInput', 'bedsInput']) { const f = $(id)?.closest('.field'); if (f) f.hidden = land; } // lô đất: không có số tầng/phòng ngủ
   set('photoHint', `Chọn nhãn dưới mỗi ảnh, app tự xếp: ${order}.`);
   set('clipHint', `Mỗi đoạn 5–15 giây, quay chậm. Chọn nhãn, app tự xếp: ${order}.`);
 }
@@ -3918,7 +3923,7 @@ async function publishPage() {
       p: {
         id: rec.id || null,
         title: generic ? [TYPE_WORD[state.typeLabel] || 'Căn nhà', address].filter(Boolean).join(' · ') : title,
-        price: state.price, area: state.area, beds: state.beds, legal: state.legal, address,
+        price: state.price, area: state.area, beds: isLandType() ? '' : state.beds, legal: state.legal, address,
         lat: state.house.lat, lng: state.house.lng, phone: state.phone, brand: state.brand, style: state.style,
         video_url: (state.pageVideo || '').trim(), description: state.pageDesc || '', photos,
         pois: selectedPois().slice(0, 10).map(x => ({ name: x.name, cat: x.cat, catName: CATEGORIES[x.cat]?.label || '', km: Math.round((x.route ? x.route.km : x.km) * 100) / 100 })),
@@ -4157,7 +4162,7 @@ function init() {
   });
   bindSeg('typeSeg', v => {
     state.typeLabel = v; state.label = v; $('labelInput').value = v;
-    showPhotos(); showClips(); scheduleRebuild();
+    syncRoomUi(); showPhotos(); showClips(); scheduleRebuild();
   });
   $('labelInput').addEventListener('input', e => { state.label = e.target.value; scheduleRebuild(); });
   $('subInput').addEventListener('input', e => { state.sub = e.target.value.trim(); scheduleRebuild(); });
