@@ -1931,12 +1931,12 @@ function renderRegion() {
   const chip = (id, text, meta, on) => `<label class="road-chip"><input type="checkbox" autocomplete="off" data-region="${esc(id)}" ${on ? 'checked' : ''}><span>${text}</span><span class="km">${meta}</span></label>`;
   const A = R.anchors || [], I = R.infra || [];
   box.innerHTML = (A.length ? `
-    <label class="check-row"><input autocomplete="off" type="checkbox" id="regionOn" ${state.showRegion !== false ? 'checked' : ''}><span><strong>Cảnh Kết nối vùng</strong>: đường đi + thời gian lái xe tới các điểm mốc lớn</span></label>
+    <label class="check-row"><input autocomplete="off" type="checkbox" id="regionOn" ${state.showRegion !== false ? 'checked' : ''}><span><strong>Cảnh Kết nối vùng</strong> tới các điểm mốc lớn</span></label>
     <div class="road-list region-list">${A.map(a => chip(a.id, `${HUB_ICON[a.type] || '📍'} ${esc(a.name)}`, `${a.approx ? '≈ ' : ''}${a.min} phút`, !off.has(a.id))).join('')}</div>` : '') +
     (I.length ? `
     <label class="check-row"><input autocomplete="off" type="checkbox" id="infraOn" ${state.showInfra !== false ? 'checked' : ''}><span><strong>Hạ tầng đang thi công</strong> gần nhà</span></label>
     <div class="road-list region-list">${I.map(r => chip(r.id, `🚧 ${esc(r.label)}`, formatKm(r.nearKm, true), !off.has(r.id))).join('')}</div>
-    <p class="hint">Theo dữ liệu bản đồ OpenStreetMap (cộng đồng cập nhật). Anh chị kiểm tra lại, tuyến nào đã xong hoặc không đúng thì bỏ tick.</p>` : '') +
+    <p class="hint small">Theo OpenStreetMap — tuyến nào đã xong hoặc sai thì bỏ tick.</p>` : '') +
     (!A.length && !I.length ? '<p class="hint">Không có điểm mốc lớn hay tuyến đang thi công gần căn này.</p>' : '');
 }
 function syncIsoUi() {

@@ -217,7 +217,7 @@
 
     <article class="step" id="step2" data-step="2">
       <header class="step-head"><h2>Tiện ích &amp; đường lớn</h2><span id="pickCount" class="count"></span></header>
-      <p class="step-guide">Tick chọn tiện ích muốn có trong video. Bấm <strong>★</strong> để khoanh vùng nổi bật điểm quan trọng.</p>
+      <p class="step-guide">Tick để đưa vào video · <strong>★</strong> để làm nổi bật.</p>
       <div id="resultsEmpty" class="empty-state">
         <p>Chưa quét. Quay lại bước 1 và bấm <strong>Quét tiện ích</strong>.</p>
         <button type="button" class="btn btn-quiet" data-go="1">← Về bước 1</button>
@@ -225,9 +225,8 @@
       <div id="results" hidden>
         <div class="sub-head">Địa phận</div>
         <div id="adminBox" class="admin-box"></div>
-        <div class="sub-head">Đường lớn <span class="sub-note">bấm ★ để chọn tuyến điểm nhấn (tối đa 2)</span></div>
-        <p class="hint road-hi-hint">Tuyến có ★ được vẽ nổi bật: một line phát sáng nổi lên khỏi mặt đường, có xung sáng chạy dọc tuyến (khác kiểu ranh tỉnh để dễ phân biệt), cảnh dài hơn. Các tuyến khác vẽ bình thường.</p>
-        <div class="field hi-theme"><span class="field-label">Màu line tuyến điểm nhấn ★</span><div class="swatches" id="hiThemeRow" role="radiogroup" aria-label="Màu line tuyến điểm nhấn"></div></div>
+        <div class="sub-head">Đường lớn <span class="sub-note">★ tuyến nổi bật · tối đa 2</span></div>
+        <div class="field hi-theme"><span class="field-label">Màu tuyến ★</span><div class="swatches" id="hiThemeRow" role="radiogroup" aria-label="Màu line tuyến điểm nhấn"></div></div>
         <div id="roadList" class="road-list"></div>
         <button id="myRoadAdd" class="btn btn-quiet my-road-add" type="button">✏️ Tự vẽ đường app chưa quét được (hẻm, đường dân sinh)</button>
         <div class="sub-head" id="regionHead" hidden>Kết nối vùng <span class="sub-note">điểm mốc lớn + hạ tầng đang thi công</span></div>
@@ -247,7 +246,7 @@
           </div>
           <p id="addMsg" class="hint"></p>
         </div>
-        <p class="hint small">Khoảng cách theo đường đi thật; dấu <span class="mono">~</span> là đường chim bay. Dữ liệu OpenStreetMap, Overture — soát lại trước khi đăng.</p>
+        <p class="hint small">Khoảng cách theo đường đi thật (<span class="mono">~</span> = chim bay) · Dữ liệu OpenStreetMap, Overture.</p>
       </div>
     </article>
 
