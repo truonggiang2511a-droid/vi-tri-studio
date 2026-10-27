@@ -2972,7 +2972,7 @@ function renderLotStyles() {
   row.innerHTML = Object.entries(LOT_STYLES).map(([k, s]) =>
     `<button type="button" role="radio" class="swatch lot-style" data-v="${k}" aria-checked="${k === cur}"><span class="lot-ico lot-ico-${k}" aria-hidden="true"></span>${esc(s.label)}</button>`).join('');
   const hasLot = state.lot && state.lot.length >= 3;
-  $('lotStyleHint').textContent = (hasLot ? '' : 'Áp dụng khi có vẽ lô đất (nút "Vẽ lô đất" dưới khung xem). ') + (LOT_STYLES[cur].hint || '') + '.';
+  $('lotStyleHint').textContent = hasLot ? '' : 'Áp dụng khi có vẽ lô đất (nút "Vẽ lô đất" dưới khung xem).';
   row.onclick = e => {
     const b = e.target.closest('button[data-v]');
     if (!b) return;
@@ -2986,8 +2986,8 @@ function renderLotStyles() {
     const fs = state.streets && state.streets.front;
     const roadNote = fs ? (String(state.roadWidth || '').trim()
       ? ' Đường trước nhà (' + fs.name + ') được tô sáng, kèm vạch đo ' + String(state.roadWidth).trim() + '.'
-      : ' Đã dò được đường trước nhà (' + fs.name + ') và tô sáng trong video — nhập "Bề rộng đường trước nhà" ở mục Thông tin để hiện số mét.') : '';
-    $('lotDimsHint').textContent = (state.lotSrc === 'so' ? 'Số đo tính từ toạ độ sổ đỏ.' : hasLot ? 'Lô vẽ tay: số đo ước lượng từ chỗ chạm, có thể lệch 1–2 m — chỉ bật khi đã chấm thật khớp.' : '') + roadNote;
+      : ' Nhập "Bề rộng đường trước nhà" (mục Thông tin) để hiện số mét.') : '';
+    $('lotDimsHint').textContent = hasLot ? (state.lotSrc === 'so' ? 'Số đo tính từ toạ độ sổ đỏ.' : 'Lô vẽ tay: số đo có thể lệch 1–2 m.') + roadNote : '';
     dim.onchange = () => { state.lotDims = dim.checked ? 'on' : 'off'; renderLotStyles(); showLotMoment(); };
   }
   renderSwatches('lotColorRow', 'lotColor', true, LOT_COLORS);
@@ -3564,9 +3564,8 @@ function syncRoomUi() {
   const order = land ? 'mặt tiền → toàn cảnh → đường trước lô → hiện trạng → xung quanh' : 'mặt tiền → phòng khách → bếp → phòng ngủ → toilet';
   const set = (id, t) => { const el = $(id); if (el && el.textContent !== t) el.textContent = t; };
   set('clipTitle', `Video thực tế ${w}`);
-  set('photoHint', `Chọn nhãn dưới mỗi ảnh, app tự xếp: ${order}. Ảnh mặt tiền làm nền cảnh mở đầu; cả bộ chiếu ở cuối video, sau lời mời xem ${land ? 'đất' : 'nhà'}.`);
-  set('clipHint', (land ? 'Quay mặt tiền lô, toàn cảnh, đường trước lô, hiện trạng đất, khu xung quanh…' : 'Quay mặt tiền, phòng khách, phòng ngủ, sân thượng…')
-    + ` mỗi đoạn 5–15 giây, cầm máy chậm và chắc tay. Chọn nhãn dưới mỗi đoạn, app tự xếp: ${order}. Đoạn mặt tiền mở đầu video; các đoạn còn lại chiếu liền nhau ở cuối video, sau lời mời xem ${land ? 'đất' : 'nhà'}. Video chỉ nằm trên máy này, không tải lên mạng.`);
+  set('photoHint', `Chọn nhãn dưới mỗi ảnh, app tự xếp: ${order}.`);
+  set('clipHint', `Mỗi đoạn 5–15 giây, quay chậm. Chọn nhãn, app tự xếp: ${order}.`);
 }
 let photoHouse = '';
 function savePhotos() {

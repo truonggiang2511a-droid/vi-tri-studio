@@ -253,7 +253,6 @@
 
     <article class="step" id="step3" data-step="3">
       <header class="step-head"><h2>Nội dung video</h2><span id="durLabel" class="count"></span></header>
-      <p class="step-guide">Làm lần lượt 3 mục: <strong>① Thông tin căn</strong> → <strong>② Phong cách video</strong> → <strong>③ Kịch bản, giọng &amp; nhạc</strong>. Bấm <strong>▶ Xem</strong> ở dưới để xem thử bất cứ lúc nào.</p>
       <div class="subtabs" id="subtabs" role="tablist">
         <button type="button" role="tab" data-sub="info" aria-selected="true">① Thông tin</button>
         <button type="button" role="tab" data-sub="look" aria-selected="false">② Phong cách</button>
@@ -273,9 +272,9 @@
           <option value="Sổ hồng riêng"></option><option value="Sổ hồng chung"></option><option value="Sổ đỏ"></option>
           <option value="Sổ hồng hoàn công"></option><option value="Đang chờ sổ"></option><option value="Hợp đồng mua bán"></option>
         </datalist>
-        <label class="field"><span class="field-label">Điểm nổi bật của căn <small>(tuỳ chọn — AI sẽ nhấn mạnh trong kịch bản)</small></span>
+        <label class="field"><span class="field-label">Điểm nổi bật của căn <small>(tuỳ chọn)</small></span>
           <textarea autocomplete="off" id="highlightsInput" class="input" rows="3" maxlength="240" placeholder="Mỗi dòng 1 ý, VD:&#10;Nhà mới xây 2025&#10;Hẻm thông 6m, xe hơi vào tận nhà&#10;Chủ cần bán gấp, giảm 200 triệu"></textarea></label>
-        <label class="field"><span class="field-label">Khách nhắm tới <small>(AI đổi giọng theo khách)</small></span>
+        <label class="field"><span class="field-label">Khách nhắm tới</span>
           <select id="buyerInput" class="input"><option value="">Chung</option><option value="o">Mua để ở</option><option value="dau_tu">Đầu tư</option><option value="cho_thue">Mua cho thuê</option></select></label>
         <label class="field"><span class="field-label">Số điện thoại / Zalo xem nhà</span><input autocomplete="off" id="phoneInput" class="input mono" type="tel" inputmode="tel" maxlength="16" placeholder="0912 345 678"></label>
         <div class="field">
@@ -283,14 +282,14 @@
           <div class="photo-row" id="photoRow">
             <label class="photo-add" id="photoAdd"><input autocomplete="off" id="photoFile" type="file" accept="image/*" multiple><span aria-hidden="true">+</span><span>Thêm ảnh</span></label>
           </div>
-          <span class="hint small" id="photoHint">Chọn nhãn dưới mỗi ảnh, app tự xếp: mặt tiền → phòng khách → bếp → phòng ngủ → toilet. Ảnh mặt tiền làm nền cảnh mở đầu; cả bộ chiếu ở cuối video, sau lời mời xem nhà.</span>
+          <span class="hint small" id="photoHint">Chọn nhãn dưới mỗi ảnh, app tự xếp thứ tự.</span>
         </div>
         <div class="field">
           <span class="field-label"><span id="clipTitle">Video thực tế căn nhà</span> <em>1–5 đoạn, không cần MC</em></span>
           <div class="photo-row" id="clipRow">
             <label class="photo-add" id="clipAdd"><input autocomplete="off" id="clipFile" type="file" accept="video/*" multiple><span aria-hidden="true">+</span><span>Thêm video</span></label>
           </div>
-          <span class="hint small" id="clipHint">Quay mặt tiền, phòng khách, phòng ngủ, sân thượng… mỗi đoạn 5–15 giây, cầm máy chậm và chắc tay. Chọn nhãn dưới mỗi đoạn, app tự xếp: mặt tiền → phòng khách → bếp → phòng ngủ → toilet. Đoạn mặt tiền mở đầu video; các đoạn còn lại chiếu liền nhau ở cuối video, sau lời mời xem nhà. Video chỉ nằm trên máy này, không tải lên mạng.</span>
+          <span class="hint small" id="clipHint">Mỗi đoạn 5–15 giây, quay chậm. Chọn nhãn, app tự xếp thứ tự.</span>
         </div>
         <div class="field" id="planField">
           <span class="field-label">Mặt bằng phân lô <em>đất nền dự án — tuỳ chọn</em></span>
@@ -306,23 +305,21 @@
               </div>
             </div>
           </div>
-          <span class="hint small">Ảnh JPG/PNG hoặc chụp màn hình trang mặt bằng (PDF thì chụp màn hình). App dán dẹt mặt bằng xuống mặt đất ở cảnh bay sát lô, ranh lô đang bán vẫn sáng nổi bên trên. Khớp vị trí bằng 2 điểm: chạm 1 điểm trên ảnh rồi chạm đúng chỗ đó trên bản đồ, làm 2 lần (nên chọn 2 góc lô hoặc 2 góc ngã tư cách xa nhau). Ảnh chỉ nằm trên máy này.</span>
+          <span class="hint small">Ảnh JPG/PNG hoặc chụp màn hình mặt bằng.</span>
         </div>
         <div class="field">
-          <span class="field-label">Khu vực &amp; đường trước nhà <em>xã/phường, tỉnh/thành tự điền theo vị trí mỗi lần quét căn mới — sai thì sửa lại</em></span>
+          <span class="field-label">Khu vực &amp; đường trước nhà <em>tự điền khi quét, sai thì sửa</em></span>
           <div class="lot-fields">
             <label class="field"><span class="field-label">Xã / phường</span><input autocomplete="off" id="areaWardInput" class="input" type="text" maxlength="32" placeholder="Tự nhận diện khi quét"></label>
             <label class="field"><span class="field-label">Tỉnh / thành phố</span><input autocomplete="off" id="areaProvInput" class="input" type="text" maxlength="32" placeholder="Tự nhận diện khi quét"></label>
             <label class="field"><span class="field-label">Bề rộng đường trước nhà</span><input autocomplete="off" id="roadWidthInput" class="input" type="text" maxlength="12" placeholder="VD: 8m"></label>
           </div>
           <label class="check"><input autocomplete="off" id="showStreets" type="checkbox" checked> Vẽ đường quanh nhà (kiểu đường nhựa)</label>
-          <span class="hint small">Vị trí và hướng đường lấy từ bản đồ thật; bề rộng chỉ hiện khi anh/chị nhập (app không tự đoán số mét).</span>
         </div>
         <div class="field">
-          <span class="field-label">Tiêu đề trên đầu video <em>dòng chữ lớn ở trên cùng lúc mở đầu, kèm tên xã/tỉnh nhỏ bên dưới</em></span>
+          <span class="field-label">Tiêu đề trên đầu video</span>
           <label class="check"><input autocomplete="off" id="showTitle" type="checkbox" checked> Hiện tiêu đề trên đầu video</label>
           <input autocomplete="off" id="titleInput" class="input" type="text" maxlength="40" placeholder="Ghi theo ý anh/chị, VD: Nhà phố 5x20 khu Sadeco">
-          <span class="hint small">Bỏ tick để video không có dòng tiêu đề này. Tên xã/tỉnh nhỏ bên dưới sửa ở ô "Dòng phụ" (bước 1).</span>
         </div>
         <details class="more">
           <summary>Thương hiệu cuối video</summary>
@@ -334,10 +331,10 @@
       </div>
 
       <div class="subpane" data-pane="look" hidden>
-        <div class="pane-guide"><strong>🎨 Chọn giao diện cho video</strong><span>Đã chọn sẵn kiểu đẹp nhất, anh/chị có thể giữ nguyên. Đổi mục nào thì khung xem trước ở trên đổi theo ngay — bấm <b>▶ Xem</b> để xem thử.</span></div>
+        <p class="hint small pane-tip">🎨 Đã chọn sẵn kiểu đẹp nhất, giữ nguyên cũng được. Đổi mục nào, khung xem ở trên đổi theo ngay.</p>
         <div class="field">
           <span class="field-label">Khung hình</span>
-          <span class="hint small pane-tip">Dọc 9:16 cho TikTok, Reels, Shorts, Zalo · Ngang 16:9 cho YouTube, Facebook · Vuông 1:1 cho bài đăng Facebook.</span>
+          <span class="hint small pane-tip">Dọc: TikTok, Reels, Zalo · Ngang: YouTube · Vuông: Facebook</span>
           <div class="seg" id="fmtSeg" role="radiogroup" aria-label="Khung hình">
             <button type="button" role="radio" data-v="v">Dọc 9:16</button>
             <button type="button" role="radio" data-v="h">Ngang 16:9</button>
@@ -346,12 +343,11 @@
         </div>
         <div class="field">
           <span class="field-label">Phong cách chữ &amp; khung thông tin</span>
-          <span class="hint small pane-tip">Kiểu chữ, màu thẻ giá và tên tiện ích hiện trong video.</span>
           <div class="style-grid" id="styleRow" role="radiogroup" aria-label="Phong cách video"></div>
         </div>
         <div class="field">
           <span class="field-label">Cách hiện tiện ích</span>
-          <span class="hint small pane-tip">Bay tới từng nơi: rõ đường đi và số phút, video dài hơn · Quét vòng tròn: nhanh gọn, thấy hết tiện ích quanh nhà.</span>
+          <span class="hint small pane-tip">Bay tới từng nơi: rõ đường đi, video dài hơn · Quét vòng tròn: nhanh gọn</span>
           <div class="seg" id="flowSeg" role="radiogroup" aria-label="Cách hiện tiện ích">
             <button type="button" role="radio" data-v="lanluot">Bay tới từng tiện ích (có đường đi)</button>
             <button type="button" role="radio" data-v="radar">Quét vòng tròn quanh nhà</button>
@@ -359,18 +355,15 @@
         </div>
         <div class="field">
           <span class="field-label">Hiệu ứng thêm (tuỳ chọn)</span>
-          <span class="hint small pane-tip">Mặc định tắt để video tự nhiên, gọn. Tick vào nếu muốn thêm.</span>
           <label class="check"><input autocomplete="off" id="adminAreaOn" type="checkbox"> Khoanh sáng xã/phường, rồi lùi ra vẽ nổi cả tỉnh/thành</label>
           <label class="check"><input autocomplete="off" id="sweepOn" type="checkbox"> Tia radar quét quanh vòng bán kính</label>
         </div>
         <div class="field">
           <span class="field-label">Nền bản đồ</span>
-          <span class="hint small pane-tip">Màu và kiểu bản đồ phía sau. Vệ tinh nhìn thật, nền sáng/tối dễ đọc chữ.</span>
           <div class="style-grid" id="baseRow" role="radiogroup" aria-label="Nền bản đồ"></div>
         </div>
         <div class="field">
           <span class="field-label">Chữ tên trục đường lớn</span>
-          <span class="hint small pane-tip">Chữ 3D in đậm nằm dọc theo trục đường, viền đen cho rõ.</span>
           <div class="seg" id="labelFaceSeg" role="radiogroup" aria-label="Kiểu chữ tên trục đường">
             <button type="button" role="radio" data-v="line">Theo màu line</button>
             <button type="button" role="radio" data-v="trang">Chữ trắng</button>
@@ -443,7 +436,7 @@
             <textarea id="pasteScript" class="input" rows="4" autocomplete="off" placeholder="Dán cả kịch bản ở đây (mỗi đoạn là lời 1 cảnh), hoặc sửa thẳng từng cảnh bên dưới"></textarea>
             <button id="pasteApply" class="btn btn-quiet btn-block" type="button">📋 Chia bài đã dán vào từng cảnh</button>
           </div>
-          <span class="field-label">Lời đọc từng cảnh <em>sửa trực tiếp ở đây — giọng đọc đọc đúng lời này</em></span>
+          <span class="field-label">Lời đọc từng cảnh <em>sửa thẳng ở đây</em></span>
           <div id="scriptList" class="script-list"></div>
           <p id="scrMsg" class="hint" aria-live="polite"></p>
         </div>
@@ -487,7 +480,6 @@
             </div>
           </div>
           <button id="ttsBtn" class="btn btn-primary btn-lg btn-block vo-go" type="button">🎙️ Tạo giọng đọc theo kịch bản ở Bước 1</button>
-          <p class="hint small vo-note">Nút này chỉ đọc đúng lời ở Bước 1, không tự viết lại kịch bản.</p>
           <button id="voVoiceOnly" class="link-btn vo-only" type="button" hidden></button>
           <button id="noVoiceBtn" class="btn btn-quiet btn-block vo-skip" type="button">🎵 Không cần giọng đọc, chỉ nhạc nền + SFX →</button>
           <p id="ttsMsg" class="hint" aria-live="polite"></p>
@@ -504,7 +496,7 @@
             </button>
             <label class="btn btn-quiet file-btn">Tải file đã đọc<input autocomplete="off" id="ownVoiceFile" type="file" accept="audio/*,video/mp4"></label>
           </div>
-          <p id="ownVoiceMsg" class="hint" aria-live="polite">Đọc đúng lời đọc từng cảnh (xem &amp; sửa ở Bước 1 · Kịch bản), nghỉ một nhịp giữa các câu. App sẽ cắt từng câu và cho mỗi cảnh chạy đúng theo lời anh/chị.</p>
+          <p id="ownVoiceMsg" class="hint" aria-live="polite">Đọc lần lượt từng câu ở Bước 1, nghỉ một nhịp giữa các câu.</p>
         </div>
         <div class="field music-box">
           <span class="field-label">🎵 Nhạc nền <em>không lo bản quyền</em></span>

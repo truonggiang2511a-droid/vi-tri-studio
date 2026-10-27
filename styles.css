@@ -403,6 +403,8 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .add-hit-where { grid-column: 1 / -1; font-size: 12.5px; color: var(--muted); }
 .seg-line .seg-say { font-size: 12px; color: var(--focus); line-height: 1.4; }
 .seg-line .seg-say:empty { display: none; }
+/* 27/10: dòng "Máy đọc" chỉ hiện khi khách đang sửa câu đó (trước hiện dưới mọi câu → rối) */
+.seg-line:not(:focus-within) .seg-say { display: none; }
 .lbl-acts { display: inline-flex; gap: 12px; }
 
 .logo-preview{height:34px;max-width:96px;object-fit:contain;border-radius:6px;background:#fff;padding:3px}
