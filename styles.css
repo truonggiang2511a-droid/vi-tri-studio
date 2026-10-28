@@ -907,3 +907,21 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .vo-go.pulse { animation: install-pulse 1s ease-out 3; }
 @media (max-width: 420px) { .vo-src.vo-src3 button small { display: none; } }
 .vo-card .vo-go { white-space: normal; line-height: 1.25; min-width: 0; }
+
+/* 28/10: nút ⤢ xem toàn màn hình + lớp phủ toàn màn hình (iPhone không cho Fullscreen API với canvas) */
+.fs-btn { position: absolute; right: 6px; bottom: 6px; z-index: 4; width: 38px; height: 38px; display: grid; place-items: center;
+  border: 0; border-radius: 10px; background: rgba(8, 12, 14, 0.55); color: #fff; cursor: pointer; padding: 0;
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.fs-btn svg { width: 22px; height: 22px; }
+.fs-btn .i-close, .fs-btn.on .i-open { display: none; }
+.fs-btn.on .i-close { display: block; }
+.canvas-wrap.editing .fs-btn { display: none; }
+html.fs-lock, html.fs-lock body { overflow: hidden; }
+.stage.fs { position: fixed !important; inset: 0; z-index: 60; margin: 0; padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  background: #000; box-shadow: none; display: flex; }
+.stage.fs .stage-inner { width: 100%; height: 100%; justify-content: center; gap: 8px; }
+.stage.fs .canvas-wrap { border-radius: 0; box-shadow: none; }
+.stage.fs .fs-btn { top: 10px; bottom: auto; right: 10px; width: 44px; height: 44px; }
+.stage.fs .transport { padding: 0 12px 6px; color: #fff; }
+.stage.fs .transport .chip-btn, .stage.fs .lot-bar, .stage.fs .plan-bar, .stage.fs .look-pick, .stage.fs .buy-nudge { display: none !important; }
+.stage.fs:fullscreen { width: 100vw; height: 100vh; }

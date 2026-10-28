@@ -491,6 +491,7 @@ function layoutCanvas() {
   const F = FORMATS[state.fmt];
   const wrap = $('canvasWrap');
   const inner = wrap.parentElement;
+  if (fsOn) { layoutFull(F, wrap); return; }
   const desktop = window.matchMedia('(min-width: 980px)').matches;
   const availW = inner.clientWidth;
   const transportH = 52;
@@ -511,6 +512,62 @@ function layoutCanvas() {
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
   dirty = true;
+}
+
+// ---------- Xem toàn màn hình (28/10) ----------
+// Điện thoại: khung xem trước chỉ rộng ~160 px → nút ⤢ phủ kín màn hình. iPhone không cho Fullscreen API với canvas
+// nên dùng lớp phủ CSS (.stage.fs, position fixed); máy hỗ trợ (Android, máy tính) thì xin thêm toàn màn hình thật để ẩn
+// thanh trình duyệt. Khổ Ngang: Android tự xoay ngang; iPhone khách tự xoay máy, khung tự vừa theo màn hình.
+let fsOn = false;
+function layoutFull(F, wrap) {
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const ratio = F.LW / F.LH;
+  const availH = Math.max(160, vh - 64); // chừa thanh Phát/tua ở đáy
+  let w = Math.min(vw, availH * ratio);
+  const h = w / ratio;
+  wrap.style.width = Math.round(w) + 'px';
+  wrap.style.height = Math.round(h) + 'px';
+  // Giữ mượt trên máy yếu: tối đa ~1,6 triệu điểm ảnh (gần 1080p dọc)
+  let dpr = Math.min(window.devicePixelRatio || 1, 2);
+  dpr = Math.min(dpr, Math.sqrt(1.6e6 / (w * h)));
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  dirty = true;
+}
+function setFull(on) {
+  on = !!on && !editing && !exporting;
+  if (on === fsOn) return;
+  fsOn = on;
+  const stage = document.querySelector('.stage');
+  stage.classList.toggle('fs', on);
+  document.documentElement.classList.toggle('fs-lock', on);
+  const b = $('fsBtn');
+  b.setAttribute('aria-label', on ? 'Thu nhỏ' : 'Xem toàn màn hình');
+  b.classList.toggle('on', on);
+  if (on) {
+    funnel(state.sample ? 'full_mau' : 'full');
+    try {
+      const req = stage.requestFullscreen || stage.webkitRequestFullscreen;
+      const pr = req && req.call(stage, { navigationUI: 'hide' });
+      // Khổ ngang: xin xoay ngang (chỉ Android/Chrome cho phép, lỗi thì thôi)
+      Promise.resolve(pr).then(() => { if (state.fmt === 'h') return screen.orientation?.lock?.('landscape'); }).catch(() => {});
+    } catch { /* iPhone: chỉ dùng lớp phủ */ }
+    if (!playing && tl) play();
+  } else {
+    try { screen.orientation?.unlock?.(); } catch { /* bỏ qua */ }
+    const fe = document.fullscreenElement || document.webkitFullscreenElement;
+    if (fe) { try { (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch { /* bỏ qua */ } }
+  }
+  layoutCanvas();
+}
+function initFull() {
+  $('fsBtn').addEventListener('click', e => { e.stopPropagation(); setFull(!fsOn); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && fsOn) setFull(false); });
+  // Thoát toàn màn hình thật bằng nút Back/Esc của máy → tắt luôn lớp phủ
+  const sync = () => { if (fsOn && !(document.fullscreenElement || document.webkitFullscreenElement)) setFull(false); };
+  document.addEventListener('fullscreenchange', sync);
+  document.addEventListener('webkitfullscreenchange', sync);
+  window.addEventListener('orientationchange', () => setTimeout(layoutCanvas, 250));
 }
 
 // Nút "Xem thử video" giữa khung: hiện khi đã quét xong, đang dừng ở đầu video
@@ -664,6 +721,7 @@ async function ensureMix() {
 
 function toggleEdit(on, mode = 'pin') {
   const want = on ?? !(editing && editMode === mode);
+  if (want && fsOn) setFull(false);
   editing = want;
   editMode = mode;
   if (editing) { pause(); editCenter = state.house ? { ...state.house } : null; }
@@ -3076,6 +3134,7 @@ async function doExport() {
   else if (gate.mode === 'reexport' && gate.redo) toast(`Xuất lại không trừ lượt. Căn này còn ${gate.redo.exports_left} lần xuất lại.`, 3500);
   pause();
   toggleEdit(false);
+  setFull(false);
   exporting = true;
   exportCtrl = new AbortController();
   const signal = exportCtrl.signal;
@@ -4571,6 +4630,7 @@ function init() {
   });
 
   $('playBtn').addEventListener('click', () => (playing ? pause() : play()));
+  initFull();
   $('scrub').addEventListener('input', e => {
     if (!tl) return;
     if (editing) toggleEdit(false);
