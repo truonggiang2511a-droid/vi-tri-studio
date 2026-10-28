@@ -1845,7 +1845,10 @@ async function trySample() {
 let nudgeDone = false;
 function maybeNudge() {
   if (tl && t >= tl.duration * 0.6) funnel(state.sample ? 'mau60' : 'xem60');
-  if (nudgeDone || !tl || t < tl.duration * 0.6) return;
+  // 28/10 (Giang): khách CHƯA đăng nhập thấy lời mời đăng ký sớm — video mẫu sau ~12 s (vừa qua thẻ giá + cảnh tỉnh/thành),
+  // video căn của khách sau ~15 s. Trước đây đợi 60% video (~70 s) → 27/10 chỉ 13/62 khách xem tới đó. Hết lượt: vẫn 60%.
+  const at = !account.profile ? Math.min(state.sample ? 12 : 15, (tl?.duration || 0) * 0.6) : (tl?.duration || 0) * 0.6;
+  if (nudgeDone || !tl || t < at) return;
   nudgeDone = true;
   try { if (sessionStorage.getItem('vitri.nudge')) return; sessionStorage.setItem('vitri.nudge', '1'); } catch { /* bỏ qua */ }
   const p = account.profile, info = account.info || {};
@@ -1856,9 +1859,9 @@ function maybeNudge() {
   const per = pk.length ? Math.min(...pk.map(x => x.price * (100 - promo) / 100 / x.credits)) : 0;
   const perTxt = per ? Math.round(per / 100) * 100 : 0;
   if (!p) {
-    box.innerHTML = `<strong>Video này ổn chứ? Làm cho căn của anh/chị luôn nhé</strong>
-      <span>Đăng ký miễn phí, nhận <b>${info.trial_credits ?? 1} video</b> dùng thử, không cần thẻ.</span>
-      <div class="row"><button type="button" class="btn btn-primary" data-act="register">Đăng ký miễn phí</button><button type="button" class="link-btn x" data-nx="1">Để sau</button></div>`;
+    box.innerHTML = `<strong>${state.sample ? 'Muốn video như thế này cho căn của anh/chị?' : 'Video này ổn chứ? Lưu và xuất cho căn của anh/chị nhé'}</strong>
+      <span>Đăng ký miễn phí 30 giây, nhận <b>${info.trial_credits ?? 1} video</b> dùng thử, không cần thẻ.</span>
+      <div class="row"><button type="button" class="btn btn-primary" data-act="register" data-reason="Nhận video miễn phí cho căn của anh/chị — đăng ký 30 giây, không cần thẻ.">Đăng ký nhận video miễn phí</button><button type="button" class="link-btn x" data-nx="1">Để sau</button></div>`;
   } else if (!p.unlimited && p.credits <= 0) {
     box.innerHTML = `<strong>Xuất video này chỉ từ ${perTxt ? perTxt.toLocaleString('vi-VN') + 'đ' : 'vài nghìn đồng'}/video</strong>
       <span>Bản nét 1080p, có giọng đọc và nhạc, đăng ngay TikTok, Zalo, Facebook.${promo ? ` <b>Đang giảm ${promo}% lần mua đầu.</b>` : ''}</span>

@@ -245,7 +245,7 @@ export function requireLogin(reason = '', tab) {
   // phễu: hộp đăng ký mở ra vì việc gì
   funnel('dk_' + (!reason ? (tab === 'login' ? 'nut_dn' : 'nut') : /hết hạn/i.test(reason) ? 'hethan' : /xuất video/i.test(reason) ? 'xuat'
     : /giọng/i.test(reason) ? 'giong' : /kịch bản/i.test(reason) ? 'ai' : /sơ đồ thửa/i.test(reason) ? 'sodo'
-    : /trang web/i.test(reason) ? 'web' : /lưu|mở lại/i.test(reason) ? 'luu' : /mua/i.test(reason) ? 'mua' : 'khac'));
+    : /trang web/i.test(reason) ? 'web' : /lưu|mở lại/i.test(reason) ? 'luu' : /mua/i.test(reason) ? 'mua' : /video miễn phí cho căn/i.test(reason) ? 'nhac' : 'khac'));
   return new Promise(resolve => {
     authResolve?.(false);
     authResolve = resolve;
@@ -677,7 +677,7 @@ export async function initAccount(opts = {}) {
   document.addEventListener('click', e => {
     const b = e.target.closest('[data-act]');
     if (!b) return;
-    if (b.dataset.act === 'register') requireLogin('', 'register');
+    if (b.dataset.act === 'register') requireLogin(b.dataset.reason || '', 'register');
     else if (b.dataset.act === 'buy') openPricing();
     else if (b.dataset.act === 'invite') openInvite();
     else if (b.dataset.act === 'resume' && S.order) { const id = S.order.package_id; openPricing().then(() => { if (id && $('payDlg').open) pickPackage(id); }); }
