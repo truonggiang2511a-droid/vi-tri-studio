@@ -57,7 +57,7 @@ function renderInfo(info, hasRef) {
       <p class="price">0đ</p>
       <p class="pkg-sub">${trial} video đầu tiên</p>
       <ul><li>Đủ tính năng: giọng đọc, phụ đề, logo, thẻ giá</li><li>Không cần thẻ, không tự gia hạn</li></ul>
-      <a class="btn btn-ghost" href="/#dangky" data-cta>Đăng ký miễn phí</a>
+      <a class="btn btn-ghost" href="/#thu" data-cta>Dùng thử miễn phí</a>
     </article>` + info.packages.map(p => `
     <article class="pkg${p.highlight ? ' hot' : ''}">
       ${p.highlight ? '<span class="tag">Chọn nhiều nhất</span>' : ''}

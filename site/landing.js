@@ -77,7 +77,7 @@ querySelectorAll(".ref-n"))a.textContent=r;e&&r>0&&(h("refNote").hidden=!1,h("re
       <p class="price">0đ</p>
       <p class="pkg-sub">${n} video đầu tiên</p>
       <ul><li>Đủ tính năng: giọng đọc, phụ đề, logo, thẻ giá</li><li>Không cần thẻ, không tự gia hạn</li></ul>
-      <a class="btn btn-ghost" href="/#dangky" data-cta>Đăng ký miễn phí</a>
+      <a class="btn btn-ghost" href="/#thu" data-cta>Dùng thử miễn phí</a>
     </article>`+t.packages.map(a=>`
     <article class="pkg${a.highlight?" hot":""}">
       ${a.highlight?'<span class="tag">Chọn nhiều nhất</span>':""}

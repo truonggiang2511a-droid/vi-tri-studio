@@ -171,7 +171,6 @@
     <article class="step on" id="step1" data-step="1">
       <header class="step-head"><h2>Căn nhà nằm ở đâu?</h2></header>
       <p class="step-guide">Dán link Google Maps hoặc toạ độ căn nhà, rồi bấm <strong>Quét tiện ích</strong>.</p>
-      <button id="guideBtn" class="guide-link" type="button">▶ Xem hướng dẫn sử dụng (1 phút)</button>
       <label class="field">
         <span class="field-label">Toạ độ hoặc link Google Maps</span>
         <div class="input-row">
@@ -181,6 +180,7 @@
       </label>
       <p id="coordMsg" class="hint" aria-live="polite"></p>
       <button id="newHouseBtn" class="link-btn new-house" type="button" hidden>＋ Làm căn mới (để trống thông tin căn này)</button>
+      <button id="guideBtn" class="guide-link" type="button">▶ Xem hướng dẫn sử dụng (1 phút)</button>
       <div id="sampleBox" class="sample-box" hidden>
         <div><strong>Chưa có toạ độ căn nhà?</strong><span>Bấm thử với một căn mẫu, xem video ra sao trong 30 giây.</span></div>
         <button id="sampleBtn" class="btn btn-dark" type="button">▶ Thử ngay</button>
@@ -480,7 +480,7 @@
           </div>
           <button id="ttsBtn" class="btn btn-primary btn-lg btn-block vo-go" type="button">🎙️ Tạo giọng đọc theo kịch bản ở Bước 1</button>
           <button id="voVoiceOnly" class="link-btn vo-only" type="button" hidden></button>
-          <button id="noVoiceBtn" class="btn btn-quiet btn-block vo-skip" type="button">🎵 Không cần giọng đọc, chỉ nhạc nền + SFX →</button>
+          <button id="noVoiceBtn" class="link-btn vo-skip" type="button">Không cần giọng đọc? Bỏ qua, chỉ dùng nhạc nền</button>
           <p id="ttsMsg" class="hint" aria-live="polite"></p>
           <p id="aiStatus" class="hint small">Đang kiểm tra giọng đọc AI…</p>
         </div>

@@ -1497,7 +1497,10 @@ const vnVisible = () => { try { if (new URLSearchParams(location.search).get('vn
 function syncVnEntry() {
   const on = vnVisible();
   $('vnOpen').hidden = !on;
-  $('vnEntry').hidden = !on;
+  // 28/10: khách MỚI (chưa đăng nhập, chưa quét căn của mình) chỉ thấy ô toạ độ + nút Quét — ô sổ đỏ chen giữa làm nút
+  // Quét bị đẩy xuống trên điện thoại. Vẫn vào được sổ đỏ từ thanh Vẽ lô đất (#vnOpen).
+  const own = !!(state.scannedAt && !state.sample);
+  $('vnEntry').hidden = !on || !(own || account.profile);
 }
 let lastMotion = null;
 function initVn2000() {
@@ -1796,7 +1799,9 @@ function autoPlaySample() {
   t = 0; updateTimeUi();
   setTimeout(() => { if (!playing && !editing && state.sample) play(); }, 350);
   toast('Video mẫu đang phát. Dán toạ độ căn của anh/chị để làm video thật.', 5000);
-  setTimeout(showLooks, 2500);
+  // 28/10: trên điện thoại (một cột) khung "Chọn kiểu video" cao ~260 px đẩy ô dán toạ độ xuống dưới màn hình →
+  // chỉ hiện ở máy tính (2 cột); điện thoại vẫn thấy khung này sau khi quét căn của mình.
+  if (matchMedia('(min-width: 980px)').matches) setTimeout(showLooks, 2500);
 }
 async function trySample() {
   funnel('thu');
@@ -1950,6 +1955,7 @@ function syncIsoUi() {
   if (cb) cb.checked = state.showIso !== false;
 }
 async function scan() {
+  if (state.sample && !$('coordInput').value.trim()) { askCoords(); return; }
   if (!state.house) { applyCoords($('coordInput').value); if (!state.house) return; }
   scanCtrl?.abort();
   scanCtrl = new AbortController();
@@ -2089,6 +2095,7 @@ function renderLists() {
   // Khách mới chưa quét căn nào: mời thử ngay với căn mẫu (36% tài khoản chưa xuất video nào)
   const sb = $('sampleBox'); if (sb) sb.hidden = !!has;
   updateNewHouseBtn();
+  syncVnEntry();
   $('results').hidden = !has;
   $('resultsEmpty').hidden = !!has;
   updateCount();
@@ -2667,6 +2674,8 @@ function updateVoCard() {
 }
 // Khách chọn không dùng giọng đọc: tắt giọng (video chỉ nhạc nền + SFX, thời lượng theo nhịp) rồi sang bước xuất video.
 // Bấm "Tạo giọng đọc" sau đó thì giọng tự bật lại (generateVoices đặt aiVoiceOn = true).
+let voiceAskedFor = '';
+const houseKeyOf = h => h ? `${h.lat.toFixed(4)},${h.lng.toFixed(4)}` : '';
 function skipVoice() {
   state.aiVoiceOn = false;
   $('aiVoiceOn').checked = false;
@@ -3033,6 +3042,15 @@ async function doExport() {
   if (!state.house) { toast('Nhập toạ độ căn nhà trước.'); return; }
   funnel(state.sample ? 'xuat_mau' : 'xuat');
   if (exporting || gating) return;
+  // 28/10: giọng đọc là đường chính. Khách chưa tạo giọng và CHƯA chủ động bấm "Bỏ qua giọng đọc" → hỏi 1 lần mỗi căn
+  // TRƯỚC khi trừ lượt (25–28/10 chỉ ~45% khách mới có giọng, trước đó ~70%; video có giọng bán tốt hơn).
+  if (!state.sample && state.aiVoiceOn && !voiceDurations() && voiceAskedFor !== houseKeyOf(state.house)) {
+    voiceAskedFor = houseKeyOf(state.house);
+    if (confirm('Video chưa có giọng đọc AI giới thiệu căn nhà.\nVideo có giọng đọc thu hút khách xem hơn hẳn, tạo mất khoảng 30 giây.\n\nOK = tạo giọng đọc trước\nHuỷ = xuất luôn, chỉ có nhạc nền')) {
+      showStep(3); setSub('sound', { scroll: true }); nudgeVoice();
+      return;
+    }
+  }
   // Mở khoá âm thanh ngay trong cú bấm (iPhone), dùng khi phải quay thời gian thực
   exportAudioCtx?.close?.().catch?.(() => {});
   exportAudioCtx = unlockAudioContext();
@@ -3190,7 +3208,10 @@ function updateQuick() {
   if (next) {
     back.hidden = step === 1;
     let label = 'Tiếp tục →', hide = false;
-    if (step === 1) { label = state.pois.length ? 'Tiếp tục →' : 'Quét tiện ích'; hide = !state.pois.length; }
+    if (step === 1) {
+      const own = state.pois.length && !state.sample; // căn mẫu: nút dưới là Quét căn của khách, không đi tiếp với căn mẫu
+      label = own ? 'Tiếp tục →' : 'Quét tiện ích'; hide = !own;
+    }
     else if (step === 2) label = state.pois.length ? 'Tiếp tục: Nội dung →' : 'Về bước 1';
     else if (step === 3) label = voiceDurations() || !state.aiVoiceOn ? 'Tiếp tục: Xuất video →'
       : curSub === 'info' ? 'Tiếp: Phong cách →'
@@ -3208,9 +3229,18 @@ function updateQuick() {
   updateBigPlay();
 }
 let lastFresh = null;
+// Khách đang ở căn mẫu bấm Quét/Tiếp tục mà chưa dán toạ độ: đưa tới ô toạ độ, nháy sáng
+function askCoords() {
+  showStep(1);
+  const inp = $('coordInput');
+  inp.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  inp.classList.remove('coord-hot'); void inp.offsetWidth; inp.classList.add('coord-hot');
+  $('coordMsg').textContent = 'Dán toạ độ hoặc link Google Maps căn của anh/chị vào ô này, rồi bấm Quét tiện ích.';
+  $('coordMsg').className = 'hint coord-cta';
+}
 async function stepNext() {
   if (step === 4) { doExport(); return; }
-  if (step === 1) { if (state.pois.length) showStep(2); else await scan(); return; }
+  if (step === 1) { if (state.pois.length && !state.sample) showStep(2); else await scan(); return; }
   if (step === 2) { showStep(state.pois.length ? 3 : 1); return; }
   if (step === 3) {
     if (!voiceDurations() && state.aiVoiceOn && curSub !== 'sound') {
@@ -4146,6 +4176,7 @@ function init() {
 
   let coordTimer;
   $('coordInput').addEventListener('input', e => {
+    e.target.classList.remove('coord-hot');
     clearTimeout(coordTimer);
     coordTimer = setTimeout(() => applyCoords(e.target.value), 450);
   });
@@ -4739,9 +4770,10 @@ function init() {
   setAccountLocation(state.house);
   initLeads({ toast });
   initAccount({ toast }).then(() => {
-    // Link từ trang giới thiệu: /#dangky mở đăng ký, /#mua mở bảng giá
+    // Link từ trang giới thiệu: /#thu vào thử app (xem video mẫu, dán toạ độ — đăng ký khi xuất video),
+    // /#dangky mở đăng ký (giữ cho link quảng cáo/link cũ), /#mua mở bảng giá
     const h = location.hash;
-    if (h === '#dangky' || h === '#mua' || h === '#khach') history.replaceState(null, '', location.pathname + location.search);
+    if (h === '#thu' || h === '#dangky' || h === '#mua' || h === '#khach') history.replaceState(null, '', location.pathname + location.search);
     if (h === '#khach') openLeads('leads');
     if (h === '#dangky' && !account.profile) requireLogin('', 'register');
     else if (h === '#mua') openPricing();
@@ -4753,10 +4785,18 @@ function init() {
   window.addEventListener('resize', layoutCanvas);
   document.addEventListener('visibilitychange', () => { if (document.hidden && playing) pause(); });
 
-  showStep(state.pois.length ? 3 : 1, { scroll: false });
+  // 28/10: khách đang xem video MẪU vào thẳng bước 1 (chỗ dán toạ độ căn của mình). Từ 24/10 tới 28/10 khách mới
+  // bị đưa vào bước 3 (Nội dung) của căn mẫu → rất ít người dán toạ độ (27/10: 62 người xem mẫu, 9 người dán toạ độ).
+  showStep(state.pois.length && !state.sample ? 3 : 1, { scroll: false });
   layoutCanvas();
   renderLists();
-  if (!state.scannedAt) {
+  if (state.sample) {
+    // Ô toạ độ để TRỐNG cho khách dán thẳng (không phải xoá toạ độ căn mẫu trước)
+    $('coordInput').value = '';
+    $('coordMsg').textContent = 'Video phía trên là video MẪU. Dán toạ độ hoặc link Google Maps căn của anh/chị vào ô này để làm video thật — miễn phí.';
+    $('coordMsg').className = 'hint coord-cta';
+    $('coordInput').classList.add('coord-hot');
+  } else if (!state.scannedAt) {
     $('coordMsg').textContent = 'Toạ độ ví dụ. Dán toạ độ căn nhà của anh/chị để bắt đầu.';
     $('coordMsg').className = 'hint';
   }
