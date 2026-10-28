@@ -70,8 +70,9 @@ const state = {
   adminArea: null,   // ranh xã/phường + tỉnh {ward, province} (KHÁC state.area = diện tích khách nhập)
   areaWard: '', areaProv: '', roadWidth: '',
   showStreets: true, // vẽ đường quanh nhà kiểu đường nhựa
-  showAdminArea: false, // cảnh khoanh vùng xã/phường + cả tỉnh/thành (mặc định tắt, khách tick mới vẽ)
-  showSweep: false,  // tia radar quét ở cảnh bán kính + tổng kết (24/10 tối: mặc định tắt, khách tự bật)
+  showAdminArea: true, // cảnh khoanh vùng xã/phường + cả tỉnh/thành (28/10 Giang: MẶC ĐỊNH BẬT lại, khách bỏ tick để tắt)
+  showSweep: true,   // tia radar quét ở cảnh bán kính + tổng kết (28/10 Giang: MẶC ĐỊNH BẬT lại; SFX radar vẫn tắt vì chói tai)
+  fxV: 2,            // 28/10: phiên bản mặc định 2 hiệu ứng trên (2 = bật)
   aiTone: '', // phong cách kịch bản AI — để trống, khách phải tự chọn trước khi tạo
   scriptMode: 'ai', // 'ai' = AI viết (mặc định, nổi bật) | 'mau' = kịch bản mẫu | 'tu' = tự viết/dán
   scriptOwn: false, // lời đang có do khách tự gõ/sửa → hỏi trước khi AI/mẫu thay
@@ -145,6 +146,9 @@ function load() {
       if (o.roadLabelFace === 'vangkim') o.roadLabelFace = 'vang'; // bỏ kiểu Vàng kim (23/10): còn Trắng / Vàng
       // 24/10: trước đây mặc định không có nhạc (đa số khách chưa từng chọn) → bật nhạc hùng hồn một lần; khách đổi lại được
       if (o.musicV !== 2) { if (!o.musicLib) o.musicLib = 'hung-hon'; o.musicV = 2; }
+      // 28/10: bật lại khoanh xã/phường → tỉnh/thành + tia radar (24/10 tối đặt mặc định tắt) một lần.
+      // Căn đang có giọng đọc thì KHÔNG đổi ngay (thêm cảnh tỉnh sẽ thiếu giọng 1 câu) — bật khi khách sang căn mới.
+      if (o.fxV !== 2) { o.fxV = 2; if (!o.voSig) { o.showAdminArea = true; o.showSweep = true; } else o.fxPending = true; }
       Object.assign(state, o);
     }
   } catch { /* bỏ qua */ }
@@ -1576,6 +1580,10 @@ function applyCoords(text, { silent = false } = {}) {
 }
 
 function resetHouseScoped() {
+  if (state.fxPending) { // xem load(): căn cũ có giọng thì bật hiệu ứng mặc định mới khi sang căn mới
+    state.fxPending = false; state.showAdminArea = true; state.showSweep = true;
+    { const a = $('adminAreaOn'), b = $('sweepOn'); if (a) a.checked = true; if (b) b.checked = true; }
+  }
   Object.assign(state, { areaWard: '', areaProv: '', areaFor: '', roadWidth: '', sub: '', lotText: '', lotArea: '',
     scriptEdits: {}, scriptAi: false, scriptOwn: false, voSig: '', adminArea: null, admin: null, roadStars: [], roadFills: {}, iso: null, isoFor: '', region: null, regionFor: '', regionOff: [] });
   media.voiceSegs.clear();
@@ -1712,6 +1720,7 @@ function writeSampleStore(d, base = {}) {
   const o = { ...base };
   for (const k of SAMPLE_KEYS) if (k in d) o[k] = d[k];
   Object.assign(o, { sample: true, coordSet: true, cloudId: null, projName: '', musicLib: 'hung-hon', musicV: 2, labelV: 3, speedV: 2,
+    showAdminArea: true, showSweep: true, fxV: 2, // video mẫu: khoanh xã/phường → tỉnh/thành + tia radar (giọng câu "Thuộc …" đã có trong file)
     lot: [], sampleVoice: d.voice || null, aiVoiceOn: true, subsOn: true });
   if (!d.voice) Object.assign(o, { scriptEdits: {}, scriptAi: false, voSig: '' });
   localStorage.setItem(STORE, JSON.stringify(o));
