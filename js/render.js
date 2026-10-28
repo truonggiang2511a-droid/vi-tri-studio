@@ -3392,8 +3392,10 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       g.restore();
     };
     const wName = String(AR.wardName || '').toUpperCase(), pName = String(AR.provName || '').toUpperCase();
-    const wNameA = Math.min(wardA, fadeWin(t, i0 + 0.4 * (iEnd - i0), PV ? PV.t0 + 1.0 : ho.t0 + 0.4, 0.5, 0.6));
-    const pNameA = PV ? fadeWin(t, PV.t0 + 0.6, ho.t0 + 0.4, 0.6, 0.7) : 0;
+    // 28/10: tên xã/phường và tên tỉnh/thành đặt CÙNG chỗ dưới ghim → không được chồng lúc chuyển. Trước đây tên xã còn tới
+    // PV.t0+1,0 mà tên tỉnh đã hiện từ PV.t0+0,6 → 2 dòng chữ đè nhau ~0,4 s. Nay tên xã tắt hẳn ở PV.t0+0,6, tên tỉnh hiện từ +0,65.
+    const wNameA = Math.min(wardA, fadeWin(t, i0 + 0.4 * (iEnd - i0), PV ? PV.t0 + 0.6 : ho.t0 + 0.4, 0.5, PV ? 0.45 : 0.6));
+    const pNameA = PV ? fadeWin(t, PV.t0 + 0.65, ho.t0 + 0.4, 0.55, 0.7) : 0;
     flatName(wName, wNameA, 64, 44);
     flatName(pName, pNameA, 64, 48);
   }
