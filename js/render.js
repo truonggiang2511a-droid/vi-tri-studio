@@ -2940,38 +2940,70 @@ function drawHook(ctx, tl, t) {
 // chọn chỗ KHÔNG đè thẻ/ghim/tên đường/phụ đề đang hiện (OCC); chọn 1 lần lúc bật rồi giữ nguyên chỗ cho tới khi rút.
 const POP_YS = [0.33, 0.27, 0.39, 0.22, 0.45, 0.17];
 // Mẫu 1: chọn chỗ trống nhất (né OCC) trong vùng an toàn, giữ chỗ suốt lúc hiện; cụm sau đổi phía so với cụm trước
-function drawMau1Pops(ctx, tl, t) {
+function m1Env(tl) {
   const { LW, LH, safe, fmt } = tl;
   const k = (Math.min(LW, LH) / 540) * (fmt === 'v' ? 1 : 0.82);
   const right = fmt === 'v' ? 60 : 30; // cột nút thả tim/bình luận TikTok/Reels
   const Z = { x0: safe.x + 8, x1: LW - Math.max(safe.x + 8, right), y0: safe.top + 50, y1: LH - safe.bottom - 10 };
-  const maxW = Z.x1 - Z.x0;
+  return { k, Z, maxW: Z.x1 - Z.x0 };
+}
+// 30/10 13:25 Giang: cụm luôn ở TRÊN CÙNG, canh giữa — ngay dưới dòng xã/phường của tiêu đề khi tiêu đề còn hiện,
+// tiêu đề hết thì đứng đúng chỗ tiêu đề. Chọn 1 lần lúc cụm bật, đứng yên tới khi thoát.
+function m1PlacePop(tl, p, L, k, Z) {
+  const { LW, safe, fmt } = tl;
+  const x = Math.max(Z.x0, Math.min(Z.x1 - L.vw, LW / 2 - L.vw / 2));
+  const T = tl._title || { top: safe.top + (fmt === 'v' ? -4 : -18), bot: safe.top + 78 * k, t0: 0, t1: -1 };
+  const withTitle = p.t < T.t1 && p.t + p.dur > T.t0;
+  let y = withTitle ? T.bot + 12 * k : T.top;
+  // cảnh Kết nối vùng / Hạ tầng có nhãn cảnh ở trên cùng → cụm đứng ngay dưới nhãn
+  if (tl.phases.some(q => (q.type === 'region' || q.type === 'infra') && p.t < q.t1 && p.t + p.dur > q.t0)) {
+    const lg = logoBox(tl), bannerY = lg && fmt !== 'h' ? lg.y + lg.h + 20 : safe.top + 24;
+    y = Math.max(y, bannerY + 12 + 8 * k);
+  }
+  // cảnh kết: thẻ thông tin nằm trên cùng → cụm (giá chạy số) đứng ngay dưới thẻ
+  const ou = tl.phases.find(q => q.type === 'outro');
+  if (ou && p.t + p.dur > ou.t0 + 0.6) {
+    const ib = infoBox(tl, 'top', logoBox(tl));
+    if (ib) y = Math.max(y, ib.y + ib.h + 12 * k);
+  }
+  // ghim căn nhà đang nằm ở trên cùng (máy quay xa, nhà sát mép trên) → cụm đứng ngay dưới ghim, không đè ghim
+  const pn = tl._pin;
+  if (pn) {
+    const px0 = pn.x - 34 * pn.s, px1 = pn.x + 34 * pn.s, py0 = pn.y - 80 * pn.s, py1 = pn.y + 12 * pn.s;
+    if (px1 > x && px0 < x + L.vw && py1 > y && py0 < y + L.h && py1 + 8 * k + L.h < tl.LH * 0.5) y = py1 + 8 * k;
+  }
+  return { x, y };
+}
+// 30/10 13:40 Giang: chữ KHÔNG được đè nhau — các cụm đang hiện (đơn vị khung logic, có chừa lề) để tên trục đường,
+// nhãn tiện ích, thẻ điểm mốc nằm dưới cụm thì nhường (mờ đi / đặt chỗ khác); gọi TRƯỚC khi vẽ các chữ đó
+function m1ActiveBoxes(ctx, tl, t) {
+  if (tl.scene.keyLook !== 'mau1' || !tl.keyPops || !tl.keyPops.length) return [];
+  const { k, Z, maxW } = m1Env(tl);
+  const out = [];
+  ctx.save();
+  for (const p of tl.keyPops) {
+    const lt = t - p.t;
+    if (lt < -0.25 || lt > p.dur) continue;   // nhường chỗ sớm 0,25 s để chữ kia kịp mờ trước khi cụm vào
+    const L = mau1Layout(ctx, p, k, maxW);
+    const c = tl._m1Pos && tl._m1Pos.get(p.id);
+    const pos = c && lt >= 0.05 && t >= c.tm - 0.001 ? c : m1PlacePop(tl, p, L, k, Z);
+    const pad = 8 * k;
+    out.push({ x: pos.x - pad, y: pos.y - pad, w: L.vw + pad * 2, h: L.h + pad * 2 });
+  }
+  ctx.restore();
+  return out;
+}
+function drawMau1Pops(ctx, tl, t) {
+  const { k, Z, maxW } = m1Env(tl);
   tl._m1Pos ||= new Map();
   tl._m1Boxes = []; tl._m1BoxT = t;
   for (const p of tl.keyPops) {
     const lt = t - p.t;
     if (lt < 0 || lt > p.dur) continue;
     const L = mau1Layout(ctx, p, k, maxW);
-    // 30/10 13:25 Giang: cụm luôn ở TRÊN CÙNG, canh giữa — ngay dưới dòng xã/phường của tiêu đề khi tiêu đề còn hiện,
-    // tiêu đề hết thì đứng đúng chỗ tiêu đề. Chọn 1 lần lúc cụm bật, đứng yên tới khi thoát; thẻ tiện ích tự né cụm.
     let pos = tl._m1Pos.get(p.id);
     if (!pos || lt < 0.05 || t < pos.tm - 0.001) {
-      const x = Math.max(Z.x0, Math.min(Z.x1 - L.vw, LW / 2 - L.vw / 2));
-      const T = tl._title || { top: safe.top, bot: safe.top, t0: 0, t1: -1 };
-      const withTitle = p.t < T.t1 && p.t + p.dur > T.t0;
-      let y = withTitle ? T.bot + 12 * k : T.top;
-      // cảnh Kết nối vùng / Hạ tầng có nhãn cảnh ở trên cùng → cụm đứng ngay dưới nhãn
-      if (tl.phases.some(q => (q.type === 'region' || q.type === 'infra') && p.t < q.t1 && p.t + p.dur > q.t0)) {
-        const lg = logoBox(tl), bannerY = lg && fmt !== 'h' ? lg.y + lg.h + 20 : safe.top + 24;
-        y = Math.max(y, bannerY + 12 + 8 * k);
-      }
-      // cảnh kết: thẻ thông tin nằm trên cùng → cụm (giá chạy số) đứng ngay dưới thẻ
-      const ou = tl.phases.find(q => q.type === 'outro');
-      if (ou && p.t + p.dur > ou.t0 + 0.6) {
-        const ib = infoBox(tl, 'top', logoBox(tl));
-        if (ib) y = Math.max(y, ib.y + ib.h + 12 * k);
-      }
-      pos = { x, y, tm: t };
+      pos = { ...m1PlacePop(tl, p, L, k, Z), tm: t };
       tl._m1Pos.set(p.id, pos);
     }
     tl._m1Boxes.push({ x: pos.x, y: pos.y, w: L.w, h: L.h });   // chỗ cụm đứng — thẻ tiện ích né
@@ -4257,9 +4289,12 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       items.push({ L, li, labA, rise, q, s0, pts, prio });
     });
     const hitPts = (A, B) => A.pts.some(p => B.pts.some(q => Math.hypot(p.x - q.x, p.y - q.y) < (p.r + q.r) * 0.92));
+    // chữ tên đường nằm dưới cụm điểm nhấn mẫu 1 thì nhường (mờ đi, cụm thoát thì hiện lại)
+    const m1B = m1ActiveBoxes(ctx, tl, t);
+    const underM1 = A => m1B.some(b => A.pts.some(p => p.x + p.r * 0.8 > b.x && p.x - p.r * 0.8 < b.x + b.w && p.y + p.r * 0.6 > b.y && p.y - p.r * 1.6 < b.y + b.h));
     const shown = [];
     for (const it of items.slice().sort((x, y) => x.prio - y.prio)) {
-      it.ok = !shown.some(o => hitPts(it, o));
+      it.ok = !shown.some(o => hitPts(it, o)) && !underM1(it);
       if (it.ok) shown.push(it);
     }
     tl._labVis ||= new Map();
@@ -4396,7 +4431,11 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   const dropT = t >= dropAt ? (t - dropAt) / 0.75 : 0;
   // Ở cảnh tỉnh/thành (rất xa) ghim to hơn một chút để vẫn thấy rõ vị trí bất động sản
   const pv = tl.provPh, pinBoost = pv ? 1 + 0.35 * fadeWin(t, pv.t0, ho.t0 + 0.6, 0.6, 0.8) : 1;
-  if (t > it0.t0 + it0.hold + (it0.t1 - it0.t0 - it0.hold) * 0.6 || dropT > 0) drawHousePin(ctx, hs.x, hs.y, dropT, t, depthScale(hs.w) * pinBoost);
+  tl._pin = null;
+  if (t > it0.t0 + it0.hold + (it0.t1 - it0.t0 - it0.hold) * 0.6 || dropT > 0) {
+    drawHousePin(ctx, hs.x, hs.y, dropT, t, depthScale(hs.w) * pinBoost);
+    tl._pin = { x: hs.x, y: hs.y, s: depthScale(hs.w) * pinBoost };   // mẫu 1: cụm điểm nhấn không đứng đè ghim nhà
+  }
 
   // Tiêu đề + thẻ căn nhà
   const logo = logoBox(tl);
@@ -4491,7 +4530,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   // Kết nối vùng / hạ tầng: chữ đầu cảnh, ghim + thẻ điểm mốc, thẻ tuyến đang thi công
   {
     const bannerY = logo && tl.fmt !== 'h' ? logo.y + logo.h + 20 : safe.top + 24;
-    const used = [{ x: hs.x - 26, y: hs.y - 64, w: 52, h: 68 }];
+    const used = [{ x: hs.x - 26, y: hs.y - 64, w: 52, h: 68 }, ...m1ActiveBoxes(ctx, tl, t)];
     if (logo) used.push(logo);
     if (capL) used.push(capL);
     // Thẻ của điểm đang ở ngoài khung (máy đang quay cận điểm khác) thì ẩn dần, không dồn ra mép khung
@@ -4555,6 +4594,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     const endA = t >= ou.t0 ? Math.max(0, 1 - (t - ou.t0) / 0.5) : 1;
     const placed = avoid.slice();
     placed.push({ x: hs.x - 30, y: hs.y - 70, w: 60, h: 76 });
+    placed.push(...m1ActiveBoxes(ctx, tl, t));
     if (sumP > 0.05) placed.push(tl.fmt === 'h' ? { x: LW - safe.x - 384, y: 0, w: 400, h: LH } : { x: 0, y: LH - safe.bottom - tl.panelH, w: LW, h: tl.panelH + safe.bottom });
     const bounds = { x0: safe.x + 6, x1: LW - safe.x - 6, y0: safe.top + 8, y1: LH - safe.bottom - 8 };
     const items = [];
