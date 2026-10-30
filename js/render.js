@@ -5,7 +5,7 @@ import { project, unproject, haversineKm, metersPerPixel, formatKm, fitZoom } fr
 import { drawIcon } from './icons.js';
 import { CATEGORIES, iconOf } from './data.js';
 import { motionHook, motionTitle, keyPop, keyPopBox, findKeywords } from './motion.js';
-import { drawMau1, mau1Layout } from './mau1.js';
+import { drawMau1, mau1Layout, drawM1Feats, drawM1Cta, m1CtaSize } from './mau1.js';
 
 export const BASE_FONT = '"Be Vietnam Pro", "Segoe UI", system-ui, sans-serif';
 // Chữ tên xã/phường, tỉnh/thành: Montserrat đậm, to rộng
@@ -913,6 +913,8 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     ? buildKeyPops(phases, opts.keyTexts, vd, (tl.hookEnd || 0) + 0.4, MAU1 ? { pois, roads, scene } : null) : [];
   // Mẫu 1: lời đọc đã có giá → cụm chữ giá bật lên rồi, thẻ thông tin bỏ dòng giá, ghi đầy đủ thông tin BĐS (30/10 Giang: 2 chỗ giá hơi nhiều)
   tl.infoFull = MAU1 && tl.keyPops.some(p => p.kind === 'price');
+  tl.m1Feats = MAU1 && tl.keyPops.some(p => p.kind === 'feats');   // danh sách thông tin căn thay cho thẻ thông tin ở cảnh căn nhà
+  tl.m1Cta = MAU1 && tl.keyPops.length > 0;
   // Có video thực tế: đoạn đầu làm nền chuyển động cho thẻ giá mở đầu (ưu tiên hơn ảnh tĩnh)
   // Đoạn mặt tiền chiếu toàn khung suốt cảnh mở đầu `front` (thẻ giá nếu có đè lên 2,2 s đầu)
   const fp = first('front');
@@ -995,21 +997,46 @@ function mau1Style(k, ph, ctx, n) {
   else icon = k.kind === 'legal' ? 'cert' : k.kind === 'beds' ? 'bed' : k.kind === 'floors' ? 'floors' : 'star';
   return { icon, color, look, sign: place, count: k.kind === 'price' };
 }
+const M1_FEAT = { size: 'area', area: 'area', floors: 'floors', beds: 'bed', furn: 'sofa', legal: 'cert' };
+const m1FeatText = k => {
+  const t = String(k.text).toLowerCase();
+  if (k.kind === 'size') return 'Diện tích ' + t.replace(/\s*m$/, ' m').replace('×', 'x');
+  if (k.kind === 'area') return 'Diện tích ' + t.replace('m²', 'm²');
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
 export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null) {
   const out = [];
+  const m1Prices = [];
   let last = -9;
   for (const ph of phases) {
     const text = ph.vkey && texts[ph.vkey];
     const dur = ph.vkey && voice[ph.vkey];
     if (!text || !dur || ph.type === 'clip' || ph.type === 'photos') continue;
     const s = String(text).normalize('NFC');
-    // Mẫu 1: chỉ giá, khoảng cách, số phút — diện tích/pháp lý/phòng/tầng đã có trên thẻ thông tin (30/10 Giang: không lặp 2 chỗ)
-    const keys = findKeywords(s).filter(k => !m1 || k.kind === 'price' || k.kind === 'dist' || k.kind === 'time');
-    if (!keys.length) continue;
+    const all = findKeywords(s);
     const cw = Array.from(s).map(charWeight);
     const tot = cw.reduce((a, b) => a + b, 0) || 1;
     const at = i => { let w = 0; for (let j = 0; j < i && j < cw.length; j++) w += cw[j]; return w / tot; };
     const start = ph.t0 + (ph.type === 'intro' ? 0.5 : 0.3);
+    const kt = k => start + dur * at(k.i + k.len * 0.5) - 0.12;
+    if (m1) {
+      // 30/10 13:00 Giang: giá để CUỐI video (cảnh kết, số chạy tới giá) — ghi nhớ, không bật ở chỗ khác
+      for (const k of all) if (k.kind === 'price') m1Prices.push({ k, ph, t: kt(k) });
+      // cảnh căn nhà: thông tin căn (diện tích, tầng, phòng ngủ, nội thất, sổ…) NHẤN thành danh sách hiện lần lượt theo lời đọc
+      if (ph.type === 'house') {
+        const items = all.filter(k => M1_FEAT[k.kind]).map(k => ({ text: m1FeatText(k), icon: M1_FEAT[k.kind], t: Math.max(kt(k), notBefore) }))
+          .filter(it => it.t < ph.t1 - 0.2).slice(0, 5);
+        if (items.length && items[0].t - last >= 0.8) {
+          const t0 = items[0].t, d = Math.max(ph.t1 + 0.3, items[items.length - 1].t + 1.6) - t0;
+          out.push({ t: t0, dur: d, kind: 'feats', items, color: m1.scene.style || 'neon', id: out.length });
+          last = t0 + d - 2.2;
+          continue;
+        }
+      }
+    }
+    // Mẫu 1: cụm chữ lẻ chỉ còn khoảng cách, số phút (giá dời xuống cuối; thông tin căn thành danh sách ở cảnh căn nhà)
+    const keys = all.filter(k => !m1 || k.kind === 'dist' || k.kind === 'time');
+    if (!keys.length) continue;
     const max = ph.type === 'house' ? 2 : 1;
     // quan trọng trước (giá > khoảng cách/phút > diện tích > pháp lý > phòng), cùng hạng thì từ khoá nói trước
     const pick = keys.slice().sort((a, b) => a.rank - b.rank || a.i - b.i).slice(0, max).sort((a, b) => a.i - b.i);
@@ -1031,6 +1058,26 @@ export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null) {
       }
       out.push({ t, dur: Math.min(1.6, Math.max(1.1, ph.t1 - t - 0.1)), text: k.text, kicker: k.kicker, kind: k.kind, id: out.length });
       last = t;
+    }
+  }
+  if (m1) {
+    // Giá CUỐI video: cảnh kết (outro) — nói giá trong câu kết thì khớp lúc nói, không thì đầu cảnh kết; số chạy từ 0 tới giá
+    const ou = phases.find(p => p.type === 'outro');
+    const inOu = m1Prices.find(p => p.ph === ou && p.t >= notBefore);
+    const src = inOu || m1Prices[m1Prices.length - 1];
+    const raw = src ? src.k : (m1.scene.info && m1.scene.info.price ? { text: String(m1.scene.info.price), kicker: 'Giá bán', kind: 'price' } : null);
+    if (ou && raw) {
+      const t = inOu ? Math.max(ou.t0 + 0.3, inOu.t - 0.5) : ou.t0 + 0.5;
+      const dur = Math.min(3.4, Math.max(2.4, ou.t1 + 1 - t));
+      for (let i = out.length - 1; i >= 0; i--) {   // cụm trước đó không được chồng lên giá
+        const q = out[i];
+        if (q.t + q.dur > t - 0.15) { q.dur = t - 0.15 - q.t; if (q.dur < 1) out.splice(i, 1); }
+      }
+      const rentP = m1.scene.rent;
+      const st = mau1Style({ ...raw, kind: 'price' }, ou, m1, out.length);
+      if (rentP) st.sign = 'mỗi tháng';
+      out.push({ t, dur, text: String(raw.text).toLowerCase(), kicker: rentP ? 'Giá thuê' : (raw.kicker || 'Giá bán'), kind: 'price', final: true, ...st });
+      out.forEach((q, i) => { q.id = i; });
     }
   }
   return out;
@@ -2234,6 +2281,12 @@ function infoFullItems(scene) {
   ].filter(Boolean);
 }
 // Loại BĐS theo nút khách chọn (scene.label = "VỊ TRÍ CĂN NHÀ" | "VỊ TRÍ CĂN VILLA" | "VỊ TRÍ LÔ ĐẤT" | "VỊ TRÍ DỰ ÁN")
+// Chữ nút kêu gọi cuối video theo loại bất động sản (không ghi số điện thoại — số nằm ở thẻ môi giới)
+function m1CtaText(scene) {
+  const t = String(scene.label || '');
+  return /PHÒNG CHO THUÊ/i.test(t) ? 'NHẮN TIN XEM PHÒNG NGAY' : /MẶT TIỀN CHO THUÊ/i.test(t) ? 'NHẮN TIN XEM MẶT BẰNG'
+    : /LÔ ĐẤT/i.test(t) ? 'NHẮN TIN XEM ĐẤT NGAY' : /DỰ ÁN/i.test(t) ? 'NHẮN TIN XEM DỰ ÁN' : 'NHẮN TIN XEM NHÀ NGAY';
+}
 function infoKind(scene) {
   const t = String(scene.label || '').replace(/^VỊ TRÍ\s*/i, '').trim();
   const front = /LÔ ĐẤT/i.test(t) ? 'lô' : /DỰ ÁN/i.test(t) ? 'dự án' : /BIỆT THỰ/i.test(t) ? 'biệt thự' : /VILLA/i.test(t) ? 'villa' : 'nhà';
@@ -2880,6 +2933,7 @@ function drawMau1Pops(ctx, tl, t) {
   for (const p of tl.keyPops) {
     const lt = t - p.t;
     if (lt < 0 || lt > p.dur) continue;
+    if (p.kind === 'feats') { drawM1Feats(ctx, p, t, LW / 2, LH - safe.bottom - (fmt === 'v' ? 12 : 8), k, p.color); continue; }
     const L = mau1Layout(ctx, p, k, maxW);
     const scoreAt = (x, y) => {
       const pad = 12 * k; // chừa khoảng hở quanh cụm, không sát mép thẻ tiện ích/ghim
@@ -4343,7 +4397,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
 
   // Thẻ giá & thông tin căn nhà: lúc giới thiệu căn nhà và lúc kết
   // Bay từ cảnh tỉnh về: chờ máy tới gần bất động sản rồi mới hiện thẻ thông tin
-  const infoHouseA = fadeWin(t, ho.t0 + (tl.provPh ? 0.45 * (ho.t1 - ho.t0) : 0.6), ov.t0 + 0.3, 0.45, 0.4);
+  const infoHouseA = tl.m1Feats ? 0 : fadeWin(t, ho.t0 + (tl.provPh ? 0.45 * (ho.t1 - ho.t0) : 0.6), ov.t0 + 0.3, 0.45, 0.4);
   const infoEndA = fadeWin(t, ou.t0 + 0.6, T + 10, 0.45, 0.4);
   const infoBottom = infoHouseA > 0 ? infoBox(tl, 'bottom', logo) : null;
   const infoTop = infoEndA > 0 ? infoBox(tl, 'top', logo) : null;
@@ -4362,6 +4416,16 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   }
   if (B && bp && t >= bp.t0 + 0.5 * (bp.t1 - bp.t0) && t < bp.t1 + 0.6) occ.top = Math.min(occ.top, LH - safe.bottom - 104 - (tl.fmt === 'h' ? 0 : 14));
   if (brandA > 0.05) occ.top = Math.min(occ.top, brandTop(tl));
+  // Mẫu 1: nút kêu gọi "NHẮN TIN XEM NHÀ NGAY" cuối video (Hook Kit mg_cta), ngay trên thẻ môi giới; phụ đề đứng trên nút
+  let cta = null;
+  if (tl.m1Cta && t >= ou.t0 + 0.4) {
+    const k = (Math.min(LW, LH) / 540) * (tl.fmt === 'v' ? 1 : 0.82);
+    const text = m1CtaText(scene), S = m1CtaSize(ctx, text, k);
+    const bt = brandTop(tl);   // Infinity khi không có thẻ môi giới
+    const bottom = brandA > 0.05 && isFinite(bt) ? bt - 10 : LH - safe.bottom - (tl.fmt === 'v' ? 10 : 6);
+    cta = { text, k, cx: LW / 2, cy: bottom - S.h / 2, h: S.h, w: S.w, lt: t - ou.t0 - 0.4 };
+    occ.top = Math.min(occ.top, bottom - S.h - 8);
+  }
   let cap = captionAt(tl, t);
   const capHide = cap && cap.m1 ? m1CapHide(tl, t) : 0;   // cụm chữ mẫu 1 đang ở chỗ phụ đề → ẩn phụ đề
   if (capHide >= 0.999) cap = null;
@@ -4566,6 +4630,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   drawPhotos(ctx, tl, t, logo);
   drawClips(ctx, tl, t, logo);
   if (capL && capA > 0.01) occBox(ctx, capL.x, capL.y, capL.x + capL.w, capL.y + capL.h);
+  if (cta) { occBox(ctx, cta.cx - cta.w / 2, cta.cy - cta.h * 0.6, cta.cx + cta.w / 2, cta.cy + cta.h * 0.6); drawM1Cta(ctx, cta.text, cta.cx, cta.cy, cta.lt, T - ou.t0 + 1, cta.k); }
   OCC_CTX = null;
   drawKeyPops(ctx, tl, t);
   OCC = null;

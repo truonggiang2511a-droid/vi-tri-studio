@@ -651,6 +651,7 @@ const KEY_RULES = [
     fmt: m => m[1] + (/^m|mét$/i.test(m[2]) ? ' M' : ' KM'), kick: 'Cách nhà' },
   { kind: 'legal', rank: 3, re: /sổ hồng riêng|sổ đỏ riêng|sổ hồng|sổ đỏ|full thổ cư|thổ cư 100\s*%/gi, fmt: m => m[0].toUpperCase(), kick: 'Pháp lý' },
   { kind: 'beds', rank: 4, re: /(\d+)\s*phòng ngủ/gi, fmt: m => m[1] + ' PHÒNG NGỦ', kick: '' },
+  { kind: 'furn', rank: 4, re: /full nội thất|đầy đủ nội thất|nội thất (?:đầy đủ|cao cấp|hiện đại|gỗ|xịn)|nội thất/giu, fmt: m => m[0].toUpperCase(), kick: '' },
   { kind: 'floors', rank: 4, re: /1\s*trệt\s*(\d+)\s*(lầu|tầng)/gi, fmt: m => `1 TRỆT ${m[1]} ${m[2].toUpperCase()}`, kick: '' },
 ];
 export function findKeywords(text) {

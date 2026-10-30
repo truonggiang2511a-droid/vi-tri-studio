@@ -52,14 +52,15 @@ export function loadMau1Fonts() {
 }
 
 // ---------- icon (lưới 100×100, nét trắng) ----------
-function iconStrokes(ctx, name, size) {
+function iconStrokesColor(ctx, name, size, color) { iconStrokes(ctx, name, size, color); }
+function iconStrokes(ctx, name, size, color = '#FFFFFF') {
   const ops = MAU1_ICONS[name] || MAU1_ICONS.pin;
   const s = size / 100;
   ctx.save();
   ctx.translate(-size / 2, -size / 2);
   ctx.scale(s, s);
   ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  ctx.strokeStyle = '#FFFFFF'; ctx.fillStyle = '#FFFFFF';
+  ctx.strokeStyle = color; ctx.fillStyle = color;
   for (const [k, v] of ops) {
     ctx.beginPath();
     if (k === 'L') { ctx.moveTo(v[0], v[1]); for (let i = 2; i < v.length; i += 2) ctx.lineTo(v[i], v[i + 1]); if (v.length === 4 && v[0] === v[2] && v[1] === v[3]) ctx.lineTo(v[0] + 0.01, v[1]); ctx.stroke(); }
@@ -264,6 +265,107 @@ export function drawMau1(ctx, p, x, y, lt, dur, k, maxW) {
       ctx.fillText(p.sign, sx, sy, L.sgw + 1);
       ctx.restore();
     }
+  }
+  ctx.restore();
+}
+
+// ---------- 30/10 13:00 Giang: thông tin căn nhà phải được NHẤN ----------
+// Danh sách điểm nhấn (diện tích, số tầng, phòng ngủ, nội thất, pháp lý…) hiện lần lượt ĐÚNG lúc giọng đọc nói tới,
+// mỗi dòng: huy hiệu tròn + chữ màu nhấn của phong cách; các dòng đứng yên (đặt chỗ từ đầu), cả khối thoát cùng lúc.
+// p = { t, dur, items: [{ text, icon, t }] }; bottom = đáy khối (đơn vị khung logic)
+export function m1FeatsBox(ctx, p, k) {
+  const fs = 36 * k, rh = 52 * k, iw = 56 * k;   // to, rõ — thông tin căn phải được nhấn
+  ctx.save(); ctx.font = `800 ${fs}px ${F_3D}`;
+  const tw = Math.max(...p.items.map(it => ctx.measureText(it.text).width));
+  ctx.restore();
+  return { fs, rh, iw, w: iw + tw, h: rh * p.items.length };
+}
+export function drawM1Feats(ctx, p, t, cx, bottom, k, colKey) {
+  const lt0 = t - p.t;
+  if (lt0 < 0 || lt0 > p.dur) return;
+  const B = m1FeatsBox(ctx, p, k);
+  const out = clamp01((lt0 - (p.dur - 0.3)) / 0.3), A = 1 - out;
+  if (A <= 0.01) return;
+  const col = M1_ACCENT[colKey] || M1_ACCENT.neon;
+  const x0 = cx - B.w / 2, y0 = bottom - B.h;
+  p.items.forEach((it, i) => {
+    const lt = t - it.t;
+    if (lt < 0) return;
+    const cy = y0 + B.rh * (i + 0.5);
+    drawBadge(ctx, it.icon, x0 + 21 * k, cy, 21 * k, lt, p.t + p.dur - it.t, colKey, A);
+    const u = clamp01((lt - 0.06) / 0.38), e = 1 - Math.pow(1 - u, 3);
+    ctx.save();
+    ctx.globalAlpha = clamp01((lt - 0.06) / 0.25) * A;
+    ctx.font = `800 ${B.fs}px ${F_3D}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    const tx = x0 + B.iw - (1 - e) * 22 * k;
+    const g = ctx.createLinearGradient(0, cy - B.fs * 0.5, 0, cy + B.fs * 0.5);
+    g.addColorStop(0, col[0]); if (col.length > 2) { g.addColorStop(0.5, col[1]); g.addColorStop(1, col[2]); } else g.addColorStop(1, col[1]);
+    ctx.shadowColor = 'rgba(0,0,0,0.78)'; ctx.shadowBlur = B.fs * 0.12; ctx.shadowOffsetY = B.fs * 0.08;
+    ctx.fillStyle = g; ctx.fillText(it.text, tx, cy + B.fs * 0.04);
+    ctx.restore();
+  });
+}
+
+// ---------- Nút kêu gọi hành động cuối video (kit/hook_mg.py class CTA, 28/10) ----------
+// Viên thuốc chuyển sắc cam → đỏ + huy hiệu trắng có icon + chữ đậm trắng + mũi tên chạy ">>>"; trượt lên lúc vào, vài giây
+// "nhún" một nhịp có gợn sóng lan ra, vệt sáng lướt qua. KHÔNG ghi số điện thoại.
+const CTA_C = ['#FF7A45', '#E8261A'];
+export function m1CtaSize(ctx, text, k) {
+  const h = 57 * k, px = h * 0.36, ir = h * 0.36;
+  ctx.save(); ctx.font = `800 ${px}px ${F_THIN}`; const tw = ctx.measureText(text).width; ctx.restore();
+  return { h, px, ir, tw, w: h * 0.16 + 2 * ir + h * 0.22 + tw + h * 1.1 };
+}
+export function drawM1Cta(ctx, text, cx, cy, lt, dur, k) {
+  if (lt < 0 || lt > dur) return;
+  const S = m1CtaSize(ctx, text, k), { h, w, ir, px } = S;
+  const A = clamp01(lt / 0.35) * (1 - clamp01((lt - (dur - 0.3)) / 0.3));
+  if (A <= 0.01) return;
+  const dy = (1 - ease.back(clamp01(lt / 0.5))) * h * 0.9;
+  const q = lt > 0.8 ? (lt - 0.8) % 4.5 : 9;
+  const sc = 1 + (q < 0.36 ? 0.06 * Math.sin(Math.PI * q / 0.36) : 0);
+  const y = cy + dy, x0 = cx - w / 2;
+  const pill = (x, yy, ww, hh) => { ctx.beginPath(); const r = hh / 2; ctx.moveTo(x + r, yy); ctx.arcTo(x + ww, yy, x + ww, yy + hh, r); ctx.arcTo(x + ww, yy + hh, x, yy + hh, r); ctx.arcTo(x, yy + hh, x, yy, r); ctx.arcTo(x, yy, x + ww, yy, r); ctx.closePath(); };
+  ctx.save();
+  if (q < 0.9) {   // gợn sóng lan ra quanh nút
+    const u = q / 0.9, s2 = 1 + 0.28 * u;
+    ctx.globalAlpha = (1 - u) * 0.55 * A; ctx.strokeStyle = CTA_C[0]; ctx.lineWidth = Math.max(2, h * 0.05);
+    const ww = (w + h * 0.3) * s2 - h * 0.3 * 0, hh = h * 1.3 * s2;
+    pill(cx - ww / 2, y - hh / 2, ww, hh); ctx.stroke();
+  }
+  ctx.translate(cx, y); ctx.scale(sc, sc); ctx.translate(-cx, -y);
+  ctx.globalAlpha = A;
+  ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = h * 0.12; ctx.shadowOffsetY = h * 0.07;
+  const g = ctx.createLinearGradient(x0, 0, x0 + w, 0); g.addColorStop(0, CTA_C[0]); g.addColorStop(1, CTA_C[1]);
+  pill(x0, y - h / 2, w, h); ctx.fillStyle = g; ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.save(); pill(x0, y - h / 2, w, h); ctx.clip();
+  ctx.fillStyle = 'rgba(255,255,255,0.18)'; pill(x0 + h * 0.2, y - h / 2 + h * 0.06, w - h * 0.4, h * 0.4); ctx.fill();
+  const sw = (lt - 0.6) % 3.2;   // vệt sáng lướt qua
+  if (lt > 0.6 && sw < 0.7) {
+    const xs = x0 + (w + h) * (sw / 0.7) - h / 2;
+    const gs = ctx.createLinearGradient(xs - h * 0.5, 0, xs + h * 0.5, 0);
+    gs.addColorStop(0, 'rgba(255,255,255,0)'); gs.addColorStop(0.5, `rgba(255,255,255,${0.5 * Math.sin(Math.PI * sw / 0.7)})`); gs.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gs; ctx.fillRect(xs - h * 0.5, y - h / 2, h, h);
+  }
+  ctx.restore();
+  // huy hiệu trắng + icon
+  const icx = x0 + h * 0.16 + ir;
+  ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(icx, y, ir, 0, Math.PI * 2); ctx.fill();
+  ctx.save(); ctx.translate(icx, y); ctx.strokeStyle = CTA_C[1];
+  iconStrokesColor(ctx, 'chat', ir * 1.25, CTA_C[1]); ctx.restore();
+  // chữ
+  ctx.font = `800 ${px}px ${F_THIN}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = px * 0.1; ctx.shadowOffsetY = px * 0.05;
+  ctx.fillStyle = '#FFFFFF'; ctx.fillText(text, x0 + h * 0.16 + 2 * ir + h * 0.22, y + px * 0.04);
+  ctx.shadowColor = 'transparent';
+  // mũi tên chạy ">>>"
+  const ax = x0 + w - h * 0.5;
+  ctx.lineWidth = Math.max(2, h * 0.045); ctx.lineCap = 'round'; ctx.strokeStyle = '#FFFFFF';
+  for (let i = 0; i < 3; i++) {
+    const ph = ((lt * 1.6) - i * 0.22) % 1; const al = Math.sin(Math.PI * (ph < 0 ? ph + 1 : ph)) * A;
+    const x = ax - h * 0.16 + i * h * 0.13, s_ = h * 0.09;
+    ctx.globalAlpha = Math.max(0, al);
+    ctx.beginPath(); ctx.moveTo(x - s_ * 0.5, y - s_); ctx.lineTo(x + s_ * 0.5, y); ctx.lineTo(x - s_ * 0.5, y + s_); ctx.stroke();
   }
   ctx.restore();
 }
