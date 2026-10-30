@@ -1810,6 +1810,7 @@ function writeSampleStore(d, base = {}) {
   for (const k of SAMPLE_KEYS) if (k in d) o[k] = d[k];
   Object.assign(o, { sample: true, coordSet: true, cloudId: null, projName: '', musicLib: 'hung-hon', musicV: 2, labelV: 3, speedV: 2,
     showAdminArea: true, showSweep: true, fxV: 2, // video mẫu: khoanh xã/phường → tỉnh/thành + tia radar (giọng câu "Thuộc …" đã có trong file)
+    keyLook: 'mau1', // 30/10 15:52 Giang: video mẫu có chữ điểm nhấn + icon + nút "Nhắn tin" cuối (mẫu 1); khách sang căn của mình vẫn giữ (ô tick bỏ được)
     lot: [], sampleVoice: d.voice || null, aiVoiceOn: true, subsOn: true });
   if (!d.voice) Object.assign(o, { scriptEdits: {}, scriptAi: false, voSig: '' });
   localStorage.setItem(STORE, JSON.stringify(o));
