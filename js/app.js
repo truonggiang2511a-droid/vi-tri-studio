@@ -76,7 +76,7 @@ const state = {
   fxV: 2,            // 28/10: phiên bản mặc định 2 hiệu ứng trên (2 = bật)
   rentPick: '', // loại cho thuê chọn gần nhất (nút "Cho thuê" mở lại đúng loại đó)
   aiTone: '', // phong cách kịch bản AI — để trống, khách phải tự chọn trước khi tạo
-  keyLook: '',      // 30/10 'mau1' = chữ điểm nhấn + icon mẫu 1 (Hook Kit) lúc giọng đọc nói giá/mét/phút… — chỉ admin bật (mau1On())
+  keyLook: '',      // 30/10 'mau1' = chữ điểm nhấn + icon mẫu 1 (Hook Kit) lúc giọng đọc nói giá/mét/phút… — khách tự bật, mặc định tắt
   scriptMode: 'ai', // 'ai' = AI viết (mặc định, nổi bật) | 'mau' = kịch bản mẫu | 'tu' = tự viết/dán
   scriptOwn: false, // lời đang có do khách tự gõ/sửa → hỏi trước khi AI/mẫu thay
   voSig: '', // lựa chọn (cách viết + phong cách) của lần tạo giọng gần nhất
@@ -339,8 +339,8 @@ function sceneMotion() {
   }
   return STYLE_MOTION[state.style] || null;
 }
-// Mẫu 1: chỉ tài khoản admin (@vitristudio.com) bật được; khách thường luôn tắt
-function mau1On() { return state.keyLook === 'mau1' && /@vitristudio\.com$/i.test(String(account.profile?.login || '')); }
+// Mẫu 1: 30/10 14:50 Giang mở cho MỌI khách — ô tick ở mục Phong cách, mặc định TẮT (khách tự bật)
+function mau1On() { return state.keyLook === 'mau1'; }
 let mau1Ready = false;
 async function prepMau1() {
   if (!mau1On() || mau1Ready) return;
@@ -357,7 +357,7 @@ async function prepMau1() {
 }
 function syncMau1Row() {
   const row = $('mau1Row');
-  if (row) row.hidden = !/@vitristudio\.com$/i.test(String(account.profile?.login || ''));
+  if (row) row.hidden = false;
   const cb = $('mau1On'); if (cb) cb.checked = state.keyLook === 'mau1';
   if (mau1On()) prepMau1();
 }
