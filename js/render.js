@@ -750,7 +750,11 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
         a.fxP = a.type === 'airport' && airFx ? null : prepHubFx(a, H);
         if (a.fxP && a.fxP.kind === 'plane') airFx = true;
       });
-      const W_HUB = 1, W_REC = 1.15, W_FX = { plane: 1.15, train: 1.0 };
+      // Thời lượng (giây, khi không có giọng) của cú máy hiệu ứng — 30/10 18:33 Giang: máy lia chậm, chờ máy bay lên cao
+      // rồi mới chuyển cảnh. Cú máy thường giữ đúng nhịp cũ (không có hiệu ứng thì cảnh y như trước).
+      const FX_SEC = { plane: 7.6, train: 6.4 };
+      const W_HUB = 1, W_REC = 1.15, unit = (3.3 * anchors.length + 3.5) / (anchors.length + W_REC);
+      const W_FX = { plane: FX_SEC.plane / unit, train: FX_SEC.train / unit };
       const plan = [];
       anchors.forEach((a, i) => { plan.push({ i, w: W_HUB }); if (a.fxP) plan.push({ i, w: W_FX[a.fxP.kind], fx: a.fxP.kind }); });
       const tw = plan.reduce((x, q) => x + q.w, 0) + W_REC;
@@ -768,14 +772,15 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
         } else {
           const X = a.fxP;
           const follow = X.kind === 'plane'
-            ? w => { const p = X.at(w); return anchorCam(p.lat, p.lng, 14.75 - 0.5 * smooth(clamp01((w - 0.45) / 0.55)), 46, LW, LH, 0.5, 0.62); }
-            : w => { const p = X.at(w, -0.04); return anchorCam(p.lat, p.lng, 16.9, 56, LW, LH, 0.5, 0.58); };
+            ? w => { const p = X.at(w), up = smooth(clamp01((w - 0.36) / 0.64)); return anchorCam(p.lat, p.lng, 14.8 - 0.95 * up, 46 - 6 * up, LW, LH, 0.5, 0.6 + 0.08 * up); }
+            : trainFollow(X, H, a, LW, LH, safe);
           shots.push({ s: s0, e: e0, cam: follow(1), follow, fxOf: q.i, fx: q.fx, move: 1, slide: true, side: 0 });
         }
       }
       shots.push({ s: acc / tw, e: 1, cam: { ...camHub, pitch: 26 }, move: 0.55, recap: true, side: 1 });
       const nFx = plan.filter(q => q.fx).length;
-      raw.push({ type: 'region', d: 3.3 * anchors.length + 3.4 * nFx + 3.5, to: shots[shots.length - 1].cam, shots, vkey: 'region', n: anchors.length });
+      const fxSec = plan.reduce((x, q) => x + (q.fx ? FX_SEC[q.fx] : 0), 0);
+      raw.push({ type: 'region', d: 3.3 * anchors.length + 3.5 + fxSec, to: shots[shots.length - 1].cam, shots, vkey: 'region', n: anchors.length });
     }
   }
   const infra = (RG?.infra || []).map(r => {
@@ -2600,6 +2605,21 @@ const INFRA_COL = '#FFC233';
 // Dữ liệu (ranh, đường băng, tuyến) lấy từ OpenStreetMap trong app (loadHubFx) → anchor.fx; không có dữ liệu thì không có hiệu ứng.
 const M_LAT = 111320;
 const llOff = (lat, lng, dx, dy) => ({ lat: lat + dy / M_LAT, lng: lng + dx / (M_LAT * Math.cos(lat * Math.PI / 180)) });
+// Máy quay cảnh tàu metro: khung thấy cả căn nhà + đoạn ray gần nhà + ga (để thấy tuyến đi sát bất động sản),
+// nghiêng 50°, trôi nhẹ theo đoàn tàu (35%) chứ không bám sát
+function trainFollow(X, H, a, LW, LH, safe) {
+  const pts = [H, a];
+  const lo = Math.min(X.s0, X.sSt), hi = Math.max(X.s0, X.sSt);
+  for (let k = 0; k <= 8; k++) pts.push(X.posAt(lo + (hi - lo) * k / 8));
+  const base = fitCam(pts, LW, LH, { left: safe.x + 46, right: safe.x + 46, top: safe.top + 190, bottom: safe.bottom + 170 }, 50, 14.2, 16.6);
+  if (!base) return w => { const p = X.at(w); return anchorCam(p.lat, p.lng, 16.4, 52, LW, LH, 0.5, 0.56); };
+  const b0 = project(base.lat, base.lng, 0);
+  return w => {
+    const p = X.at(w), h = anchorCam(p.lat, p.lng, base.zoom, 50, LW, LH, 0.5, 0.56), hp = project(h.lat, h.lng, 0);
+    const k = 0.35, c = unproject(b0.x + (hp.x - b0.x) * k, b0.y + (hp.y - b0.y) * k, 0);
+    return { lat: c.lat, lng: c.lng, zoom: base.zoom + 0.25 * smooth(clamp01(w)), pitch: 50 };
+  };
+}
 function prepHubFx(a, H) {
   const X = a.fx;
   if (!X) return null;
@@ -2610,14 +2630,14 @@ function prepHubFx(a, H) {
     const kx = M_LAT * Math.cos(A.lat * Math.PI / 180);
     const ex = (B.lng - A.lng) * kx, ey = (B.lat - A.lat) * M_LAT, len = Math.hypot(ex, ey) || 1;
     const ux = ex / len, uy = ey / len;                            // hướng đường băng (m Đông, m Bắc)
-    const rwM = len, total = rwM * 1.55, lift = rwM * 0.6;
+    const rwM = len, total = rwM * 1.75, lift = rwM * 0.5;
     const ring = [];
     for (const pt of X.parts) for (let j = 0; j < pt.pts.length; j += Math.max(1, Math.floor(pt.pts.length / 24))) ring.push({ lat: pt.pts[j][0], lng: pt.pts[j][1] });
     // vị trí máy bay theo tiến độ w của cú máy: lăn bánh tăng tốc, rời đất ở 60% đường băng, leo cao
     const at = (w, ahead = 0) => {
       const d = total * Math.pow(clamp01(w), 1.75) + ahead * 1000;
       const p = llOff(A.lat, A.lng, ux * d, uy * d);
-      return { lat: p.lat, lng: p.lng, alt: Math.max(0, d - lift) * 0.22, d };
+      return { lat: p.lat, lng: p.lng, alt: Math.max(0, d - lift) * 0.3, d };
     };
     return { kind: 'plane', parts: X.parts, A, B, ux, uy, rwM, ring, at };
   }
@@ -2637,11 +2657,21 @@ function prepHubFx(a, H) {
     let ist = 0, bd = Infinity;
     for (let i = 0; i < la.length; i++) { const d = haversineKm(a, { lat: la[i], lng: lo[i] }); if (d < bd) { bd = d; ist = i; } }
     const sSt = cum[ist], total = c;
-    const before = sSt, after = total - sSt;
-    const dir = before >= after ? 1 : -1;                          // tàu chạy tới ga từ phía còn nhiều đường ray
-    const run = Math.min(0.7, Math.max(before, after) - 0.04);
-    if (run < 0.25 || bd > 0.4) return null;
-    const s0 = sSt - dir * run;
+    if (bd > 0.4) return null;
+    // 30/10 18:33 Giang: thể hiện tuyến metro đi GẦN bất động sản nhất → tàu chạy qua đoạn ray gần nhà rồi mới vào ga
+    let ih = 0, bh = Infinity;
+    for (let i = 0; i < la.length; i++) { const d = haversineKm(H, { lat: la[i], lng: lo[i] }); if (d < bh) { bh = d; ih = i; } }
+    const sH = cum[ih];
+    let dir, s0;
+    if (Math.abs(sSt - sH) > 0.15) {
+      dir = sSt > sH ? 1 : -1;
+      s0 = Math.max(0.02, Math.min(total - 0.02, sH - dir * 0.35));
+      if (Math.abs(sSt - s0) > 1.4) s0 = sSt - dir * 1.4;
+    } else {
+      dir = sSt >= total - sSt ? 1 : -1;                           // ga sát nhà: tàu chạy tới từ phía còn nhiều đường ray
+      s0 = sSt - dir * Math.min(0.7, Math.max(sSt, total - sSt) - 0.04);
+    }
+    if (Math.abs(sSt - s0) < 0.25) return null;
     const posAt = sk => {
       sk = Math.max(0, Math.min(total, sk));
       let lo2 = 0, hi = cum.length - 1;
@@ -2652,7 +2682,7 @@ function prepHubFx(a, H) {
     // đầu tàu theo tiến độ w: chạy đều rồi giảm tốc, dừng đúng ga ở 82% cú máy
     const headS = w => { const k = clamp01(w / 0.82); return s0 + (sSt - s0) * (1 - Math.pow(1 - k, 2.2)); };
     const at = (w, ahead = 0) => posAt(headS(w) + dir * ahead);
-    return { kind: 'train', la, lo, cum, total, sSt, s0, dir, posAt, headS, at };
+    return { kind: 'train', la, lo, cum, total, sSt, s0, sH, dir, posAt, headS, at, near: { lat: la[ih], lng: lo[ih], km: bh } };
   }
   return null;
 }
@@ -2749,7 +2779,8 @@ function drawPlane(ctx, S, P, v, X, w, a, t) {
   let fx = sf.x - g0.x, fy = sf.y - g0.y, rx = sr.x - g0.x, ry = sr.y - g0.y;
   const fl = Math.hypot(fx, fy) || 1;
   const climb = clamp01(p.alt / 260);
-  const Lpx = (78 + 34 * climb) / g0.w;
+  const zf = Math.max(0.3, Math.min(1, Math.pow(2, (v.zoom - 13.85) * 0.8)));   // máy lùi xa (cú máy sau) thì máy bay nhỏ lại
+  const Lpx = (78 + 34 * climb) * zf / g0.w;
   const sc = Lpx / fl;
   fx *= sc; fy *= sc; rx *= sc; ry *= sc;
   const mpp = metersPerPixel(p.lat, v.zoom);
@@ -2806,7 +2837,8 @@ function drawTrain(ctx, S, P, v, X, w, a) {
   if (a <= 0.01 || w < 0) return;
   const head = X.headS(Math.min(1, w));
   const mpp = metersPerPixel(X.la[0], v.zoom);
-  const carL = 50 * mpp / 1000, gap = 2.5 * mpp / 1000, halfW = 9.5 * mpp;   // kích thước phóng đại cho dễ nhìn (km / m)
+  const zs = Math.max(0.62, Math.min(1, Math.pow(2, (v.zoom - 16.9) * 0.5)));   // máy lùi xa thì tàu nhỏ bớt (vẫn phóng đại cho dễ nhìn)
+  const carL = 50 * zs * mpp / 1000, gap = 2.5 * zs * mpp / 1000, halfW = 9.5 * zs * mpp;
   const cars = [];
   for (let c = 0; c < 4; c++) {
     const sF = head - X.dir * c * (carL + gap), sR = sF - X.dir * carL;
@@ -2824,7 +2856,7 @@ function drawTrain(ctx, S, P, v, X, w, a) {
   for (const car of cars) {
     const b = [corner(car.sF, -1), corner(car.sF, 1), corner(car.sR, 1), corner(car.sR, -1)];
     if (b.some(q => q.w < 0.05)) continue;
-    const hh = 23 * P.s / ((b[0].w + b[2].w) / 2);
+    const hh = 23 * zs * P.s / ((b[0].w + b[2].w) / 2);
     const r = b.map(q => ({ x: q.x, y: q.y - hh }));
     car.b = b; car.r = r; car.depth = (b[0].y + b[2].y) / 2;
     faces.push(car);
@@ -4943,8 +4975,25 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
           const w = fxShotW(tl, i, t);
           if (X.kind === 'plane') {
             drawAirportRise(ctx, S, P, X, on * (w > 1 ? 0.65 : 1));
-            if (w >= 0 && w < 1.3) drawPlane(ctx, S, P, v, X, w, on * clamp01(w / 0.06 + 0.3) * clamp01((1.3 - w) / 0.2), t);
-          } else if (w >= 0) drawTrain(ctx, S, P, v, X, w, on * clamp01(w / 0.08));
+            if (w >= 0 && w < 1.15) drawPlane(ctx, S, P, v, X, w, on * clamp01(w / 0.06 + 0.3) * clamp01((1.15 - w) / 0.13), t);
+          } else if (w >= 0) {
+            drawTrain(ctx, S, P, v, X, w, on * clamp01(w / 0.08));
+            // nét chấm nhà → điểm gần nhất trên tuyến metro + "Tuyến metro cách nhà … m" (khoảng cách thật tới đường ray)
+            const ca = on * clamp01((w - 0.1) / 0.15) * clamp01((1.25 - w) / 0.2);
+            if (ca > 0.01 && X.near && X.near.km < 1.5) {
+              const q = S(X.near.lat, X.near.lng);
+              ctx.save();
+              ctx.globalAlpha = ca; ctx.setLineDash([3, 5]); ctx.lineCap = 'round'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+              ctx.beginPath(); ctx.moveTo(hs.x, hs.y); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.setLineDash([]);
+              ctx.beginPath(); ctx.arc(q.x, q.y, 4.5, 0, Math.PI * 2); ctx.fillStyle = HUB_COL.metro; ctx.fill(); ctx.stroke();
+              ctx.restore();
+              const m = formatKm(X.near.km);
+              // đặt dưới đường ray (ghim nhà ở trên, không che ghim)
+              const cy = Math.min(LH - safe.bottom - 20, Math.max(hs.y, q.y) + 34), cx = Math.max(safe.x + 110, Math.min(rightAt(tl, cy) - 110, q.x));
+              chip(ctx, cx, cy, 'Tuyến metro cách nhà ' + m, ca, HUB_COL.metro);
+              used.push({ x: cx - 110, y: cy - 14, w: 220, h: 28 });
+            }
+          }
         });
         const items = tl.anchors.map((a, i) => ({ a, i, k: hubReveal(tl, i, t), s: S(a.lat, a.lng) }));
         // Mọi ghim (kể cả ghim chưa hiện) đều được né, để thẻ đã đặt không phải dời chỗ khi ghim sau hiện ra
