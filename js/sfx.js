@@ -109,7 +109,8 @@ export function sfxEvents(tl) {
   const m1 = tl.scene?.keyLook === 'mau1';
   const lkAt = [];
   (tl.keyPops || []).forEach((k, i) => {
-    if (m1) { add(k.t + 0.28, i % 2 ? 'lk_b' : 'lk_a', 0.6); lkAt.push(k.t + 0.28); return; }
+    // 30/10 11:30 Giang: tiếng dài hơn (thêm đuôi vang), bắt đầu ngay lúc cụm hiện ra để cả lúc rơi xuống + chạm đều có tiếng
+    if (m1) { add(k.t + 0.1, i % 2 ? 'lk_b' : 'lk_a', 0.6); lkAt.push(k.t + 0.3); return; }
     add(k.t + 0.02, 'pop', k.kind === 'price' ? 0.6 : 0.42);
     if (k.kind === 'price') add(k.t + 0.12, 'ding', 0.4);
   });

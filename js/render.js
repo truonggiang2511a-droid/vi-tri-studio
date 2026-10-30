@@ -2840,7 +2840,8 @@ function drawHook(ctx, tl, t) {
 const POP_YS = [0.33, 0.27, 0.39, 0.22, 0.45, 0.17];
 // Mẫu 1: chọn chỗ trống nhất (né OCC) trong vùng an toàn, giữ chỗ suốt lúc hiện; cụm sau đổi phía so với cụm trước
 const ease01 = x => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
-const M1_XS = [0.5, 0.3, 0.7], M1_YS = [0.3, 0.22, 0.38, 0.16, 0.46, 0.54];
+// 30/10 11:30 Giang: nhích cụm chữ lên cao hơn (trước 0,3 / 0,22 / 0,38…)
+const M1_XS = [0.5, 0.3, 0.7], M1_YS = [0.24, 0.17, 0.31, 0.11, 0.39, 0.48];
 function drawMau1Pops(ctx, tl, t) {
   const { LW, LH, safe, fmt } = tl;
   const k = (Math.min(LW, LH) / 540) * (fmt === 'v' ? 1 : 0.82);
@@ -2854,7 +2855,8 @@ function drawMau1Pops(ctx, tl, t) {
     if (lt < 0 || lt > p.dur) continue;
     const L = mau1Layout(ctx, p, k, maxW);
     const scoreAt = (x, y) => {
-      const d = { x0: m.a * x + m.e, y0: m.d * y + m.f, x1: m.a * (x + L.w) + m.e, y1: m.d * (y + L.h) + m.f };
+      const pad = 12 * k; // chừa khoảng hở quanh cụm, không sát mép thẻ tiện ích/ghim
+      const d = { x0: m.a * (x - pad) + m.e, y0: m.d * (y - pad) + m.f, x1: m.a * (x + L.w + pad) + m.e, y1: m.d * (y + L.h + pad) + m.f };
       let sc = 0;
       for (const o of OCC || []) {
         const ov = Math.max(0, Math.min(d.x1, o.x1) - Math.max(d.x0, o.x0)) * Math.max(0, Math.min(d.y1, o.y1) - Math.max(d.y0, o.y0));
@@ -2878,12 +2880,12 @@ function drawMau1Pops(ctx, tl, t) {
       pos = { x: best.x, y: best.y, fx: best.x, fy: best.y, tm: t };
       tl._m1Pos.set(p.id, pos);
       tl._m1Last = { id: p.id, x: best.x, y: best.y };
-    } else if (lt > 0.4 && t - pos.tm > 0.6) {
+    } else if (lt > 0.1 && t - pos.tm > 0.15) {   // kiểm tra sớm: thẻ tiện ích đang hiện dần thì cụm lướt đi ngay
       // máy lia làm ghim/thẻ/tên đường chạy vào chỗ cụm chữ đang đứng → lướt êm sang chỗ trống hơn
       const cur = scoreAt(pos.x, pos.y);
-      if (cur > 0.3) {
+      if (cur > 0.03) {   // thẻ tiện ích hiện sau và chạm cụm (dù chỉ một chút) → lướt sang chỗ trống
         const best = bestSpot(null);
-        if (best.sc < cur - 0.25) Object.assign(pos, { fx: pos.x, fy: pos.y, x: best.x, y: best.y, tm: t });
+        if (best.sc < cur * 0.5) Object.assign(pos, { fx: pos.x, fy: pos.y, x: best.x, y: best.y, tm: t });
       }
     }
     const g = ease01(clamp01((t - pos.tm) / 0.35));

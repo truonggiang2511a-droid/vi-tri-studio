@@ -346,7 +346,7 @@ async function prepMau1() {
   try {
     const ac = new OfflineAudioContext(1, 44100, 44100);
     for (const n of ['lk_a', 'lk_b', 'key1', 'key2', 'key3', 'key4', 'key5', 'key6']) if (!hasSfxSample(n)) {
-      const r = await fetch(`music/sfx_${n}.${n.startsWith('key') ? 'wav' : 'm4a'}`);
+      const r = await fetch(`music/sfx_${n}${n.startsWith('key') ? '.wav' : '2.m4a'}`); // lk_*2.m4a: bản dài hơn 30/10
       if (r.ok) setSfxSample(n, await ac.decodeAudioData(await r.arrayBuffer()));
     }
   } catch { /* không có tiếng gốc thì dùng pop tổng hợp */ }

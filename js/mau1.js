@@ -19,8 +19,9 @@ const PAL_3D = { tim: ['#E9D6FF', '#8A2BEA'], vang: ['#FFF6B0', '#F0A800'], cam:
   xanh: ['#D6ECFF', '#1F6FEB'], la: ['#DCFCE7', '#16A34A'], hong: ['#FFE0F0', '#EC4899'] };
 // 30/10 Giang: mỗi phong cách MỘT màu nhấn cho từ khoá + icon (khoá = scene.style). Mặt chữ: trên → dưới (chuyển nhẹ)
 //   Neon đêm = xanh neon · Sang trọng = vàng kim · Trẻ trung = hồng · Tối giản = đỏ
-export const M1_ACCENT = { neon: ['#C8FAFF', '#22D3EE'], sangtrong: ['#FBEBC0', '#D4A24C'], tretrung: ['#FFD6EA', '#FF4FA3'], toigian: ['#FF9C8F', '#EF3B2D'] };
-const M1_BADGE = { neon: ['#A5F3FC', '#0EA5C6'], sangtrong: ['#F6DFA4', '#B98532'], tretrung: ['#FFC6E2', '#EC4899'], toigian: ['#FF9C8F', '#D92D20'] };
+// 30/10 11:30 Giang: kiểu vàng kim là MẶC ĐỊNH (Neon đêm = phong cách mặc định), Sang trọng = vàng tươi bóng đậm vừa
+export const M1_ACCENT = { neon: ['#FBEBC0', '#D4A24C'], sangtrong: ['#FFF4A0', '#FFC800'], tretrung: ['#FFD6EA', '#FF4FA3'], toigian: ['#FF9C8F', '#EF3B2D'] };
+const M1_BADGE = { neon: ['#F6DFA4', '#B98532'], sangtrong: ['#FFE680', '#E0A800'], tretrung: ['#FFC6E2', '#EC4899'], toigian: ['#FF9C8F', '#D92D20'] };
 // Huy hiệu icon cùng màu với cụm chữ (mau1.md: xanh/lá/hồng + màu gốc cam)
 const BADGE = { ...M1_BADGE, cam: ['#FFB38F', '#FF5A36'], xanh: ['#BFE0FF', '#1E88FF'], la: ['#BBF7D0', '#16A34A'], hong: ['#FFC6E2', '#EC4899'],
   vang: ['#FFF3A6', '#F2A900'], tim: ['#E3C6FF', '#9338FF'], do: ['#FF8A7A', '#C90F0B'] };
@@ -131,22 +132,22 @@ const shade = (hex, f) => { const n = parseInt(hex.slice(1), 16); return `rgb(${
 export function mau1Layout(ctx, p, k, maxW) {
   const d3 = p.look === '3d';
   const font = s => `800 ${s}px ${F_3D}`; // 30/10 Giang chốt một font: Montserrat, chữ thường nhẹ nhàng (800, không khối)
-  let big = 70 * k * (p.kind === 'price' ? 1.06 : 1);
+  let big = 60 * k * (p.kind === 'price' ? 1.06 : 1); // 30/10 11:30: nhỏ lại ~15% (trước 70)
   ctx.font = font(big);
-  const iw = p.icon ? 76 * k : 0;
+  const iw = p.icon ? 66 * k : 0;
   let bw = ctx.measureText(p.text).width;
   const room = maxW - iw - 16 * k;
   if (bw > room) { big *= room / bw; ctx.font = font(big); bw = ctx.measureText(p.text).width; }
   const m = ctx.measureText(p.text);
   const asc = m.actualBoundingBoxAscent || big * 0.75, desc = m.actualBoundingBoxDescent || big * 0.05;
-  const thin = 21 * k, sign = 32 * k;
+  const thin = 19 * k, sign = 28 * k;
   ctx.font = `500 ${thin}px ${F_THIN}`;
   const tw = p.kicker ? ctx.measureText(p.kicker).width : 0;
   ctx.font = `600 ${sign}px ${F_SIGN}`;
   const sgw = p.sign ? Math.min(ctx.measureText(p.sign).width, maxW - iw) : 0;
   const thinH = p.kicker ? thin * 1.25 : 0;
   const depth = d3 ? big * 0.095 : 0;
-  const signOver = p.sign ? sign * 0.62 : 0;
+  const signOver = p.sign ? sign * 0.95 : 0; // gồm cả phần chữ ký tay thò xuống (dấu, nét g/y) để chỗ đặt tính đủ
   const w = iw + Math.max(bw + depth, tw + big * 0.08, sgw + bw * 0.25);
   const h = thinH + asc + desc + depth + signOver + 6 * k;
   return { d3, font, big, bw, asc, desc, thin, sign, tw, sgw, thinH, depth, iw, w, h };
@@ -206,7 +207,7 @@ export function drawMau1(ctx, p, x, y, lt, dur, k, maxW) {
   // thu nhỏ nhẹ lúc rút
   if (out > 0) { const cx = x + L.w / 2, cy = y + L.h / 2; ctx.translate(cx, cy); ctx.scale(1 - 0.06 * out, 1 - 0.06 * out); ctx.translate(-cx, -cy); }
   // icon tròn bên trái, ngang từ khoá (hiện trước chữ 0,08 s)
-  if (p.icon) drawBadge(ctx, p.icon, x + 33 * k, base - L.asc * 0.45, 30 * k, lt + 0.08, dur + 0.08, p.color, A);
+  if (p.icon) drawBadge(ctx, p.icon, x + 29 * k, base - L.asc * 0.45, 26 * k, lt + 0.08, dur + 0.08, p.color, A);
   // dòng dẫn nhỏ: mờ dần vào + trồi lên
   if (p.kicker) {
     const a = clamp01(lt / 0.2) * A;
@@ -232,7 +233,8 @@ export function drawMau1(ctx, p, x, y, lt, dur, k, maxW) {
       ctx.restore();
     };
     // bóng đổ đậm vừa, gọn (không quầng)
-    ctx.shadowColor = 'rgba(0,0,0,0.62)'; ctx.shadowBlur = L.big * 0.07; ctx.shadowOffsetY = L.big * 0.06;
+    // Sang trọng (vàng tươi) bóng đậm hơn một chút cho nổi trên ảnh vệ tinh sáng
+    ctx.shadowColor = p.color === 'sangtrong' ? 'rgba(0,0,0,0.78)' : 'rgba(0,0,0,0.62)'; ctx.shadowBlur = L.big * 0.07; ctx.shadowOffsetY = L.big * 0.065;
     if (u < 1) {
       const dy = -(1 - ease.out(u)) * L.big * 1.1;
       const a0 = clamp01(q / 0.07) * A;
