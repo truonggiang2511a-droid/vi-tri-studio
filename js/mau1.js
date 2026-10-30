@@ -21,8 +21,10 @@ const PAL_3D = { tim: ['#E9D6FF', '#8A2BEA'], vang: ['#FFF6B0', '#F0A800'], cam:
 //   Neon đêm = xanh neon · Sang trọng = vàng kim · Trẻ trung = hồng · Tối giản = đỏ
 // 30/10 11:30 Giang: kiểu vàng kim là MẶC ĐỊNH (Neon đêm = phong cách mặc định), Sang trọng = vàng tươi bóng đậm vừa
 // 30/10 13:15 Giang: Neon đêm TRỞ LẠI màu xanh neon như bản đầu (bản vàng kim 12:10 bỏ); mặt chữ vẫn nhận 3 điểm màu nếu cần
-export const M1_ACCENT = { neon: ['#C8FAFF', '#22D3EE'], sangtrong: ['#FFF4A0', '#FFC800'], tretrung: ['#FFD6EA', '#FF4FA3'], toigian: ['#FF9C8F', '#EF3B2D'] };
-const M1_BADGE = { neon: ['#A5F3FC', '#0EA5C6'], sangtrong: ['#FFE680', '#E0A800'], tretrung: ['#FFC6E2', '#EC4899'], toigian: ['#FF9C8F', '#D92D20'] };
+export const M1_ACCENT = { neon: ['#C8FAFF', '#22D3EE'], sangtrong: ['#FFF4A0', '#FFC800'], tretrung: ['#FFD6EA', '#FF4FA3'], toigian: ['#FFFFFF', '#E9EDF0'] };   // 30/10 14:10 Giang: Tối giản = trắng (thẻ trắng, chữ mảnh), không đỏ
+const M1_BADGE = { neon: ['#A5F3FC', '#0EA5C6'], sangtrong: ['#FFE680', '#E0A800'], tretrung: ['#FFC6E2', '#EC4899'], toigian: ['#FFFFFF', '#DDE2E6'] };
+// huy hiệu nền sáng (Tối giản) thì icon màu tối
+const BADGE_INK = { toigian: '#11161B' };
 // Huy hiệu icon cùng màu với cụm chữ (mau1.md: xanh/lá/hồng + màu gốc cam)
 const BADGE = { ...M1_BADGE, cam: ['#FFB38F', '#FF5A36'], xanh: ['#BFE0FF', '#1E88FF'], la: ['#BBF7D0', '#16A34A'], hong: ['#FFC6E2', '#EC4899'],
   vang: ['#FFF3A6', '#F2A900'], tim: ['#E3C6FF', '#9338FF'], do: ['#FF8A7A', '#C90F0B'] };
@@ -113,7 +115,7 @@ export function drawBadge(ctx, name, cx, cy, r, lt, dur, colKey, A0 = 1) {
     const wob = (1 - clamp01((lt - 0.1) / 0.5)) * Math.sin(lt * 11) * 6 * Math.PI / 180;
     ctx.globalAlpha = clamp01((lt - 0.06) / 0.1) * A;
     ctx.rotate(wob);
-    iconStrokes(ctx, name, r * 1.08);
+    iconStrokes(ctx, name, r * 1.08, BADGE_INK[colKey] || '#FFFFFF');
   }
   ctx.restore();
 }
@@ -230,7 +232,7 @@ export function drawMau1(ctx, p, x, y, lt, dur, k, maxW) {
   {
     const text = p.count ? countUp(p.text, clamp01(lt / 1.0)) : p.text;
     const [c, ox, oy, W, H] = keywordSprite(text, L, col, false, S, -1);   // chữ phẳng, không viền, không vệt sáng
-    ctx.shadowColor = p.color === 'sangtrong' ? 'rgba(0,0,0,0.78)' : 'rgba(0,0,0,0.62)'; ctx.shadowBlur = L.big * 0.07; ctx.shadowOffsetY = L.big * 0.065;
+    ctx.shadowColor = p.color === 'sangtrong' || p.color === 'toigian' ? 'rgba(0,0,0,0.78)' : 'rgba(0,0,0,0.62)'; ctx.shadowBlur = L.big * 0.07; ctx.shadowOffsetY = L.big * 0.065;
     ctx.globalAlpha = A;
     ctx.drawImage(c, 0, 0, W * S, H * S, kx + ox, base + oy, W, H);
     ctx.shadowColor = 'transparent';
@@ -292,7 +294,7 @@ export function drawM1Feats(ctx, p, t, cx, bottom, k, colKey) {
 // "nhún" một nhịp có gợn sóng lan ra, vệt sáng lướt qua. KHÔNG ghi số điện thoại.
 const CTA_DEF = ['#FF7A45', '#E8261A'];
 // 30/10 14:05 Giang: nút CTA cùng màu với phong cách (như chữ điểm nhấn M1_ACCENT), đậm hơn một nấc để chữ trắng đọc rõ
-export const M1_CTA_COL = { neon: ['#22D3EE', '#0B8FB0'], sangtrong: ['#FFD23F', '#D49B00'], tretrung: ['#FF6FB5', '#DB2777'], toigian: ['#FF6B5B', '#D92D20'] };
+export const M1_CTA_COL = { neon: ['#22D3EE', '#0B8FB0'], sangtrong: ['#FFD23F', '#D49B00'], tretrung: ['#FF6FB5', '#DB2777'], toigian: ['#FFFFFF', '#E6EAED', '#11161B'] };   // phần tử thứ 3 = nút sáng, chữ/icon tối
 export function m1CtaSize(ctx, text, k) {
   const h = 57 * k, px = h * 0.36, ir = h * 0.36;
   ctx.save(); ctx.font = `800 ${px}px ${F_THIN}`; const tw = ctx.measureText(text).width; ctx.restore();
@@ -333,17 +335,18 @@ export function drawM1Cta(ctx, text, cx, cy, lt, dur, k, icon = 'chat', CTA_C = 
   ctx.restore();
   // huy hiệu trắng + icon
   const icx = x0 + h * 0.16 + ir;
-  ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(icx, y, ir, 0, Math.PI * 2); ctx.fill();
-  ctx.save(); ctx.translate(icx, y); ctx.strokeStyle = CTA_C[1];
-  iconStrokesColor(ctx, icon, ir * 1.25, CTA_C[1]); ctx.restore();
+  const ink = CTA_C[2];   // nút sáng (Tối giản): huy hiệu tối, icon trắng, chữ tối
+  ctx.fillStyle = ink || '#FFFFFF'; ctx.beginPath(); ctx.arc(icx, y, ir, 0, Math.PI * 2); ctx.fill();
+  ctx.save(); ctx.translate(icx, y); ctx.strokeStyle = ink ? '#FFFFFF' : CTA_C[1];
+  iconStrokesColor(ctx, icon, ir * 1.25, ink ? '#FFFFFF' : CTA_C[1]); ctx.restore();
   // chữ
   ctx.font = `800 ${px}px ${F_THIN}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = px * 0.12; ctx.shadowOffsetY = px * 0.06;   // nút vàng/xanh sáng: bóng chữ đậm hơn
-  ctx.fillStyle = '#FFFFFF'; ctx.fillText(text, x0 + h * 0.16 + 2 * ir + h * 0.22, y + px * 0.04);
+  if (!ink) { ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = px * 0.12; ctx.shadowOffsetY = px * 0.06; }   // nút vàng/xanh sáng: bóng chữ đậm hơn
+  ctx.fillStyle = ink || '#FFFFFF'; ctx.fillText(text, x0 + h * 0.16 + 2 * ir + h * 0.22, y + px * 0.04);
   ctx.shadowColor = 'transparent';
   // mũi tên chạy ">>>"
   const ax = x0 + w - h * 0.5;
-  ctx.lineWidth = Math.max(2, h * 0.045); ctx.lineCap = 'round'; ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = Math.max(2, h * 0.045); ctx.lineCap = 'round'; ctx.strokeStyle = ink || '#FFFFFF';
   for (let i = 0; i < 3; i++) {
     const ph = ((lt * 1.6) - i * 0.22) % 1; const al = Math.sin(Math.PI * (ph < 0 ? ph + 1 : ph)) * A;
     const x = ax - h * 0.16 + i * h * 0.13, s_ = h * 0.09;
