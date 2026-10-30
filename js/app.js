@@ -328,7 +328,7 @@ function motionOn() {
 // Thẻ giá mở đầu theo phong cách — mỗi phong cách một kiểu chữ động riêng, cho MỌI khách (chỉ thẻ mở đầu,
 // tiêu đề cảnh giữ kiểu cũ: motionHookOnly). 25/10 22:12: Neon = đen – vàng. 26/10 Giang: Sang trọng/Trẻ trung/Tối giản
 // trước đây cùng một thẻ cũ giống hệt nhau → tách riêng. Tài khoản nội bộ/?motion=1 thêm tiêu đề động; ?motionKey=… ép 1 gói.
-const STYLE_MOTION = { neon: 'denvang', sangtrong: 'tapchi', tretrung: 'khoi', toigian: 'hiendai' };
+const STYLE_MOTION = { neon: 'denvang', sangtrong: 'tapchi', tretrung: 'khoi', toigian: 'hiendai', xanhla: 'denxanh' };
 function sceneMotion() {
   if (!state.house) return null;
   if (motionOn()) {
@@ -2976,7 +2976,7 @@ function renderStyles() {
   const el = $('styleRow');
   if (!el) return;
   if (!STYLES[state.style]) state.style = 'neon';
-  const sample = { neon: '3D', sangtrong: 'Aa', tretrung: 'Hi!', toigian: 'Aa' };
+  const sample = { neon: '3D', sangtrong: 'Aa', tretrung: 'Hi!', toigian: 'Aa', xanhla: '3D' };
   el.innerHTML = Object.entries(STYLES).map(([k, st]) => {
     const [bg, a1, a2] = st.swatch;
     const font = k === 'sangtrong' ? 'font-family:"Playfair Display",serif;' : k === 'tretrung' ? 'font-family:"Baloo 2",sans-serif;' : k === 'toigian' ? 'font-weight:300;' : '';

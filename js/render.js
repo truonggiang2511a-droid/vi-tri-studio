@@ -68,6 +68,14 @@ export const STYLES = {
     tint: '#c4c9c9', dark: 0.2, title: 'thin', capBg: 'rgba(255,255,255,0.92)', capInk: '#11161b',
     road: 'trang', route: 'trang', swatch: ['#f2f3f3', '#11161b', '#9aa3a8'],
   },
+  // 30/10 14:15 Giang: phong cách thứ 5 màu xanh lá
+  xanhla: {
+    label: 'Xanh sinh thái', desc: 'Xanh lá tươi mát, gần thiên nhiên — hợp đất nền, nhà vườn, dự án ven sông',
+    head: BASE_FONT, headW: 800, acc: '#4ADE80', accInk: '#05210F', acc2: '#D9F99D',
+    card: 'rgba(6,24,14,0.9)', ink: '#ffffff', soft: 'rgba(255,255,255,0.84)', mute: 'rgba(255,255,255,0.6)',
+    tint: '#a6c9a2', dark: 0.1, title: '3d', capBg: 'rgba(4,22,12,0.66)', capInk: '#ffffff',
+    road: 'la', route: 'vang', swatch: ['#0b1f14', '#4ADE80', '#D9F99D'],
+  },
 };
 let ST = STYLES.neon;
 let HFONT = BASE_FONT;

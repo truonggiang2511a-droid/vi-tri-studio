@@ -69,9 +69,13 @@ const HEAD = '"Montserrat", "Be Vietnam Pro", system-ui, sans-serif';
 const BODY = '"Be Vietnam Pro", "Segoe UI", system-ui, sans-serif';
 const SERIF = '"Playfair Display", Georgia, "Times New Roman", serif';
 
+// Bảng màu nhũ của gói đen – vàng; gói đen – xanh lá (phong cách Xanh sinh thái, 30/10) dùng chung bố cục, chỉ đổi bảng màu
+const PAL_GOLD = { g: ['#FBEBC4', '#E6C27E', '#C8964F', '#E7C88D'], line: '#D9B26F', line2: '#C9974E', glow: 'rgba(201,151,78,0.16)', ink: '#F4EFE6' };
+const PAL_GREEN = { g: ['#E3FFD9', '#86EFAC', '#22C55E', '#A7F3C0'], line: '#6EE7A0', line2: '#22C55E', glow: 'rgba(34,197,94,0.16)', ink: '#F0FDF4' };
+let PAL = PAL_GOLD;
 function goldGrad(ctx, y, size) {
   const g = ctx.createLinearGradient(0, y - size * 0.62, 0, y + size * 0.42);
-  g.addColorStop(0, '#FBEBC4'); g.addColorStop(0.42, '#E6C27E'); g.addColorStop(0.78, '#C8964F'); g.addColorStop(1, '#E7C88D');
+  g.addColorStop(0, PAL.g[0]); g.addColorStop(0.42, PAL.g[1]); g.addColorStop(0.78, PAL.g[2]); g.addColorStop(1, PAL.g[3]);
   return g;
 }
 function charsOf(ctx, text, sp) {
@@ -212,7 +216,7 @@ export const MOTION = {
     hook(ctx, e) {
       const { LW, LH, safe, lt, A, k } = e;
       const L = hookLines(e.H);
-      dim(ctx, LW, LH, A, 0.74, 'rgba(201,151,78,0.16)');
+      dim(ctx, LW, LH, A, 0.74, PAL.glow);
       const maxW = LW - safe.x * 2 - 24;
       const cx = LW / 2;
       let y = LH * (e.fmt === 'h' ? 0.24 : 0.3);
@@ -235,8 +239,8 @@ export const MOTION = {
       ctx.font = fl(23 * k);
       const lw = ctx.measureText(L.label).width;
       const pl = clamp01((lt - 0.28) / 0.5);
-      hairline(ctx, cx, y, Math.min(maxW / 2, lw / 2 + 170 * k) - lw / 2 - 16 * k, pl, '#D9B26F', A, lw / 2 + 16 * k);
-      ctx.globalAlpha = A * clamp01((lt - 0.3) / 0.3); ctx.fillStyle = '#F4EFE6';
+      hairline(ctx, cx, y, Math.min(maxW / 2, lw / 2 + 170 * k) - lw / 2 - 16 * k, pl, PAL.line, A, lw / 2 + 16 * k);
+      ctx.globalAlpha = A * clamp01((lt - 0.3) / 0.3); ctx.fillStyle = PAL.ink;
       ctx.font = fl(23 * k); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(L.label, cx, y);
       // giá to: số chạy + vệt sáng
       y += 80 * k;
@@ -253,14 +257,14 @@ export const MOTION = {
       ctx.restore();
       sheen(ctx, L.big, cx, y, sb, fb, 0, (lt - 1.15) / 0.7, A);
       y += sb * 0.58 + 10 * k;
-      hairline(ctx, cx, y, maxW * 0.42, clamp01((lt - 0.7) / 0.6), '#C9974E', A * 0.9);
+      hairline(ctx, cx, y, maxW * 0.42, clamp01((lt - 0.7) / 0.6), PAL.line2, A * 0.9);
       // dòng phụ
       ctx.shadowBlur = 6;
       y += 36 * k;
       L.subs.forEach((s, i) => {
         const a = clamp01((lt - 0.8 - i * 0.14) / 0.3);
         if (a <= 0) return;
-        ctx.globalAlpha = A * a; ctx.fillStyle = '#F4EFE6';
+        ctx.globalAlpha = A * a; ctx.fillStyle = PAL.ink;
         ctx.font = `600 ${25 * k}px ${BODY}`; ctx.textAlign = 'center';
         const ls = fitLines(ctx, s, maxW), lh = fontPx(ctx) * 1.25;
         ls.forEach((ln, j) => ctx.fillText(ln, cx, y + j * lh + (1 - ease.out(a)) * 10));
@@ -279,9 +283,9 @@ export const MOTION = {
       kinetic(ctx, text, LW / 2, y, s, { font: f, sp: 0.02, fill: 'gold', lt, A, stagger: 0.022 });
       sheen(ctx, text, LW / 2, y, s, f, 0.02, (lt - 0.9) / 0.8, A);
       ctx.font = f(s);
-      hairline(ctx, LW / 2, y + s * 0.78, Math.min(maxW / 2, charsOf(ctx, text, s * 0.02).total * 0.55), clamp01((lt - 0.3) / 0.6), '#D9B26F', A);
+      hairline(ctx, LW / 2, y + s * 0.78, Math.min(maxW / 2, charsOf(ctx, text, s * 0.02).total * 0.55), clamp01((lt - 0.3) / 0.6), PAL.line, A);
       if (sub) {
-        ctx.globalAlpha = A * clamp01((lt - 0.5) / 0.4); ctx.fillStyle = '#F4EFE6';
+        ctx.globalAlpha = A * clamp01((lt - 0.5) / 0.4); ctx.fillStyle = PAL.ink;
         ctx.font = `500 ${15 * k}px ${BODY}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText(fitText(ctx, sub, maxW), LW / 2, y + s * 0.78 + 22 * k);
       }
@@ -289,6 +293,12 @@ export const MOTION = {
     },
   },
 
+  // Đen – xanh lá (phong cách Xanh sinh thái): bố cục y như đen – vàng, nhũ xanh lá
+  denxanh: {
+    label: 'Đen xanh lá',
+    hook(ctx, e) { PAL = PAL_GREEN; try { MOTION.denvang.hook(ctx, e); } finally { PAL = PAL_GOLD; } },
+    title(ctx, e) { PAL = PAL_GREEN; try { MOTION.denvang.title(ctx, e); } finally { PAL = PAL_GOLD; } },
+  },
   // Khối chữ đậm (kiểu tin nhanh): từng dòng nằm trong khối màu quét ra, giá trong khối vàng nảy lên
   khoi: {
     label: 'Khối chữ tin nhanh',

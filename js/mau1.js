@@ -21,8 +21,8 @@ const PAL_3D = { tim: ['#E9D6FF', '#8A2BEA'], vang: ['#FFF6B0', '#F0A800'], cam:
 //   Neon đêm = xanh neon · Sang trọng = vàng kim · Trẻ trung = hồng · Tối giản = đỏ
 // 30/10 11:30 Giang: kiểu vàng kim là MẶC ĐỊNH (Neon đêm = phong cách mặc định), Sang trọng = vàng tươi bóng đậm vừa
 // 30/10 13:15 Giang: Neon đêm TRỞ LẠI màu xanh neon như bản đầu (bản vàng kim 12:10 bỏ); mặt chữ vẫn nhận 3 điểm màu nếu cần
-export const M1_ACCENT = { neon: ['#C8FAFF', '#22D3EE'], sangtrong: ['#FFF4A0', '#FFC800'], tretrung: ['#FFD6EA', '#FF4FA3'], toigian: ['#FFFFFF', '#E9EDF0'] };   // 30/10 14:10 Giang: Tối giản = trắng (thẻ trắng, chữ mảnh), không đỏ
-const M1_BADGE = { neon: ['#A5F3FC', '#0EA5C6'], sangtrong: ['#FFE680', '#E0A800'], tretrung: ['#FFC6E2', '#EC4899'], toigian: ['#FFFFFF', '#DDE2E6'] };
+export const M1_ACCENT = { neon: ['#C8FAFF', '#22D3EE'], sangtrong: ['#FFF4A0', '#FFC800'], tretrung: ['#FFD6EA', '#FF4FA3'], toigian: ['#FFFFFF', '#E9EDF0'], xanhla: ['#D9FFE4', '#4ADE80'] };   // 30/10 14:10 Giang: Tối giản = trắng (thẻ trắng, chữ mảnh), không đỏ
+const M1_BADGE = { neon: ['#A5F3FC', '#0EA5C6'], sangtrong: ['#FFE680', '#E0A800'], tretrung: ['#FFC6E2', '#EC4899'], toigian: ['#FFFFFF', '#DDE2E6'], xanhla: ['#A7F3C0', '#16A34A'] };
 // huy hiệu nền sáng (Tối giản) thì icon màu tối
 const BADGE_INK = { toigian: '#11161B' };
 // Huy hiệu icon cùng màu với cụm chữ (mau1.md: xanh/lá/hồng + màu gốc cam)
@@ -294,7 +294,7 @@ export function drawM1Feats(ctx, p, t, cx, bottom, k, colKey) {
 // "nhún" một nhịp có gợn sóng lan ra, vệt sáng lướt qua. KHÔNG ghi số điện thoại.
 const CTA_DEF = ['#FF7A45', '#E8261A'];
 // 30/10 14:05 Giang: nút CTA cùng màu với phong cách (như chữ điểm nhấn M1_ACCENT), đậm hơn một nấc để chữ trắng đọc rõ
-export const M1_CTA_COL = { neon: ['#22D3EE', '#0B8FB0'], sangtrong: ['#FFD23F', '#D49B00'], tretrung: ['#FF6FB5', '#DB2777'], toigian: ['#FFFFFF', '#E6EAED', '#11161B'] };   // phần tử thứ 3 = nút sáng, chữ/icon tối
+export const M1_CTA_COL = { neon: ['#22D3EE', '#0B8FB0'], sangtrong: ['#FFD23F', '#D49B00'], tretrung: ['#FF6FB5', '#DB2777'], toigian: ['#FFFFFF', '#E6EAED', '#11161B'], xanhla: ['#34D399', '#15803D'] };   // phần tử thứ 3 = nút sáng, chữ/icon tối
 export function m1CtaSize(ctx, text, k) {
   const h = 57 * k, px = h * 0.36, ir = h * 0.36;
   ctx.save(); ctx.font = `800 ${px}px ${F_THIN}`; const tw = ctx.measureText(text).width; ctx.restore();
