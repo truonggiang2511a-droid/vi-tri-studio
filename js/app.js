@@ -1,6 +1,6 @@
 // Điều khiển giao diện: nhập toạ độ → quét → chọn → xem trước → xuất video.
 import { parseCoords, haversineKm, formatKm } from './geo.js';
-import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, placesNear, guessCategory, stitchWays, bridgeWays, localFrame, pickHubs, loadInfra, simplifyLine, loadHubFx } from './data.js';
+import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, placesNear, guessCategory, stitchWays, bridgeWays, localFrame, pickHubs, loadInfra, simplifyLine, loadHubFx, loadZones, loadWater } from './data.js';
 import { ICON_PATHS } from './icons.js';
 import {
   FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, HI_THEMES, LOT_STYLES, LOT_COLORS, STYLES, BASES,
@@ -386,6 +386,8 @@ function buildScene() {
     roads: selectedRoads(),
     iso: state.showIso && state.iso && state.iso.areas?.length ? state.iso : null,
     region: regionScene(),
+    zones: zoneScene(),
+    water: waterScene(),
     boundary: state.useBoundary && state.admin?.boundary ? { ...state.admin.boundary, route: state.routes.__ranh || null } : null,
     provinceShort: state.admin?.provinceShort || '',
     commune: state.admin?.commune || '',
@@ -494,7 +496,7 @@ let audioSrc = null;
 let exporting = false;
 
 // Cho phép soát lỗi từ bảng điều khiển trình duyệt
-window.__vitri = { get tl() { return tl; }, camAt: x => camAt(tl, x), get editCenter() { return editCenter; }, get planZoom() { return planZoom; }, get t() { return t; }, state, scanArea, SAMPLE_KEYS: () => SAMPLE_KEYS, pause: () => pause(), aiRewrite: () => aiRewrite() };
+window.__vitri = { get tl() { return tl; }, camAt: x => camAt(tl, x), get editCenter() { return editCenter; }, get planZoom() { return planZoom; }, get t() { return t; }, state, scanArea, SAMPLE_KEYS: () => SAMPLE_KEYS, pause: () => pause(), scene: () => buildScene(), aiRewrite: () => aiRewrite() };
 
 function rebuild() {
   if (photoKey(state.house) !== photoHouse) { restorePhotos(); showPageResult(); }
@@ -2046,6 +2048,34 @@ async function ensureHubFx() {
     save();
     scheduleRebuild();
   } finally { if (hubFxJob === key) hubFxJob = ''; }
+}
+// 30/10 tối (Giang): khoanh ranh tiện ích quan trọng (★, bệnh viện, công viên, KCN, đại học, TTTM; tối đa 3) + sông/kênh
+// gần nhà (≤ 500 m). Cùng cổng với hiệu ứng điểm mốc (nội bộ / ?hubfx=1). Dữ liệu tải nền, xong thì dựng lại timeline.
+const zoneCache = new Map();
+let zoneJob = '', waterJob = '';
+function zoneScene() {
+  if (!hubFxOn() || !state.house) return null;
+  const pois = selectedPois();
+  if (!pois.length) return null;
+  const key = 'z:' + state.house.lat.toFixed(4) + ',' + state.house.lng.toFixed(4) + '|' + pois.map(p => p.id + (p.star ? '*' : '')).join(',');
+  if (zoneCache.has(key)) return zoneCache.get(key);
+  if (zoneJob !== key) {
+    zoneJob = key;
+    loadZones(pois).then(z => zoneCache.set(key, z && z.length ? z : null), () => {})
+      .finally(() => { if (zoneJob === key) zoneJob = ''; if (zoneCache.size > 30) zoneCache.delete(zoneCache.keys().next().value); if (zoneCache.has(key)) scheduleRebuild(); });
+  }
+  return null;
+}
+function waterScene() {
+  if (!hubFxOn() || !state.house) return null;
+  const key = 'w:' + state.house.lat.toFixed(4) + ',' + state.house.lng.toFixed(4);
+  if (zoneCache.has(key)) return zoneCache.get(key);
+  if (waterJob !== key) {
+    waterJob = key;
+    loadWater(state.house).then(w => zoneCache.set(key, w || null), () => {})
+      .finally(() => { if (waterJob === key) waterJob = ''; if (zoneCache.has(key)) scheduleRebuild(); });
+  }
+  return null;
 }
 function regionScene() {
   const R = state.region;

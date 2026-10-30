@@ -1480,3 +1480,216 @@ export async function loadHubFx(anchor, signal) {
   if (anchor.type === 'metro') return metroFx(anchor, tpl, signal);
   return null;
 }
+
+// ---------- Khoanh vùng tiện ích quan trọng + sông/kênh gần nhà (30/10 tối, Giang; ĐANG DUYỆT, chỉ nội bộ) ----------
+// Ranh lấy từ ô bản đồ OpenFreeMap z14: landuse (hospital, industrial, university, college, retail, commercial, stadium),
+// landcover (park, recreation_ground, garden), water (river, lake, canal) + waterway (river, canal, kênh/rạch có tên).
+// Đa giác bị cắt ở mép ô (có vùng đệm ngoài ô) → mỗi mảnh giữ khung ô `bb` (tô trong khung) + cạnh nằm trên mép ô `cuts`
+// (không vẽ viền ở đó). Chỉ khoanh tiện ích QUAN TRỌNG (Giang 19:55): tiện ích gắn ★ trước, rồi bệnh viện, công viên,
+// khu công nghiệp, đại học, trung tâm thương mại; tối đa 3 khu mỗi video.
+const ZONE_RANK = { yte: 0, congvien: 1, kcn: 2, truong: 3, cho: 4 };
+const ZONE_PARK = /^(park|recreation_ground|garden)$/;
+const ZONE_TEST = {
+  yte: c => c.l === 'hospital',
+  congvien: c => (c.lc !== undefined && ZONE_PARK.test(c.sub)) || c.l === 'stadium',
+  kcn: c => c.l === 'industrial',
+  truong: c => c.l === 'university' || c.l === 'college',
+  cho: c => c.l === 'retail' || c.l === 'commercial',
+};
+const ZONE_ANY = c => (c.l && !/^(residential|quarter|suburb|neighbourhood|military|cemetery|railway|garages|dam)$/.test(c.l)) || (c.lc !== undefined && ZONE_PARK.test(c.sub));
+const TTTM_RE = /aeon|vincom|lotte|go!|big ?c|mega ?market|co\.?op|e-?mart|mall|plaza|trung tâm thương mại|tttm|siêu thị|giga/i;
+const shapeCache = new Map();
+function tileShapes(tpl, z, x, y, signal) {
+  const key = z + '/' + x + '/' + y;
+  if (shapeCache.has(key)) return shapeCache.get(key);
+  const pr = (async () => {
+    const out = { polys: [], lines: [], names: [] };
+    const buf = await fetchTile(tpl, z, x, y, signal).catch(e => { if (signal?.aborted) throw e; return null; });
+    if (!buf) return out;
+    const T = new VectorTile(new Pbf(buf));
+    const n = unproject(x * 256, y * 256, z), s = unproject((x + 1) * 256, (y + 1) * 256, z);
+    const bb = [n.lat, s.lat, n.lng, s.lng];
+    for (const name of ['landuse', 'landcover', 'water', 'waterway', 'water_name']) {
+      const L = T.layers[name];
+      if (!L) continue;
+      const ext = L.extent;
+      const conv = pt => { const ll = unproject((x + pt.x / ext) * 256, (y + pt.y / ext) * 256, z); return [Math.round(ll.lat * 1e6) / 1e6, Math.round(ll.lng * 1e6) / 1e6]; };
+      const side = p => (p.x <= 0 ? 1 : p.x >= ext ? 2 : 0) | (p.y <= 0 ? 4 : p.y >= ext ? 8 : 0);
+      for (let i = 0; i < L.length; i++) {
+        const f = L.feature(i), p = f.properties;
+        if (name === 'water_name') {
+          if (p.name) for (const g of f.loadGeometry()) out.names.push({ name: String(p.name).normalize('NFC'), pts: g.map(conv) });
+          continue;
+        }
+        if (name === 'waterway') {
+          if (f.type !== 2 || !/^(river|canal|stream)$/.test(p.class)) continue;
+          for (const line of f.loadGeometry()) if (line.length > 1) out.lines.push({ cls: p.class, name: String(p.name || '').normalize('NFC'), pts: line.map(conv), bb });
+          continue;
+        }
+        if (f.type !== 3) continue;
+        if (name === 'water' && !/^(river|lake|canal|ocean)$/.test(p.class)) continue;   // bỏ hồ bơi, ao
+        if (name === 'landcover' && !ZONE_PARK.test(p.subclass || '')) continue;
+        const cls = name === 'water' ? { w: p.class } : name === 'landcover' ? { lc: p.class, sub: p.subclass || '' } : { l: p.class };
+        const rings = [], cuts = [];
+        for (const ring of f.loadGeometry()) {
+          if (ring.length < 4) continue;
+          rings.push(ring.map(conv));
+          const c = [];
+          for (let j = 0; j + 1 < ring.length; j++) if (side(ring[j]) & side(ring[j + 1])) c.push(j);
+          cuts.push(c);
+        }
+        if (rings.length) out.polys.push({ cls, rings, cuts, bb, tile: key });
+      }
+    }
+    return out;
+  })();
+  shapeCache.set(key, pr);
+  pr.catch(() => shapeCache.delete(key));
+  if (shapeCache.size > 120) shapeCache.delete(shapeCache.keys().next().value);
+  return pr;
+}
+const inBB = (bb, lat, lng) => lat <= bb[0] && lat >= bb[1] && lng >= bb[2] && lng <= bb[3];
+function inRings(rings, lat, lng) {
+  let inside = false;
+  for (const r of rings) for (let j = 0, k = r.length - 1; j < r.length; k = j++) {
+    const yi = r[j][0], xi = r[j][1], yk = r[k][0], xk = r[k][1];
+    if ((yi > lat) !== (yk > lat) && lng < (xk - xi) * (lat - yi) / (yk - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+// Khoảng cách (km) từ gốc khung F tới cạnh thật gần nhất (bỏ cạnh mép ô)
+function ringNearest(rings, cuts, F) {
+  let d = Infinity, P = null;
+  rings.forEach((r, ri) => {
+    const xy = r.map(F.xy), cut = cuts ? cuts[ri] : [];
+    for (let j = 0; j + 1 < xy.length; j++) {
+      if (cut.includes(j)) continue;
+      const q = segNearestXY(0, 0, xy[j][0], xy[j][1], xy[j + 1][0], xy[j + 1][1]);
+      if (q.d < d) { d = q.d; P = F.ll(q.x, q.y); }
+    }
+  });
+  return { d, P };
+}
+function ringsAreaKm2(rings, F) {
+  let s = 0;
+  for (const r of rings) {
+    const xy = r.map(F.xy);
+    for (let j = 0, k = xy.length - 1; j < xy.length; k = j++) s += xy[k][0] * xy[j][1] - xy[j][0] * xy[k][1];
+  }
+  return Math.abs(s / 2);
+}
+// Hai mảnh ở 2 ô cạnh nhau là cùng một khu: có đỉnh của mảnh này (nằm trong vùng đệm, tức là trong ô kia) nằm trong mảnh kia
+function piecesJoin(a, b) {
+  for (const [p, q] of [[a, b], [b, a]]) for (const r of p.rings) for (const v of r) {
+    if (!inBB(p.bb, v[0], v[1]) && inBB(q.bb, v[0], v[1]) && inRings(q.rings, v[0], v[1])) return true;
+  }
+  return false;
+}
+export async function loadZones(pois, signal) {
+  const tpl = await tileTemplate(signal);
+  const rank = p => (p.star ? -1 : ZONE_RANK[p.cat] ?? 9) * 100 + (p.km || 0);
+  const cands = pois.filter(p => {
+    if (p.star) return true;
+    if (!(p.cat in ZONE_TEST)) return false;
+    const nm = p.name || '';
+    if (p.cat === 'yte') return /bệnh viện|hospital|trung tâm y tế/i.test(nm);
+    if (p.cat === 'cho') return TTTM_RE.test(nm);
+    if (p.cat === 'truong') return /đại học|cao đẳng|university|college|học viện/i.test(nm);
+    return true;
+  }).sort((a, b) => rank(a) - rank(b));
+  const out = [], used = new Set();
+  for (const p of cands) {
+    if (out.length >= 3) break;
+    const test = p.star ? (ZONE_TEST[p.cat] && !/^(hanhchinh|nganhang)$/.test(p.cat) ? c => ZONE_TEST[p.cat](c) || ZONE_ANY(c) : ZONE_ANY) : ZONE_TEST[p.cat];
+    const big = p.cat === 'kcn' || p.cat === 'congvien';
+    const tiles = await Promise.all(tilesAround(p, 14, big ? 1.4 : 0.6).map(([x, y]) => tileShapes(tpl, 14, x, y, signal)));
+    const cand = tiles.flatMap(t => t.polys).filter(q => test(q.cls));
+    const F = localFrame(p);
+    let seed = null, best = 0.08;
+    for (const q of cand) {
+      if (inBB(q.bb, p.lat, p.lng) && inRings(q.rings, p.lat, p.lng)) { seed = q; break; }
+      const { d } = ringNearest(q.rings, q.cuts, F);
+      if (d < best) { best = d; seed = q; }
+    }
+    if (!seed || used.has(seed)) continue;
+    // nối các mảnh cùng khu ở ô bên cạnh (tối đa 9 mảnh)
+    const pieces = [seed];
+    for (let k = 0; k < pieces.length && pieces.length < 9; k++) {
+      for (const q of cand) {
+        if (pieces.includes(q) || q.tile === pieces[k].tile) continue;
+        if (JSON.stringify(q.cls) !== JSON.stringify(pieces[k].cls)) continue;
+        if (piecesJoin(pieces[k], q)) pieces.push(q);
+      }
+    }
+    pieces.forEach(q => used.add(q));
+    const ha = pieces.reduce((s, q) => s + ringsAreaKm2(q.rings, F), 0) * 100;
+    if (ha < (p.cat === 'cho' ? 0.5 : 0.3) || ha > 2000) continue;
+    out.push({ poiId: p.id, cat: p.cat, name: p.name || '', ha: Math.round(ha * 10) / 10, pieces: pieces.map(q => ({ bb: q.bb, rings: q.rings, cuts: q.cuts })) });
+  }
+  return out;
+}
+// Sông/kênh/hồ gần nhà: chỉ khi mép nước cách nhà ≤ 500 m. Tên lấy từ đường kênh/rạch có tên gần chỗ đó nhất.
+export async function loadWater(H, signal) {
+  const tpl = await tileTemplate(signal);
+  const tiles = await Promise.all(tilesAround(H, 14, 1.2).map(([x, y]) => tileShapes(tpl, 14, x, y, signal)));
+  const F = localFrame(H);
+  const polys = [], lines = [];
+  let near = null;
+  for (const t of tiles) {
+    for (const q of t.polys) {
+      if (!q.cls.w) continue;
+      if (inBB(q.bb, H.lat, H.lng) && inRings(q.rings, H.lat, H.lng)) continue;
+      const { d, P } = ringNearest(q.rings, q.cuts, F);
+      if (d > 0.6 || !P) continue;   // chỉ đoạn sông gần nhà (không làm sáng cả mạng kênh rạch quanh vùng)
+      polys.push({ bb: q.bb, rings: q.rings, cuts: q.cuts });
+      if (!near || d < near.km) {
+        // bề rộng ước lượng = 2 × diện tích / chu vi thật (bỏ cạnh mép ô) — phân biệt sông với rạch nhỏ
+        let per = 0;
+        q.rings.forEach((r, ri) => { const xy = r.map(F.xy); for (let j = 0; j + 1 < xy.length; j++) if (!q.cuts[ri].includes(j)) per += Math.hypot(xy[j + 1][0] - xy[j][0], xy[j + 1][1] - xy[j][1]); });
+        const area = ringsAreaKm2(q.rings, F);
+        near = { km: d, lat: P[0], lng: P[1], kind: q.cls.w, w: per > 0 ? 2 * area / per : 0, area };
+      }
+    }
+    for (const l of t.lines) {
+      const named = /^(kênh|rạch|sông|r\.)/i.test(l.name);
+      if (l.cls === 'stream' && !named) continue;
+      const xy = l.pts.map(F.xy);
+      let d = Infinity, P = null;
+      for (let j = 0; j + 1 < xy.length; j++) {
+        const s = segNearestXY(0, 0, xy[j][0], xy[j][1], xy[j + 1][0], xy[j + 1][1]);
+        if (s.d < d) { d = s.d; P = F.ll(s.x, s.y); }
+      }
+      if (d > 0.6) continue;
+      lines.push({ pts: l.pts, name: l.name, cls: l.cls, bb: l.bb, d, P });
+      if (!near || d < near.km - 0.02) near = { km: d, lat: P[0], lng: P[1], kind: l.cls, line: true };
+    }
+  }
+  if (!near || near.km > 0.5) return null;
+  // tên: đường kênh/rạch có tên gần chỗ mép nước gần nhà nhất (≤ 250 m)
+  const G = localFrame(near);
+  let name = '', nd = 0.25;
+  for (const l of lines) {
+    if (!l.name) continue;
+    const xy = l.pts.map(G.xy);
+    for (let j = 0; j + 1 < xy.length; j++) {
+      const s = segNearestXY(0, 0, xy[j][0], xy[j][1], xy[j + 1][0], xy[j + 1][1]);
+      if (s.d < nd) { nd = s.d; name = l.name; }
+    }
+  }
+  if (!name) for (const t of tiles) for (const nm of t.names) for (const v of nm.pts) {
+    const [x, y] = G.xy(v);
+    const dd = Math.hypot(x, y);
+    if (dd < Math.min(nd, 0.3)) { nd = dd; name = nm.name; }
+  }
+  // Không khoanh rạch nhỏ không tên (người mua dễ nghĩ tới ngập/ô nhiễm): cần có tên, hoặc lòng sông rộng ≥ 20 m, hoặc hồ ≥ 1 ha
+  const real = name || (!near.line && near.kind !== 'lake' && near.w >= 0.02) || (near.kind === 'lake' && near.area >= 0.01);
+  if (!real) return null;
+  name = name.replace(/^R\.\s*/i, 'Rạch ').replace(/^K\.\s*/i, 'Kênh ').trim();
+  const generic = near.kind === 'lake' ? 'hồ' : near.kind === 'canal' ? 'kênh' : 'sông';
+  return {
+    near: { lat: near.lat, lng: near.lng, km: Math.round(near.km * 1000) / 1000 },
+    name, generic,
+    // nét kênh chỉ vẽ cho kênh không có mặt nước (sông đã có đa giác thì bỏ đường tim, tránh thêm 1 line giữa sông)
+    polys, lines: lines.filter(l => l.d <= 0.5 && (l.cls !== 'river' || !polys.length)).map(l => ({ pts: l.pts, bb: l.bb })),
+  };
+}

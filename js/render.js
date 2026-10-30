@@ -578,6 +578,24 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     const line = p.route ? prepLine(p.route.coords) : prepLine([[H.lat, H.lng], [p.lat, p.lng]]);
     return { ...p, line, approx: !p.route, distKm: p.route ? p.route.km : p.km };
   });
+  // 30/10 tối (Giang, nội bộ): ranh tiện ích quan trọng gắn vào tiện ích tương ứng — khung máy cảnh tiện ích + cảnh tổng kết
+  // ôm cả khu; tên khu đặt ở tâm mảnh lớn nhất
+  const zoneInBB = (bb, v) => v[0] <= bb[0] && v[0] >= bb[1] && v[1] >= bb[2] && v[1] <= bb[3];
+  for (const z of scene.zones || []) {
+    const p = pois.find(q => q.id === z.poiId);
+    if (!p) continue;
+    const pts = [];
+    let big = null;
+    for (const pc of z.pieces) for (const r of pc.rings) {
+      const inn = r.filter(v => zoneInBB(pc.bb, v));
+      for (let j = 0; j < inn.length; j += Math.max(1, Math.floor(inn.length / 16))) pts.push({ lat: inn[j][0], lng: inn[j][1] });
+      if (!big || inn.length > big.length) big = inn;
+    }
+    const c = big && big.length ? { lat: big.reduce((a, v) => a + v[0], 0) / big.length, lng: big.reduce((a, v) => a + v[1], 0) / big.length } : { lat: p.lat, lng: p.lng };
+    p.zoneFx = { ...z, pts, c };
+  }
+  const zonePts = pois.flatMap(p => (p.zoneFx ? p.zoneFx.pts : []));
+  const water = scene.water && scene.water.near ? scene.water : null;
   const roads = scene.roads.map(g => {
     const P = nearestOn(H, g.ways) || { lat: H.lat, lng: H.lng, d: g.nearKm };
     const lines = prepReveal(g.ways, P);
@@ -669,8 +687,9 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   const sumPad = fmtKey === 'h'
     ? { left: safe.x + 40, right: 384 + safe.x + 30, top: safe.top + 40, bottom: safe.bottom + 30 }
     : { left: safe.x + 34, right: safe.x + 34, top: safe.top + 60, bottom: safe.bottom + panelH + 30 };
+  // có khu đã khoanh / sông gần nhà: khung tổng kết ôm cả các khu + mép nước để thấy hết rồi mới về căn nhà báo giá
   const camSummary = (pois.length || boundary)
-    ? fitCam([H, ...pois, ...(boundary ? [boundary.P] : [])], LW, LH, sumPad, PITCH.summary, 9, 15.4)
+    ? fitCam([H, ...pois, ...(boundary ? [boundary.P] : []), ...zonePts, ...(water ? [water.near] : [])], LW, LH, sumPad, PITCH.summary, 9, 15.4)
     : camOverview;
   const camEnd = anchorCam(H.lat, H.lng, 15.6, PITCH.outro, LW, LH, 0.5, fmtKey === 'v' ? 0.56 : 0.58);
 
@@ -859,7 +878,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     raw.push({ type: 'radar', d: 3.2, to: camAll, move: 0.9, drift: 0.01, vkey: 'radar' });
     // Mỗi tiện ích: khung ôm sát nhà + tiện ích (zoom gần), di chuyển êm suốt cả cảnh, lần lượt vòng quanh nhà
     pois.forEach((p, i) => {
-      const cam = fitCam([H, p], LW, LH,
+      const cam = fitCam([H, p, ...(p.zoneFx ? p.zoneFx.pts : [])], LW, LH,
         { left: safe.x + 70, right: safe.x + 70, top: safe.top + 120, bottom: safe.bottom + 110 }, PITCH.poi, 12, 17.6);
       raw.push({ type: 'poi', d: 3.4, to: cam, move: 1, drift: 0.02, poi: i, vkey: 'poi:' + p.id, radar: true });
       if (i === Math.ceil(pois.length / 2) - 1 && pois.length >= 2) pushClips('mid');
@@ -869,6 +888,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     const pts = [H, p];
     const L = p.line;
     for (let j = 0; j < L.xs.length; j += Math.max(1, Math.floor(L.xs.length / 24))) pts.push(unproject(L.xs[j], L.ys[j], 0));
+    if (p.zoneFx) pts.push(...p.zoneFx.pts);
     // 24/10 (Giang): tiện ích cách nhà vài trăm mét thì máy phải zoom SÁT lại (trước đây trần zoom 16 nên điểm gần
     // trông nhỏ xíu giữa khung rộng ~1 km). Nay khung ôm sát nhà + tiện ích + đường đi; xa bao nhiêu thì lùi ra bấy nhiêu.
     const cam = fitCam(pts, LW, LH,
@@ -968,7 +988,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     fmt: fmtKey, LW, LH, safe, duration: t, phases, scene, panelH,
     G: groundDims(LW, LH),
     intro: first('intro'), house: first('house'), overview: first('overview'), boundaryPh: first('boundary'),
-    summary: first('summary'), outro: first('outro'), photosPh: first('photos'), isoPh: first('iso'), regionPh: first('region'), infraPh: first('infra'), anchors, infra, photos, photoLabels: photoItems.map(x => x.label), radarPh: first('radar'), provPh: first('province'), flow: radar ? 'radar' : 'lanluot',
+    summary: first('summary'), outro: first('outro'), photosPh: first('photos'), isoPh: first('iso'), regionPh: first('region'), infraPh: first('infra'), anchors, infra, photos, photoLabels: photoItems.map(x => x.label), radarPh: first('radar'), provPh: first('province'), water, flow: radar ? 'radar' : 'lanluot',
     roadPhases: phases.filter(p => p.type === 'road'), poiPhases: phases.filter(p => p.type === 'poi'),
     clips, clipWins: phases.filter(p => p.type === 'clip').map(p => ({ clip: p.clip, t0: p.t0, t1: p.t1 })),
     pois, roads, boundary, captions, hook, lot, lotArea: lot ? lotAreaM2(lot) : 0,
@@ -1628,6 +1648,10 @@ function revealPath(v, line, rr, heads) {
   return path;
 }
 
+const WATER_COL = '#38D6F5';
+// Màu khoanh ranh khu tiện ích: tươi hơn màu nhóm (KCN màu xám nhóm chìm trên ảnh vệ tinh → vàng cam)
+const ZONE_COL = { yte: '#FF4D5E', congvien: '#3BE07F', kcn: '#FFB020', truong: '#4C9BFF', cho: '#FF8A3D' };
+const zoneCol = cat => ZONE_COL[cat] || CAT_COLORS[cat] || '#FFD166';
 function glowStroke(g, path, core, glow, w, alpha) {
   if (alpha <= 0.01) return;
   g.lineCap = 'round';
@@ -4661,7 +4685,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   // Khoanh vùng nổi bật các tiện ích được đánh sao: vùng sáng màu nhóm + sóng lan, giữ tới hết video
   tl.poiPhases.forEach((ph, i) => {
     const poi = tl.pois[i];
-    if (!poi.star) return;
+    if (!poi.star || poi.zoneFx) return;   // đã khoanh theo ranh thật thì không vẽ vòng tròn sáng nữa
     const show = SP ? clamp01((spokeP(i) - 0.9) / 0.1) : clamp01((t - ph.t0 - 0.55 * (ph.t1 - ph.t0)) / 0.5);
     if (show <= 0) return;
     const q = gLL(v, poi.lat, poi.lng);
@@ -4685,6 +4709,73 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       g.beginPath(); g.arc(q.x, q.y, R * (0.9 + w * 0.9), 0, Math.PI * 2); g.stroke();
     }
     g.restore();
+  });
+
+  // 30/10 tối (Giang, nội bộ): sông/kênh gần nhà — mặt nước sáng nhẹ, viền bờ phát sáng có vệt sáng chảy dọc;
+  // từ cảnh căn nhà tới hết video. Khu tiện ích quan trọng — ranh thật sáng lên khi máy bay tới, GIỮ sáng nhẹ tới hết video,
+  // sáng rõ lại ở cảnh tổng kết. Mảnh ranh bị cắt ở mép ô bản đồ: tô trong khung ô, không vẽ viền ở cạnh mép ô.
+  const zonePaths = (pc) => {
+    const fill = new Path2D(), edge = new Path2D();
+    pc.rings.forEach((r, ri) => {
+      const cut = pc.cuts ? pc.cuts[ri] : [];
+      r.forEach((q, j) => {
+        const gq = gLL(v, q[0], q[1]);
+        if (j) fill.lineTo(gq.x, gq.y); else fill.moveTo(gq.x, gq.y);
+        if (j === 0 || cut.includes(j - 1)) edge.moveTo(gq.x, gq.y); else edge.lineTo(gq.x, gq.y);
+      });
+      fill.closePath();
+    });
+    return { fill, edge };
+  };
+  const clipBB = bb => { const n = gLL(v, bb[0], bb[2]), so = gLL(v, bb[1], bb[3]); g.beginPath(); g.rect(n.x, n.y, so.x - n.x, so.y - n.y); g.clip(); };
+  if (tl.water) {
+    const W = tl.water;
+    const A = (ho ? clamp01((t - ho.t0) / 0.8) : 1) * (ou && t > ou.t1 ? Math.max(0, 1 - (t - ou.t1) / 0.6) : 1);
+    if (A > 0.01) {
+      for (const pc of W.polys) {
+        g.save(); clipBB(pc.bb);
+        const { fill, edge } = zonePaths(pc);
+        g.globalAlpha = A * (0.17 + 0.06 * Math.sin(t * 2.2)); g.fillStyle = WATER_COL; g.fill(fill, 'evenodd');
+        glowStroke(g, edge, '#E6FBFF', WATER_COL, 1.6, A * 0.75);
+        g.globalAlpha = A * 0.85; g.strokeStyle = '#ffffff'; g.lineWidth = 2.2; g.lineCap = 'round';
+        g.setLineDash([22, 150]); g.lineDashOffset = -t * 55; g.stroke(edge); g.setLineDash([]);
+        g.restore();
+      }
+      for (const l of W.lines) {
+        g.save(); clipBB(l.bb);
+        const path = new Path2D();
+        l.pts.forEach((q, j) => { const gq = gLL(v, q[0], q[1]); if (j) path.lineTo(gq.x, gq.y); else path.moveTo(gq.x, gq.y); });
+        glowStroke(g, path, '#E6FBFF', WATER_COL, 2.2, A * 0.6);
+        g.globalAlpha = A * 0.85; g.strokeStyle = '#ffffff'; g.lineWidth = 2; g.lineCap = 'round';
+        g.setLineDash([18, 120]); g.lineDashOffset = -t * 55; g.stroke(path); g.setLineDash([]);
+        g.restore();
+      }
+      g.globalAlpha = 1;
+    }
+  }
+  tl.poiPhases.forEach((ph, i) => {
+    const poi = tl.pois[i], Z = poi.zoneFx;
+    if (!Z) return;
+    const d = ph.t1 - ph.t0;
+    const r = clamp01((t - ph.t0 - 0.3 * d) / (0.3 * d));
+    if (r <= 0) return;
+    const focus = Math.max(t >= ph.t0 && t < ph.t1 + 0.4 ? 1 : 0, sm && t >= sm.t0 && t < ou.t0 ? 1 : 0);
+    const A = r * (0.6 + 0.4 * focus);
+    const col = zoneCol(poi.cat);
+    for (const pc of Z.pieces) {
+      g.save(); clipBB(pc.bb);
+      const { fill, edge } = zonePaths(pc);
+      g.globalAlpha = A * (0.24 + 0.05 * Math.sin(t * 3 + i)); g.fillStyle = col; g.fill(fill, 'evenodd');
+      glowStroke(g, edge, col, col, 3.4, A);
+      if (focus > 0) {   // vệt sáng chạy quanh ranh lúc đang giới thiệu khu này + ở cảnh tổng kết
+        g.globalAlpha = A * focus; g.strokeStyle = '#ffffff'; g.lineWidth = 4.2; g.lineCap = 'round';
+        g.shadowColor = col; g.shadowBlur = 12;
+        g.setLineDash([60, 520]); g.lineDashOffset = -t * 230; g.stroke(edge);
+        g.setLineDash([]); g.shadowBlur = 0;
+      }
+      g.restore();
+    }
+    g.globalAlpha = 1;
   });
 
   // ---- Bẻ phối cảnh lên màn hình ----
@@ -5199,6 +5290,64 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       ctx.restore();
     }
     tl._labT = t;
+  }
+  // 30/10 tối (nội bộ): tên các khu đã khoanh — hiện sau cảnh của khu đó, giữ tới cảnh tổng kết (máy lùi rộng thấy hết),
+  // tắt khi máy về căn nhà báo giá. Nhãn sông gần nhà: nét chấm nhà → mép nước + "Cách sông … m" ở cảnh căn nhà/tổng kết.
+  {
+    const zu = [{ x: hs.x - 26, y: hs.y - 64, w: 52, h: 68 }];
+    if (sumP > 0.05) zu.push(tl.fmt === 'h' ? { x: LW - safe.x - 384, y: 0, w: 400, h: LH } : { x: 0, y: LH - safe.bottom - tl.panelH, w: LW, h: tl.panelH + safe.bottom });
+    const endZ = ou ? clamp01(1 - (t - ou.t0) / 0.5) : 1;
+    tl.poiPhases.forEach((ph, i) => {
+      if (t < ph.t0) return;
+      const s = S(tl.pois[i].lat, tl.pois[i].lng);
+      zu.push({ x: s.x - 16, y: s.y - 38, w: 32, h: 40 });
+    });
+    if (tl.flow === 'lanluot') tl.poiPhases.forEach((ph, i) => {
+      const poi = tl.pois[i], Z = poi.zoneFx;
+      if (!Z) return;
+      const a = clamp01((t - ph.t1 + 0.1) / 0.4) * endZ;
+      if (a <= 0.01) return;
+      const s = S(Z.c.lat, Z.c.lng);
+      const nm = String(Z.name || '');
+      const text = nm.length > 26 ? nm.slice(0, 25) + '…' : nm;
+      ctx.font = `800 13px ${FONT}`;
+      const w = ctx.measureText(text).width + 20, h = 24;
+      for (const dy of [0, 30, -30, 58, -58]) {
+        const y = s.y + dy;
+        if (y < safe.top + 20 || y > LH - safe.bottom - 14) continue;
+        const x = Math.max(safe.x + w / 2, Math.min(rightAt(tl, y + h / 2) - w / 2, s.x));
+        const r = { x: x - w / 2, y: y - h / 2, w, h };
+        if (zu.some(o => r.x < o.x + o.w + 4 && r.x + r.w + 4 > o.x && r.y < o.y + o.h + 4 && r.y + r.h + 4 > o.y)) continue;
+        zu.push(r);
+        chip(ctx, x, y, text, a, zoneCol(poi.cat));
+        break;
+      }
+    });
+    const W = tl.water;
+    if (W) {
+      const inHouse = ho && t >= ho.t0 + 0.6 && t < ho.t1 + 0.2;
+      const inSum = sm && t >= sm.t0 + 0.3 * (sm.t1 - sm.t0) && t < ou.t0 + 0.3;
+      const wa = Math.max(inHouse ? fadeWin(t, ho.t0 + 0.6, ho.t1 + 0.2, 0.5, 0.35) : 0, inSum ? fadeWin(t, sm.t0 + 0.3 * (sm.t1 - sm.t0), ou.t0 + 0.3, 0.5, 0.4) : 0);
+      const q = S(W.near.lat, W.near.lng);
+      const onScr = q.x > safe.x + 10 && q.x < LW - safe.x - 10 && q.y > safe.top + 30 && q.y < LH - safe.bottom - 20;
+      if (wa > 0.01 && onScr) {
+        const nm0 = String(W.name || '');
+        const nm = nm0 ? nm0.replace(/^(Sông|Kênh|Rạch|Hồ)\b/, m => m.toLowerCase()) : W.generic;
+        const text = W.near.km < 0.04 ? `Sát ${nm}` : `Cách ${nm} ${formatKm(W.near.km)}`;
+        ctx.save();
+        ctx.globalAlpha = wa; ctx.setLineDash([3, 5]); ctx.lineCap = 'round'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(hs.x, hs.y); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.setLineDash([]);
+        ctx.beginPath(); ctx.arc(q.x, q.y, 4.5, 0, Math.PI * 2); ctx.fillStyle = WATER_COL; ctx.fill(); ctx.stroke();
+        ctx.restore();
+        ctx.font = `800 13px ${FONT}`;
+        const w = ctx.measureText(text).width + 20;
+        const dx = q.x - hs.x, dy = q.y - hs.y, dl = Math.hypot(dx, dy) || 1;
+        let cy = q.y + (dy / dl) * 30 + (Math.abs(dy) < 8 ? 26 : 0);
+        cy = Math.max(safe.top + 24, Math.min(LH - safe.bottom - 16, cy));
+        const cx = Math.max(safe.x + w / 2, Math.min(rightAt(tl, cy + 12) - w / 2, q.x + (dx / dl) * 30));
+        chip(ctx, cx, cy, text, wa, WATER_COL);
+      }
+    }
   }
   if (sm) drawSummary(ctx, tl, sumP);
   drawBrand(ctx, tl, scene.brand, scene.phone, brandA);
