@@ -121,7 +121,7 @@ export function sfxEvents(tl) {
       const t = c.words?.[0]?.t ?? c.t0;
       if (t - lastKey < 2.5 || lkAt.some(x => Math.abs(x - t) < 0.6)) continue;
       // phụ đề đang ẩn vì cụm chữ đứng ở chỗ phụ đề (render.js m1CapHide) → không gõ phím
-      if ((tl.keyPops || []).some(k => t > k.t - 0.1 && t < k.t + k.dur)) continue;
+      if ((tl.keyPops || []).some(k => t > k.t - 0.3 && t < k.t + k.dur + 0.25)) continue;
       add(t, 'key' + (n++ % 6 + 1), 0.5);
       lastKey = t;
     }

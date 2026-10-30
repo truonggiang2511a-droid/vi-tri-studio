@@ -75,7 +75,7 @@ export function drawBadge(ctx, name, cx, cy, r, lt, dur, colKey, A0 = 1) {
   const A = A0 * out;
   if (A <= 0.01 || lt < 0) return;
   const [c1, c2] = BADGE[colKey] || BADGE.cam;
-  const s = lt < 0.34 ? ease.back(lt / 0.34) : 1;
+  const s = lt < 0.42 ? 0.55 + 0.45 * ease.out(lt / 0.42) : 1;   // 30/10 12:45: hiện êm, không bật nảy mạnh
   const fl = lt > 0.34 ? Math.sin(lt * 2.6) * r * 0.07 : 0;
   const y = cy + fl;
   ctx.save();
@@ -109,7 +109,7 @@ export function drawBadge(ctx, name, cx, cy, r, lt, dur, colKey, A0 = 1) {
     ctx.globalAlpha = 0.85 * A; ctx.strokeStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(0, 0, R, sw, sw + 110 * Math.PI / 180); ctx.stroke();
     ctx.globalAlpha = 0.6 * A; ctx.strokeStyle = c1; ctx.beginPath(); ctx.arc(0, 0, R, sw + Math.PI, sw + 250 * Math.PI / 180); ctx.stroke();
     // icon: lắc nhẹ lúc hiện rồi đứng yên
-    const wob = (1 - clamp01((lt - 0.1) / 0.5)) * Math.sin(lt * 22) * 14 * Math.PI / 180;
+    const wob = (1 - clamp01((lt - 0.1) / 0.5)) * Math.sin(lt * 11) * 6 * Math.PI / 180;
     ctx.globalAlpha = clamp01((lt - 0.06) / 0.1) * A;
     ctx.rotate(wob);
     iconStrokes(ctx, name, r * 1.08);
@@ -225,7 +225,9 @@ export function drawMau1(ctx, p, x, y, lt, dur, k, maxW) {
   if (q > 0) {
     const text = p.count ? countUp(p.text, clamp01(q / 1.0)) : p.text;
     const [c, ox, oy, W, H] = keywordSprite(text, L, col, false, S, -1);   // 30/10: chữ phẳng, không viền, không vệt sáng
-    const u = clamp01(q / 0.2);
+    // 30/10 12:45 Giang: lúc vào hơi giật → vào ÊM: trượt xuống ngắn (0,45 × cỡ chữ) trong 0,38 s, mờ dần vào,
+    // KHÔNG vệt nhoè, KHÔNG rung nhanh; chạm xong chỉ phồng nhẹ một lần
+    const u = clamp01(q / 0.38);
     const draw = (dy, alpha, sc = 1) => {
       ctx.globalAlpha = alpha;
       const cx = kx + L.bw / 2, cy = base - L.asc / 2 + dy;
@@ -238,14 +240,10 @@ export function drawMau1(ctx, p, x, y, lt, dur, k, maxW) {
     // Sang trọng (vàng tươi) bóng đậm hơn một chút cho nổi trên ảnh vệ tinh sáng
     ctx.shadowColor = p.color === 'sangtrong' || p.color === 'neon' ? 'rgba(0,0,0,0.78)' : 'rgba(0,0,0,0.62)'; ctx.shadowBlur = L.big * 0.07; ctx.shadowOffsetY = L.big * 0.065;
     if (u < 1) {
-      const dy = -(1 - ease.out(u)) * L.big * 1.1;
-      const a0 = clamp01(q / 0.07) * A;
-      ctx.save(); ctx.shadowColor = 'transparent';
-      for (let i = 3; i >= 1; i--) draw(dy - i * L.big * 0.12 * (1 - u), a0 * 0.18 * (4 - i) / 3);   // vệt nhoè dọc
-      ctx.restore();
-      draw(dy, a0);
+      const e = 1 - Math.pow(1 - u, 3);
+      draw(-(1 - e) * L.big * 0.45, clamp01(q / 0.25) * A);
     } else {
-      const sc = 1 + 0.045 * Math.exp(-(q - 0.2) * 14) * Math.cos((q - 0.2) * 30);
+      const sc = 1 + 0.025 * Math.sin(Math.PI * clamp01((q - 0.38) / 0.4));   // phồng nhẹ 1 lần, êm
       draw(0, A, sc);
     }
     ctx.shadowColor = 'transparent';

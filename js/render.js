@@ -2325,13 +2325,14 @@ function captionAt(tl, t) {
 // Cỡ 0,075 × cạnh ngắn (Hook Kit 0,095 cho video người dẫn; bản đồ nhiều nhãn nên nhỏ hơn). Hook Kit đặt ở y 0,43 (trên đầu người dẫn); video map giữa khung là ghim nhà/tiện ích
 // nên dùng chỗ Hook Kit hạ phụ đề khi có cụm chữ lớn (pos_lock y ≈ 0,76) = phía dưới, trên các thẻ ở đáy khung.
 // 30/10 Giang: cụm chữ mẫu 1 hiện thì xuống ĐÚNG chỗ phụ đề trắng, phụ đề ẩn đi; cụm rút thì phụ đề chạy lại bình thường.
-// Trả 0..1 = mức ẩn phụ đề tại t (mờ ra/vào 0,12 s). sfx.js dùng cùng cửa sổ [k.t − 0,1; k.t + dur] để bỏ tiếng gõ phím.
+// Trả 0..1 = mức ẩn phụ đề tại t (mờ ra/vào 0,25 s, tắt hẳn trước khi cụm vào). sfx.js dùng cùng cửa sổ [k.t − 0,3; k.t + dur + 0,25] để bỏ tiếng gõ phím.
 const M1_CAP_Y = 0.72;   // 30/10 12:20 Giang: phụ đề mẫu 1 nhích lên một chút (trước 0,76) — cụm chữ dưới đứng đúng chỗ này
 function m1CapHide(tl, t) {
   let h = 0;
   for (const k of tl.keyPops || []) {
-    const a = t - (k.t - 0.1), b = k.t + k.dur - t;
-    if (a > 0 && b > -0.12) h = Math.max(h, Math.min(clamp01(a / 0.12), clamp01((b + 0.12) / 0.12)));
+    // 30/10 12:45: phụ đề mờ đi 0,25 s và tắt hẳn TRƯỚC khi cụm vào (đổi chỗ êm, không giật)
+    const a = t - (k.t - 0.3), b = k.t + k.dur - t;
+    if (a > 0 && b > -0.25) h = Math.max(h, Math.min(clamp01(a / 0.25), clamp01((b + 0.25) / 0.25)));
   }
   return h;
 }
