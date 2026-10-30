@@ -20,9 +20,9 @@ const PAL_3D = { tim: ['#E9D6FF', '#8A2BEA'], vang: ['#FFF6B0', '#F0A800'], cam:
 // 30/10 Giang: mỗi phong cách MỘT màu nhấn cho từ khoá + icon (khoá = scene.style). Mặt chữ: trên → dưới (chuyển nhẹ)
 //   Neon đêm = xanh neon · Sang trọng = vàng kim · Trẻ trung = hồng · Tối giản = đỏ
 // 30/10 11:30 Giang: kiểu vàng kim là MẶC ĐỊNH (Neon đêm = phong cách mặc định), Sang trọng = vàng tươi bóng đậm vừa
-// 30/10 12:10 Giang: Neon = VÀNG GOLD KIM đậm (3 điểm màu: sáng trên → vàng kim giữa → vàng đồng đáy), bóng đậm vừa
-export const M1_ACCENT = { neon: ['#FFF1BE', '#F0BC45', '#A8700F'], sangtrong: ['#FFF4A0', '#FFC800'], tretrung: ['#FFD6EA', '#FF4FA3'], toigian: ['#FF9C8F', '#EF3B2D'] };
-const M1_BADGE = { neon: ['#FBE29A', '#B07818'], sangtrong: ['#FFE680', '#E0A800'], tretrung: ['#FFC6E2', '#EC4899'], toigian: ['#FF9C8F', '#D92D20'] };
+// 30/10 13:15 Giang: Neon đêm TRỞ LẠI màu xanh neon như bản đầu (bản vàng kim 12:10 bỏ); mặt chữ vẫn nhận 3 điểm màu nếu cần
+export const M1_ACCENT = { neon: ['#C8FAFF', '#22D3EE'], sangtrong: ['#FFF4A0', '#FFC800'], tretrung: ['#FFD6EA', '#FF4FA3'], toigian: ['#FF9C8F', '#EF3B2D'] };
+const M1_BADGE = { neon: ['#A5F3FC', '#0EA5C6'], sangtrong: ['#FFE680', '#E0A800'], tretrung: ['#FFC6E2', '#EC4899'], toigian: ['#FF9C8F', '#D92D20'] };
 // Huy hiệu icon cùng màu với cụm chữ (mau1.md: xanh/lá/hồng + màu gốc cam)
 const BADGE = { ...M1_BADGE, cam: ['#FFB38F', '#FF5A36'], xanh: ['#BFE0FF', '#1E88FF'], la: ['#BBF7D0', '#16A34A'], hong: ['#FFC6E2', '#EC4899'],
   vang: ['#FFF3A6', '#F2A900'], tim: ['#E3C6FF', '#9338FF'], do: ['#FF8A7A', '#C90F0B'] };
@@ -241,7 +241,7 @@ export function drawMau1(ctx, p, x, y, lt, dur, k, maxW) {
     };
     // bóng đổ đậm vừa, gọn (không quầng)
     // Sang trọng (vàng tươi) bóng đậm hơn một chút cho nổi trên ảnh vệ tinh sáng
-    ctx.shadowColor = p.color === 'sangtrong' || p.color === 'neon' ? 'rgba(0,0,0,0.78)' : 'rgba(0,0,0,0.62)'; ctx.shadowBlur = L.big * 0.07; ctx.shadowOffsetY = L.big * 0.065;
+    ctx.shadowColor = p.color === 'sangtrong' ? 'rgba(0,0,0,0.78)' : 'rgba(0,0,0,0.62)'; ctx.shadowBlur = L.big * 0.07; ctx.shadowOffsetY = L.big * 0.065;
     if (u < 1) {
       const e = 1 - Math.pow(1 - u, 3);
       draw(-(1 - e) * L.big * 0.45, clamp01(q / 0.25) * A);
@@ -309,13 +309,13 @@ export function drawM1Feats(ctx, p, t, cx, bottom, k, colKey) {
 // ---------- Nút kêu gọi hành động cuối video (kit/hook_mg.py class CTA, 28/10) ----------
 // Viên thuốc chuyển sắc cam → đỏ + huy hiệu trắng có icon + chữ đậm trắng + mũi tên chạy ">>>"; trượt lên lúc vào, vài giây
 // "nhún" một nhịp có gợn sóng lan ra, vệt sáng lướt qua. KHÔNG ghi số điện thoại.
-const CTA_C = ['#FF7A45', '#E8261A'];
+const CTA_DEF = ['#FF7A45', '#E8261A'];
 export function m1CtaSize(ctx, text, k) {
   const h = 57 * k, px = h * 0.36, ir = h * 0.36;
   ctx.save(); ctx.font = `800 ${px}px ${F_THIN}`; const tw = ctx.measureText(text).width; ctx.restore();
   return { h, px, ir, tw, w: h * 0.16 + 2 * ir + h * 0.22 + tw + h * 1.1 };
 }
-export function drawM1Cta(ctx, text, cx, cy, lt, dur, k) {
+export function drawM1Cta(ctx, text, cx, cy, lt, dur, k, icon = 'chat', CTA_C = CTA_DEF) {
   if (lt < 0 || lt > dur) return;
   const S = m1CtaSize(ctx, text, k), { h, w, ir, px } = S;
   const A = clamp01(lt / 0.35) * (1 - clamp01((lt - (dur - 0.3)) / 0.3));
@@ -352,7 +352,7 @@ export function drawM1Cta(ctx, text, cx, cy, lt, dur, k) {
   const icx = x0 + h * 0.16 + ir;
   ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(icx, y, ir, 0, Math.PI * 2); ctx.fill();
   ctx.save(); ctx.translate(icx, y); ctx.strokeStyle = CTA_C[1];
-  iconStrokesColor(ctx, 'chat', ir * 1.25, CTA_C[1]); ctx.restore();
+  iconStrokesColor(ctx, icon, ir * 1.25, CTA_C[1]); ctx.restore();
   // chữ
   ctx.font = `800 ${px}px ${F_THIN}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
   ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = px * 0.1; ctx.shadowOffsetY = px * 0.05;

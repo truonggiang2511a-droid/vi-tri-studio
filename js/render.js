@@ -1024,7 +1024,8 @@ export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null) {
       for (const k of all) if (k.kind === 'price') m1Prices.push({ k, ph, t: kt(k) });
       // cảnh căn nhà: thông tin căn (diện tích, tầng, phòng ngủ, nội thất, sổ…) NHẤN thành danh sách hiện lần lượt theo lời đọc
       if (ph.type === 'house') {
-        const items = all.filter(k => M1_FEAT[k.kind]).map(k => ({ text: m1FeatText(k), icon: M1_FEAT[k.kind], t: Math.max(kt(k), notBefore) }))
+        const okF = m1Type(m1.scene).feats;   // bán đất: không phòng ngủ/tầng/nội thất; cho thuê: không pháp lý
+        const items = all.filter(k => M1_FEAT[k.kind] && okF.includes(k.kind)).map(k => ({ text: m1FeatText(k), icon: M1_FEAT[k.kind], t: Math.max(kt(k), notBefore) }))
           .filter(it => it.t < ph.t1 - 0.2).slice(0, 5);
         if (items.length && items[0].t - last >= 0.8) {
           const t0 = items[0].t, d = Math.max(ph.t1 + 0.3, items[items.length - 1].t + 1.6) - t0;
@@ -1076,7 +1077,8 @@ export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null) {
       const rentP = m1.scene.rent;
       const st = mau1Style({ ...raw, kind: 'price' }, ou, m1, out.length);
       if (rentP) st.sign = 'mỗi tháng';
-      out.push({ t, dur, text: String(raw.text).toLowerCase(), kicker: rentP ? 'Giá thuê' : (raw.kicker || 'Giá bán'), kind: 'price', final: true, ...st });
+      const pk = m1Type(m1.scene).priceKick;
+      out.push({ t, dur, text: String(raw.text).toLowerCase(), kicker: rentP ? 'Giá thuê' : (pk || raw.kicker || 'Giá bán'), kind: 'price', final: true, ...st });
       out.forEach((q, i) => { q.id = i; });
     }
   }
@@ -2281,11 +2283,23 @@ function infoFullItems(scene) {
   ].filter(Boolean);
 }
 // Loại BĐS theo nút khách chọn (scene.label = "VỊ TRÍ CĂN NHÀ" | "VỊ TRÍ CĂN VILLA" | "VỊ TRÍ LÔ ĐẤT" | "VỊ TRÍ DỰ ÁN")
-// Chữ nút kêu gọi cuối video theo loại bất động sản (không ghi số điện thoại — số nằm ở thẻ môi giới)
-function m1CtaText(scene) {
+// 30/10 13:15 Giang: mỗi loại bất động sản có CHỮ + NÚT KÊU GỌI riêng (bán đất không có phòng ngủ/nội thất…).
+// cta: chữ nút (KHÔNG ghi số điện thoại) · icon + 2 màu viên thuốc · feats: loại thông tin được nhấn ở cảnh căn nhà · priceKick
+const M1_TYPES = {
+  nha: { cta: 'NHẮN TIN XEM NHÀ NGAY', icon: 'chat', col: ['#FF7A45', '#E8261A'], feats: ['size', 'area', 'floors', 'beds', 'furn', 'legal'] },
+  dat: { cta: 'NHẮN TIN XEM ĐẤT NGAY', icon: 'map', col: ['#34D399', '#059669'], feats: ['size', 'area', 'legal'] },
+  duan: { cta: 'NHẬN BẢNG GIÁ DỰ ÁN', icon: 'city', col: ['#60A5FA', '#2563EB'], feats: ['size', 'area', 'floors', 'beds', 'furn', 'legal'], priceKick: 'Giá chỉ từ' },
+  villa: { cta: 'ĐẶT LỊCH XEM VILLA', icon: 'key', col: ['#F5C451', '#C2841A'], feats: ['size', 'area', 'floors', 'beds', 'furn', 'legal'] },
+  bietthu: { cta: 'ĐẶT LỊCH XEM BIỆT THỰ', icon: 'key', col: ['#F5C451', '#C2841A'], feats: ['size', 'area', 'floors', 'beds', 'furn', 'legal'] },
+  thuenha: { cta: 'NHẮN TIN THUÊ NHÀ NGAY', icon: 'key', col: ['#A78BFA', '#7C3AED'], feats: ['size', 'area', 'floors', 'beds', 'furn'], priceKick: 'Giá thuê' },
+  thuephong: { cta: 'NHẮN TIN THUÊ PHÒNG NGAY', icon: 'key', col: ['#A78BFA', '#7C3AED'], feats: ['size', 'area', 'furn'], priceKick: 'Giá thuê' },
+  thuemb: { cta: 'NHẮN TIN THUÊ MẶT BẰNG', icon: 'shop', col: ['#A78BFA', '#7C3AED'], feats: ['size', 'area', 'floors'], priceKick: 'Giá thuê' },
+};
+function m1Type(scene) {
   const t = String(scene.label || '');
-  return /PHÒNG CHO THUÊ/i.test(t) ? 'NHẮN TIN XEM PHÒNG NGAY' : /MẶT TIỀN CHO THUÊ/i.test(t) ? 'NHẮN TIN XEM MẶT BẰNG'
-    : /LÔ ĐẤT/i.test(t) ? 'NHẮN TIN XEM ĐẤT NGAY' : /DỰ ÁN/i.test(t) ? 'NHẮN TIN XEM DỰ ÁN' : 'NHẮN TIN XEM NHÀ NGAY';
+  const k = /PHÒNG CHO THUÊ/i.test(t) ? 'thuephong' : /MẶT TIỀN CHO THUÊ/i.test(t) ? 'thuemb' : /CHO THUÊ/i.test(t) || scene.rent ? 'thuenha'
+    : /LÔ ĐẤT|ĐẤT NỀN/i.test(t) ? 'dat' : /DỰ ÁN/i.test(t) ? 'duan' : /BIỆT THỰ/i.test(t) ? 'bietthu' : /VILLA/i.test(t) ? 'villa' : 'nha';
+  return M1_TYPES[k];
 }
 function infoKind(scene) {
   const t = String(scene.label || '').replace(/^VỊ TRÍ\s*/i, '').trim();
@@ -4420,10 +4434,10 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   let cta = null;
   if (tl.m1Cta && t >= ou.t0 + 0.4) {
     const k = (Math.min(LW, LH) / 540) * (tl.fmt === 'v' ? 1 : 0.82);
-    const text = m1CtaText(scene), S = m1CtaSize(ctx, text, k);
+    const ty = m1Type(scene), text = ty.cta, S = m1CtaSize(ctx, text, k);
     const bt = brandTop(tl);   // Infinity khi không có thẻ môi giới
     const bottom = brandA > 0.05 && isFinite(bt) ? bt - 10 : LH - safe.bottom - (tl.fmt === 'v' ? 10 : 6);
-    cta = { text, k, cx: LW / 2, cy: bottom - S.h / 2, h: S.h, w: S.w, lt: t - ou.t0 - 0.4 };
+    cta = { text, icon: ty.icon, col: ty.col, k, cx: LW / 2, cy: bottom - S.h / 2, h: S.h, w: S.w, lt: t - ou.t0 - 0.4 };
     occ.top = Math.min(occ.top, bottom - S.h - 8);
   }
   let cap = captionAt(tl, t);
@@ -4630,7 +4644,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   drawPhotos(ctx, tl, t, logo);
   drawClips(ctx, tl, t, logo);
   if (capL && capA > 0.01) occBox(ctx, capL.x, capL.y, capL.x + capL.w, capL.y + capL.h);
-  if (cta) { occBox(ctx, cta.cx - cta.w / 2, cta.cy - cta.h * 0.6, cta.cx + cta.w / 2, cta.cy + cta.h * 0.6); drawM1Cta(ctx, cta.text, cta.cx, cta.cy, cta.lt, T - ou.t0 + 1, cta.k); }
+  if (cta) { occBox(ctx, cta.cx - cta.w / 2, cta.cy - cta.h * 0.6, cta.cx + cta.w / 2, cta.cy + cta.h * 0.6); drawM1Cta(ctx, cta.text, cta.cx, cta.cy, cta.lt, T - ou.t0 + 1, cta.k, cta.icon, cta.col); }
   OCC_CTX = null;
   drawKeyPops(ctx, tl, t);
   OCC = null;
