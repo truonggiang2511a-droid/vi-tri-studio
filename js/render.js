@@ -41,11 +41,12 @@ let GOLD = '#FFD166';
 // Mỗi kiểu đổi màu nhấn, nền thẻ, font tiêu đề, kiểu chữ tiêu đề, tông bản đồ, cảnh mở đầu và cảnh kết.
 export const STYLES = {
   neon: {
+    // 30/10 14:20 Giang: đồng bộ màu — Neon đêm lấy XANH NEON làm màu chính (thẻ, thẻ mở đầu, chữ điểm nhấn, CTA), vàng là màu phụ
     label: 'Neon đêm', desc: 'Chữ 3D, line phát sáng, nổi bật trên TikTok',
-    head: BASE_FONT, headW: 800, acc: '#FFD166', accInk: '#1b1405', acc2: '#5EEAF5',
+    head: BASE_FONT, headW: 800, acc: '#5EEAF5', accInk: '#04161A', acc2: '#FFD166',
     card: 'rgba(12,16,24,0.9)', ink: '#ffffff', soft: 'rgba(255,255,255,0.82)', mute: 'rgba(255,255,255,0.6)',
     tint: '#9fc4be', dark: 0.12, title: '3d', capBg: 'rgba(0,0,0,0.62)', capInk: '#ffffff',
-    road: 'auto', route: 'vang', swatch: ['#0c1513', '#FFD166', '#5EEAF5'],
+    road: 'auto', route: 'vang', swatch: ['#0c1513', '#5EEAF5', '#FFD166'],
   },
   sangtrong: {
     label: 'Sang trọng', desc: 'Vàng đồng, chữ có chân, khung điện ảnh — hợp nhà phố, biệt thự',
@@ -75,6 +76,14 @@ export const STYLES = {
     card: 'rgba(6,24,14,0.9)', ink: '#ffffff', soft: 'rgba(255,255,255,0.84)', mute: 'rgba(255,255,255,0.6)',
     tint: '#a6c9a2', dark: 0.1, title: '3d', capBg: 'rgba(4,22,12,0.66)', capInk: '#ffffff',
     road: 'la', route: 'vang', swatch: ['#0b1f14', '#4ADE80', '#D9F99D'],
+  },
+  // 30/10 14:20 Giang: phong cách thứ 6 màu đỏ
+  doruc: {
+    label: 'Đỏ nổi bật', desc: 'Đỏ mạnh, gây chú ý — hợp tin gấp, cần bán nhanh, giảm giá',
+    head: BASE_FONT, headW: 800, acc: '#FF4D3D', accInk: '#ffffff', acc2: '#FFD0C9',
+    card: 'rgba(30,8,8,0.9)', ink: '#ffffff', soft: 'rgba(255,255,255,0.84)', mute: 'rgba(255,255,255,0.6)',
+    tint: '#c9a9a2', dark: 0.1, title: '3d', capBg: 'rgba(30,6,6,0.66)', capInk: '#ffffff',
+    road: 'do', route: 'vang', swatch: ['#1f0a0a', '#FF4D3D', '#FFD0C9'],
   },
 };
 let ST = STYLES.neon;
@@ -126,6 +135,7 @@ export const HI_THEMES = {
   cam:   { label: 'Cam neon',  core: '#FF9A3D', glow: '#FF5A00' },
   la:    { label: 'Xanh lá',   core: '#6BFF9E', glow: '#10C255' },
   tim:   { label: 'Tím',       core: '#C9A2FF', glow: '#7C4DFF' },
+  hong:  { label: 'Hồng neon',  core: '#FF8AC6', glow: '#FF1F8F' },   // 30/10: line ★ của phong cách Trẻ trung
   do:    { label: 'Đỏ',        core: '#FF6A5E', glow: '#FF1E1E' },
   trang: { label: 'Trắng bạc', core: '#FFFFFF', glow: '#9EC9FF' },
   ngoc:  { label: 'Xanh ngọc', core: '#5EF5E0', glow: '#00C2B0' },
@@ -2453,7 +2463,9 @@ function captionLayoutM1(ctx, tl, cap, occ) {
   const words = cap.words.map(w => ({ ...w, wd: ctx.measureText(w.w).width }));
   ctx.restore();
   const h = size * 1.3;
-  const bottom = Math.min(LH - safe.bottom - (tl.fmt === 'v' ? 14 : 8), occ.top - 12, tl.fmt === 'v' ? LH * M1_CAP_Y + h / 2 : Infinity);
+  // lúc thẻ mở đầu đang hiện (chữ thẻ xuống tới ~70% khung): phụ đề hạ xuống sát vùng an toàn đáy để không đè dòng phụ của thẻ
+  const inHook = tl.hookEnd && cap.t0 < tl.hookEnd + 0.3;
+  const bottom = Math.min(LH - safe.bottom - (tl.fmt === 'v' ? 14 : 8), occ.top - 12, tl.fmt === 'v' && !inHook ? LH * M1_CAP_Y + h / 2 : Infinity);
   const cx = (left + right) / 2;
   let x = cx - tw / 2;
   for (const w of words) { w.x = x; x += w.wd + sp; }
@@ -2882,7 +2894,7 @@ function drawHook(ctx, tl, t) {
     ctx.save(); ctx.globalAlpha = A * 0.36; ctx.fillStyle = '#05090a'; ctx.fillRect(0, 0, LW, LH); ctx.restore();
   }
   // Gói chữ động (tự chọn theo căn): vẽ thay toàn bộ phần chữ của thẻ mở đầu
-  if (tl.scene.motion && motionHook(ctx, tl.scene.motion, { LW, LH, safe, fmt: tl.fmt, lt, A, k: (Math.min(LW, LH) / 540) * (tl.fmt === 'v' ? 1 : 0.78), H })) return;
+  if (tl.scene.motion && motionHook(ctx, tl.scene.motion, { LW, LH, safe, fmt: tl.fmt, lt, A, k: (Math.min(LW, LH) / 540) * (tl.fmt === 'v' ? 1 : 0.78), H, acc: ST.acc, accInk: ST.accInk })) return;
   // Chữ hiện gần như ngay lập tức (giá ở 0,05 s) để 1 giây đầu đã có thông tin "móc" người xem
   const step = (d0, dur = 0.35) => clamp01((lt - d0) / dur);
   const cy = tl.fmt === 'h' ? LH * 0.45 : LH * 0.43;
@@ -4469,7 +4481,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   {
     const tStart = tl.hookEnd ? tl.hookEnd - 0.2 : 0.3, tA = fadeWin(t, tStart, ov.t0 + 0.5, 0.6, 0.6);
     const tTop = logo && tl.fmt !== 'h' ? logo.y + logo.h + 8 : 0;
-    const mEnv = { LW: tl.LW, LH: tl.LH, safe: tl.safe, fmt: tl.fmt, lt: t - tStart, A: tA, k: (Math.min(tl.LW, tl.LH) / 540) * (tl.fmt === 'v' ? 1 : 0.85),
+    const mEnv = { acc: ST.acc, accInk: ST.accInk, LW: tl.LW, LH: tl.LH, safe: tl.safe, fmt: tl.fmt, lt: t - tStart, A: tA, k: (Math.min(tl.LW, tl.LH) / 540) * (tl.fmt === 'v' ? 1 : 0.85),
       text: String(scene.title || '').toUpperCase(), sub: scene.titleSub, top: Math.max((tl.fmt === 'v' ? tl.safe.top + 8 : tl.safe.top - 6) - (scene.keyLook === 'mau1' && tl.keyPops && tl.keyPops.length ? 12 : 0), tTop) };
     let tBot = null;
     if (!(tA > 0.01 && scene.motion && !scene.motionHookOnly && motionTitle(ctx, scene.motion, mEnv))) tBot = drawTitle(ctx, tl, scene.title, scene.titleSub, tA, tTop);

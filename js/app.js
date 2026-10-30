@@ -328,7 +328,9 @@ function motionOn() {
 // Thẻ giá mở đầu theo phong cách — mỗi phong cách một kiểu chữ động riêng, cho MỌI khách (chỉ thẻ mở đầu,
 // tiêu đề cảnh giữ kiểu cũ: motionHookOnly). 25/10 22:12: Neon = đen – vàng. 26/10 Giang: Sang trọng/Trẻ trung/Tối giản
 // trước đây cùng một thẻ cũ giống hệt nhau → tách riêng. Tài khoản nội bộ/?motion=1 thêm tiêu đề động; ?motionKey=… ép 1 gói.
-const STYLE_MOTION = { neon: 'denvang', sangtrong: 'tapchi', tretrung: 'khoi', toigian: 'hiendai', xanhla: 'denxanh' };
+const STYLE_MOTION = { neon: 'denneon', sangtrong: 'tapchi', tretrung: 'khoi', toigian: 'hiendai', xanhla: 'denxanh', doruc: 'dendo' };
+// 30/10 14:20 Giang: chọn phong cách thì line trục đường ★ cũng đổi theo màu phong cách (khách vẫn đổi lại được)
+const STYLE_HI = { neon: 'dien', sangtrong: 'vang', tretrung: 'hong', toigian: 'trang', xanhla: 'la', doruc: 'do' };
 function sceneMotion() {
   if (!state.house) return null;
   if (motionOn()) {
@@ -2976,7 +2978,7 @@ function renderStyles() {
   const el = $('styleRow');
   if (!el) return;
   if (!STYLES[state.style]) state.style = 'neon';
-  const sample = { neon: '3D', sangtrong: 'Aa', tretrung: 'Hi!', toigian: 'Aa', xanhla: '3D' };
+  const sample = { neon: '3D', sangtrong: 'Aa', tretrung: 'Hi!', toigian: 'Aa', xanhla: '3D', doruc: '3D' };
   el.innerHTML = Object.entries(STYLES).map(([k, st]) => {
     const [bg, a1, a2] = st.swatch;
     const font = k === 'sangtrong' ? 'font-family:"Playfair Display",serif;' : k === 'tretrung' ? 'font-family:"Baloo 2",sans-serif;' : k === 'toigian' ? 'font-weight:300;' : '';
@@ -2991,6 +2993,7 @@ function renderStyles() {
     // Mỗi kiểu có màu line đi kèm (vẫn đổi được ở mục Màu line)
     const st = STYLES[state.style];
     state.roadTheme = st.road; state.routeTheme = st.route;
+    if (STYLE_HI[state.style]) { state.hiTheme = STYLE_HI[state.style]; renderSwatches('hiThemeRow', 'hiTheme', false, HI_THEMES); }
     renderSwatches('roadThemeRow', 'roadTheme', true);
     renderSwatches('routeThemeRow', 'routeTheme', false);
     for (const x of el.querySelectorAll('button')) x.setAttribute('aria-checked', String(x === b));
@@ -3004,7 +3007,7 @@ function renderStyles() {
 const LOOKS = [
   { id: 'neon', label: 'Neon đêm', style: 'neon', base: 'phim', hiTheme: 'dien' },
   { id: 'sang', label: 'Sang trọng', style: 'sangtrong', base: 'vetinh', hiTheme: 'vang' },
-  { id: 'gian', label: 'Tối giản', style: 'toigian', base: 'duongpho', hiTheme: 'do' },
+  { id: 'gian', label: 'Tối giản', style: 'toigian', base: 'duongpho', hiTheme: 'trang' },
 ];
 const isLook = L => state.style === L.style && state.base === L.base && state.hiTheme === L.hiTheme;
 function lookState(L) {

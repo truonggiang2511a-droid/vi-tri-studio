@@ -72,6 +72,10 @@ const SERIF = '"Playfair Display", Georgia, "Times New Roman", serif';
 // Bảng màu nhũ của gói đen – vàng; gói đen – xanh lá (phong cách Xanh sinh thái, 30/10) dùng chung bố cục, chỉ đổi bảng màu
 const PAL_GOLD = { g: ['#FBEBC4', '#E6C27E', '#C8964F', '#E7C88D'], line: '#D9B26F', line2: '#C9974E', glow: 'rgba(201,151,78,0.16)', ink: '#F4EFE6' };
 const PAL_GREEN = { g: ['#E3FFD9', '#86EFAC', '#22C55E', '#A7F3C0'], line: '#6EE7A0', line2: '#22C55E', glow: 'rgba(34,197,94,0.16)', ink: '#F0FDF4' };
+// 30/10 14:20 Giang: thẻ mở đầu cùng màu với phong cách — Neon đêm xanh neon, Đỏ nổi bật đỏ
+const PAL_CYAN = { g: ['#E0FCFF', '#7DE9F5', '#22D3EE', '#A5F3FC'], line: '#5EEAF5', line2: '#22D3EE', glow: 'rgba(34,211,238,0.16)', ink: '#ECFEFF' };
+const PAL_RED = { g: ['#FFE1DC', '#FF8A7A', '#EF3B2D', '#FFB3A8'], line: '#FF7A6B', line2: '#EF3B2D', glow: 'rgba(239,59,45,0.18)', ink: '#FFF1EF' };
+const withPal = (pal, fn) => { PAL = pal; try { fn(); } finally { PAL = PAL_GOLD; } };
 let PAL = PAL_GOLD;
 function goldGrad(ctx, y, size) {
   const g = ctx.createLinearGradient(0, y - size * 0.62, 0, y + size * 0.42);
@@ -296,8 +300,19 @@ export const MOTION = {
   // Đen – xanh lá (phong cách Xanh sinh thái): bố cục y như đen – vàng, nhũ xanh lá
   denxanh: {
     label: 'Đen xanh lá',
-    hook(ctx, e) { PAL = PAL_GREEN; try { MOTION.denvang.hook(ctx, e); } finally { PAL = PAL_GOLD; } },
-    title(ctx, e) { PAL = PAL_GREEN; try { MOTION.denvang.title(ctx, e); } finally { PAL = PAL_GOLD; } },
+    hook(ctx, e) { withPal(PAL_GREEN, () => MOTION.denvang.hook(ctx, e)); },
+    title(ctx, e) { withPal(PAL_GREEN, () => MOTION.denvang.title(ctx, e)); },
+  },
+  // Đen – xanh neon (phong cách Neon đêm) và đen – đỏ (phong cách Đỏ nổi bật): cùng bố cục đen – vàng
+  denneon: {
+    label: 'Đen xanh neon',
+    hook(ctx, e) { withPal(PAL_CYAN, () => MOTION.denvang.hook(ctx, e)); },
+    title(ctx, e) { withPal(PAL_CYAN, () => MOTION.denvang.title(ctx, e)); },
+  },
+  dendo: {
+    label: 'Đen đỏ',
+    hook(ctx, e) { withPal(PAL_RED, () => MOTION.denvang.hook(ctx, e)); },
+    title(ctx, e) { withPal(PAL_RED, () => MOTION.denvang.title(ctx, e)); },
   },
   // Khối chữ đậm (kiểu tin nhanh): từng dòng nằm trong khối màu quét ra, giá trong khối vàng nảy lên
   khoi: {
@@ -329,7 +344,8 @@ export const MOTION = {
         return h;
       };
       if (L.l1) y += block(L.l1, 40 * k, '#FFFFFF', '#101010', 0) * 0.5 + 6 * k;
-      if (L.l2) { y += 16 * k; y += block(L.l2, 40 * k, '#E53935', '#FFFFFF', 0.12) * 0.5 + 6 * k; }
+      const KA = e.acc || '#E53935', KI = e.accInk || '#FFFFFF';   // màu nhấn của phong cách (Trẻ trung: hồng)
+      if (L.l2) { y += 16 * k; y += block(L.l2, 40 * k, KA, KI, 0.12) * 0.5 + 6 * k; }
       y += 24 * k;
       y += block(L.label.toUpperCase(), 20 * k, '#101010', '#FFD400', 0.3, `800 ${20 * k}px ${BODY}`) * 0.5;
       y += 58 * k;
@@ -343,10 +359,10 @@ export const MOTION = {
       if (lt > 0.4) {
         ctx.globalAlpha = A;
         ctx.translate(left + bw / 2, y); ctx.rotate(-0.03); ctx.scale(ps, ps);
-        ctx.fillStyle = '#FFD400'; ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 5;
+        ctx.fillStyle = e.acc || '#FFD400'; ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 5;
         ctx.fillRect(-bw / 2, -sb * 0.7, bw, sb * 1.4);
         ctx.shadowColor = 'transparent';
-        ctx.fillStyle = '#101010'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = e.acc ? (e.accInk || '#FFFFFF') : '#101010'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.font = `900 ${Math.min(sb, sb * (bw - 30 * k) / Math.max(1, ctx.measureText(L.big).width))}px ${HEAD}`;
         ctx.fillText(big, 0, sb * 0.05);
       }
@@ -487,7 +503,7 @@ export const MOTION = {
         y += size * 1.18;
       };
       ctx.save();
-      const ac = '#3EE8B5';
+      const ac = e.acc || '#3EE8B5';   // màu nhấn của phong cách (Tối giản: trắng)
       // vạch màu nhấn dọc bên trái
       const pv = ease.out(clamp01(lt / 0.5));
       ctx.globalAlpha = A; ctx.fillStyle = ac;
@@ -531,7 +547,7 @@ export const MOTION = {
       ctx.fillText(t2, LW / 2, y + (1 - s) * size * 1.3);
       ctx.restore();
       const w = ctx.measureText(t2).width;
-      ctx.globalAlpha = A; ctx.fillStyle = '#3EE8B5';
+      ctx.globalAlpha = A; ctx.fillStyle = e.acc || '#3EE8B5';
       ctx.fillRect(LW / 2 - (w / 2) * ease.expo(clamp01((lt - 0.3) / 0.5)), y + size * 0.62, w * ease.expo(clamp01((lt - 0.3) / 0.5)), 4 * k);
       if (sub) {
         ctx.globalAlpha = A * clamp01((lt - 0.45) / 0.35); ctx.fillStyle = 'rgba(255,255,255,0.9)';
