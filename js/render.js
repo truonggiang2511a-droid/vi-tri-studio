@@ -752,7 +752,9 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
       });
       // Thời lượng (giây, khi không có giọng) của cú máy hiệu ứng — 30/10 18:33 Giang: máy lia chậm, chờ máy bay lên cao
       // rồi mới chuyển cảnh. Cú máy thường giữ đúng nhịp cũ (không có hiệu ứng thì cảnh y như trước).
-      const FX_SEC = { plane: 7.6, train: 6.4 };
+      // 30/10 18:57 Giang: máy bay cất cánh nhanh, ~4–5 s (PLANE_TO, giây thật, không theo nhịp/giọng); lời đọc dài thì cú máy
+      // dài theo → máy quay ở lại lâu hơn, lùi ra chậm, máy bay vẫn bay tiếp lên cao kèm vệt khói (cả ở góc rộng sau đó)
+      const FX_SEC = { plane: PLANE_TO * 1.25, train: 6.4 };
       const W_HUB = 1, W_REC = 1.15, unit = (3.3 * anchors.length + 3.5) / (anchors.length + W_REC);
       const W_FX = { plane: FX_SEC.plane / unit, train: FX_SEC.train / unit };
       const plan = [];
@@ -772,7 +774,11 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
         } else {
           const X = a.fxP;
           const follow = X.kind === 'plane'
-            ? w => { const p = X.at(w), up = smooth(clamp01((w - 0.36) / 0.64)); return anchorCam(p.lat, p.lng, 14.8 - 0.95 * up, 46 - 6 * up, LW, LH, 0.5, 0.6 + 0.08 * up); }
+            ? (w, sec) => {
+              const pw = Math.min(3, Math.max(0, sec) / PLANE_TO), p = X.at(pw);
+              const up = smooth(clamp01((pw - 0.36) / 0.64)), ext = smooth(clamp01((pw - 1) / 2));
+              return anchorCam(p.lat, p.lng, 14.8 - 0.95 * up - 0.7 * ext, 46 - 6 * up - 4 * ext, LW, LH, 0.5, 0.6 + 0.08 * up + 0.04 * ext);
+            }
             : trainFollow(X, H, a, LW, LH, safe);
           shots.push({ s: s0, e: e0, cam: follow(1), follow, fxOf: q.i, fx: q.fx, move: 1, slide: true, side: 0 });
         }
@@ -1327,13 +1333,16 @@ function camShots(ph, t) {
   let i = ph.shots.findIndex(sh => f < sh.e);
   if (i < 0) i = ph.shots.length - 1;
   const sh = ph.shots[i];
-  const prev = i ? shotEnd(ph.shots[i - 1]) : ph.from;
+  const ps = ph.shots[i - 1];
+  // cú bám máy bay/tàu: khung cuối phụ thuộc thời lượng thật của cú (lời đọc dài thì cú dài) → tính lại theo giây
+  const prev = !i ? ph.from : ps.follow ? ps.follow(1, (ps.e - ps.s) * d) : shotEnd(ps);
   const w = clamp01((f - sh.s) / Math.max(1e-6, sh.e - sh.s));
   if (sh.follow) {
     // Bám theo máy bay / đoàn tàu: vào cú máy thì bay êm từ khung trước tới chỗ đang bám (lùi lên giữa chặng nếu xa)
-    const fc = sh.follow(w), b0 = smooth(clamp01(w / 0.3));
+    const sec = w * (sh.e - sh.s) * d;
+    const fc = sh.follow(w, sec), b0 = smooth(sh.fx === 'plane' ? clamp01(sec / 1.3) : clamp01(w / 0.3));
     if (sh._arc === undefined) {
-      const f0 = sh.follow(0), pa = project(prev.lat, prev.lng, 0), pb = project(f0.lat, f0.lng, 0);
+      const f0 = sh.follow(0, 0), pa = project(prev.lat, prev.lng, 0), pb = project(f0.lat, f0.lng, 0);
       const dpx = Math.hypot(pb.x - pa.x, pb.y - pa.y) * Math.pow(2, Math.min(prev.zoom, f0.zoom));
       sh._arc = Math.max(0, Math.min(1.6, Math.log2(dpx / 420)));
     }
@@ -2620,6 +2629,7 @@ function trainFollow(X, H, a, LW, LH, safe) {
     return { lat: c.lat, lng: c.lng, zoom: base.zoom + 0.25 * smooth(clamp01(w)), pitch: 50 };
   };
 }
+const PLANE_TO = 4.5;   // giây máy bay cất cánh (lăn bánh → rời đất → lên cao)
 function prepHubFx(a, H) {
   const X = a.fx;
   if (!X) return null;
@@ -2633,13 +2643,30 @@ function prepHubFx(a, H) {
     const rwM = len, total = rwM * 1.75, lift = rwM * 0.5;
     const ring = [];
     for (const pt of X.parts) for (let j = 0; j < pt.pts.length; j += Math.max(1, Math.floor(pt.pts.length / 24))) ring.push({ lat: pt.pts[j][0], lng: pt.pts[j][1] });
-    // vị trí máy bay theo tiến độ w của cú máy: lăn bánh tăng tốc, rời đất ở 60% đường băng, leo cao
+    // vị trí máy bay theo tiến độ cất cánh pw (1 = PLANE_TO giây): lăn bánh tăng tốc, rời đất ở 50% đường băng, leo cao;
+    // sau đó (pw > 1) vẫn bay tiếp chậm hơn, lên cao dần — để góc rộng sau đó vẫn thấy máy bay + vệt khói
+    // sau khi cất cánh máy bay ngoặt dần sang phía KHÔNG có căn nhà (tối đa 70°) để ở góc rộng không bay đè lên ghim nhà
+    const hx = (H.lng - A.lng) * kx, hy = (H.lat - A.lat) * M_LAT, turn = (ux * hy - uy * hx) > 0 ? -1 : 1;
+    const SP = 0.3, TURN = 1.22;
     const at = (w, ahead = 0) => {
-      const d = total * Math.pow(clamp01(w), 1.75) + ahead * 1000;
-      const p = llOff(A.lat, A.lng, ux * d, uy * d);
-      return { lat: p.lat, lng: p.lng, alt: Math.max(0, d - lift) * 0.3, d };
+      w = Math.max(0, w);
+      if (w <= 1 || ahead) {
+        const d = total * Math.pow(Math.min(w, 1), 1.75) + ahead * 1000;
+        const p = llOff(A.lat, A.lng, ux * d, uy * d);
+        return { lat: p.lat, lng: p.lng, alt: Math.max(0, Math.min(d, total) - lift) * 0.3, d, ux, uy };
+      }
+      // tích phân đường bay có ngoặt (bước nhỏ, đủ mượt)
+      let ex = ux * total, ey = uy * total, hx2 = ux, hy2 = uy;
+      const n = Math.max(2, Math.ceil((w - 1) * 10)), dw = (w - 1) / n;
+      for (let k = 0; k < n; k++) {
+        const th = turn * TURN * smooth(clamp01(((k + 0.5) * dw) / 1.6));
+        hx2 = ux * Math.cos(th) - uy * Math.sin(th); hy2 = ux * Math.sin(th) + uy * Math.cos(th);
+        ex += hx2 * total * SP * dw; ey += hy2 * total * SP * dw;
+      }
+      const p = llOff(A.lat, A.lng, ex, ey), extra = total * SP * (w - 1);
+      return { lat: p.lat, lng: p.lng, alt: (total - lift) * 0.3 + extra * 0.18, d: total + extra, ux: hx2, uy: hy2 };
     };
-    return { kind: 'plane', parts: X.parts, A, B, ux, uy, rwM, ring, at };
+    return { kind: 'plane', parts: X.parts, A, B, ux, uy, rwM, ring, at, liftF: lift / total };
   }
   if (X.kind === 'metro' && X.track && X.track.length > 1) {
     // làm dày tuyến (mỗi 10 m) để tàu đi êm theo đường cong
@@ -2685,6 +2712,23 @@ function prepHubFx(a, H) {
     return { kind: 'train', la, lo, cum, total, sSt, s0, sH, dir, posAt, headS, at, near: { lat: la[ih], lng: lo[ih], km: bh } };
   }
   return null;
+}
+// Số giây kể từ đầu cú máy hiệu ứng của điểm mốc i (âm khi chưa tới)
+function fxShotSec(tl, i, t) {
+  const ph = tl.regionPh;
+  const sh = ph && ph.shots && ph.shots.find(x => x.fxOf === i);
+  return sh ? t - (ph.t0 + sh.s * (ph.t1 - ph.t0)) : -1;
+}
+// Máy bay thấy rõ trong cú cất cánh và ở cú toàn cảnh cuối (góc rộng); trong cú cận điểm mốc khác thì ẩn dần (không bay ngang khung cận)
+function planeVis(tl, i, t) {
+  const ph = tl.regionPh;
+  const f = (t - ph.t0) / (ph.t1 - ph.t0);
+  let j = ph.shots.findIndex(sh => f < sh.e);
+  if (j < 0) j = ph.shots.length - 1;
+  const sh = ph.shots[j], w = clamp01((f - sh.s) / Math.max(1e-6, sh.e - sh.s));
+  if (sh.fxOf === i) return 1;
+  if (sh.recap) return ph.shots[j - 1] && ph.shots[j - 1].fxOf === i ? 1 : smooth(clamp01((w - 0.15) / 0.35));
+  return 1 - smooth(clamp01(w / 0.25));
 }
 // Tiến độ cú máy hiệu ứng của điểm mốc i (−1 khi chưa tới)
 function fxShotW(tl, i, t) {
@@ -2769,22 +2813,59 @@ const PLANE_WING = (() => {
   return p;
 })();
 // Máy bay + bóng đổ + vệt khói, vẽ trên màn hình. Hướng/tỉ lệ lấy từ phép chiếu thật tại chỗ máy bay → đúng phối cảnh.
-function drawPlane(ctx, S, P, v, X, w, a, t) {
-  if (a <= 0.01 || w < 0) return;
-  const p = X.at(Math.min(w, 1.25));
+function drawPlane(ctx, S, P, v, X, pw, a, t) {
+  if (a <= 0.01 || pw < 0) return;
+  const p = X.at(pw);
   const g0 = S(p.lat, p.lng);
   if (g0.w < 0.05) return;
-  const f1 = llOff(p.lat, p.lng, X.ux * 10, X.uy * 10), r1 = llOff(p.lat, p.lng, X.uy * 10, -X.ux * 10);
+  const f1 = llOff(p.lat, p.lng, p.ux * 10, p.uy * 10), r1 = llOff(p.lat, p.lng, p.uy * 10, -p.ux * 10);
   const sf = S(f1.lat, f1.lng), sr = S(r1.lat, r1.lng);
   let fx = sf.x - g0.x, fy = sf.y - g0.y, rx = sr.x - g0.x, ry = sr.y - g0.y;
   const fl = Math.hypot(fx, fy) || 1;
   const climb = clamp01(p.alt / 260);
-  const zf = Math.max(0.3, Math.min(1, Math.pow(2, (v.zoom - 13.85) * 0.8)));   // máy lùi xa (cú máy sau) thì máy bay nhỏ lại
+  const zf = Math.max(0.34, Math.min(1, Math.pow(2, (v.zoom - 13.85) * 0.8)));   // máy lùi xa (góc rộng) thì máy bay nhỏ lại, vẫn đủ thấy
   const Lpx = (78 + 34 * climb) * zf / g0.w;
   const sc = Lpx / fl;
   fx *= sc; fy *= sc; rx *= sc; ry *= sc;
   const mpp = metersPerPixel(p.lat, v.zoom);
   const lift = p.alt / mpp * P.s / g0.w;
+  const x = g0.x, y = g0.y - lift;
+  // vệt khói: đường bay thật vừa qua (đã nâng theo độ cao) sau 2 động cơ → thấy rõ máy bay đang lên cao, cả ở góc rộng
+  const pLift = Math.pow(X.liftF, 1 / 1.75);
+  if (pw > pLift + 0.01) {
+    const p0 = Math.max(pLift, pw - 8 / PLANE_TO), N = 30, pts = [];   // ~8 s đường bay → góc rộng thấy vệt khói vẽ trọn đường lên cao
+    for (let k = 0; k <= N; k++) {
+      const q = X.at(p0 + (pw - p0) * k / N), s0 = S(q.lat, q.lng);
+      if (s0.w < 0.05) continue;
+      pts.push({ x: s0.x, y: s0.y - q.alt / metersPerPixel(q.lat, v.zoom) * P.s / s0.w });
+    }
+    if (pts.length > 1) {
+      // máy bay vẽ phóng to so với bản đồ → ở góc rộng đường bay thật ngắn hơn cả thân máy bay: giãn vệt khói (giữ đúng
+      // hình cung đường bay) cho dài tối thiểu ~3,2 lần thân máy bay trên màn hình
+      const hd = pts[pts.length - 1];
+      let pl = 0;
+      for (let k = 1; k < pts.length; k++) pl += Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y);
+      const minL = 3.2 * Lpx * Math.min(1, (pw - pLift) / 0.5), kx2 = pl > 0.5 && pl < minL ? minL / pl : 1;
+      if (kx2 > 1) for (const q of pts) { q.x = hd.x + (q.x - hd.x) * kx2; q.y = hd.y + (q.y - hd.y) * kx2; }
+      const tail = pts[pts.length - 1];
+      const ox = x - fx * 0.12 - tail.x, oy = y - fy * 0.12 - tail.y;   // nối khít vào đuôi máy bay
+      ctx.save(); ctx.lineCap = 'butt'; ctx.lineJoin = 'round';   // butt: các đoạn nối không chồng → không thành vằn
+      for (const sd of [-0.2, 0.2]) {
+        for (let k = 1; k < pts.length; k++) {
+          const u = k / (pts.length - 1);                                   // 0 = cũ nhất, 1 = sát máy bay
+          const e = u * u;
+          ctx.globalAlpha = a * 0.78 * Math.pow(u, 1.3);
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = Math.max(1.8, Lpx * (0.06 + 0.07 * (1 - u)));
+          ctx.beginPath();
+          ctx.moveTo(pts[k - 1].x + ox * ((k - 1) / (pts.length - 1)) ** 2 + rx * sd, pts[k - 1].y + oy * ((k - 1) / (pts.length - 1)) ** 2 + ry * sd);
+          ctx.lineTo(pts[k].x + ox * e + rx * sd, pts[k].y + oy * e + ry * sd);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+  }
   ctx.save();
   // bóng đổ trên mặt đất (mờ dần khi máy bay lên cao)
   ctx.save();
@@ -2792,18 +2873,6 @@ function drawPlane(ctx, S, P, v, X, w, a, t) {
   ctx.transform(fx, fy, rx, ry, g0.x + 6 * climb, g0.y + 3);
   ctx.fillStyle = '#000'; ctx.fill(PLANE_BODY); ctx.fill(PLANE_WING);
   ctx.restore();
-  const x = g0.x, y = g0.y - lift;
-  // vệt khói sau 2 động cơ khi đã rời đất
-  if (climb > 0.02) {
-    for (const sd of [-0.2, 0.2]) {
-      const sx = x - fx * 0.05 + rx * sd, sy = y - fy * 0.05 + ry * sd;
-      const ex = sx - fx * (1.6 + 1.6 * climb), ey = sy - fy * (1.6 + 1.6 * climb);
-      const gr = ctx.createLinearGradient(sx, sy, ex, ey);
-      gr.addColorStop(0, `rgba(255,255,255,${0.75 * a})`); gr.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.strokeStyle = gr; ctx.lineWidth = Math.max(1.5, Lpx * 0.05); ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
-    }
-  }
   ctx.globalAlpha = a;
   ctx.transform(fx, fy, rx, ry, x, y);
   ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 6 / sc; ctx.shadowOffsetY = 2;
@@ -2827,9 +2896,10 @@ function drawPlane(ctx, S, P, v, X, w, a, t) {
   for (const [sd, c] of [[-1, '#FF3B30'], [1, '#34C759']]) {
     const tx = x + fx * -0.2 + rx * 0.5 * sd, ty = y + fy * -0.2 + ry * 0.5 * sd;
     ctx.save(); ctx.globalAlpha = a * blink;
-    const gr = ctx.createRadialGradient(tx, ty, 0, tx, ty, 7);
+    const lr = Math.max(3, Math.min(7, Lpx * 0.09));                       // đèn nhỏ theo máy bay (góc rộng không to quá)
+    const gr = ctx.createRadialGradient(tx, ty, 0, tx, ty, lr);
     gr.addColorStop(0, '#fff'); gr.addColorStop(0.3, c); gr.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(tx, ty, 7, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(tx, ty, lr, 0, Math.PI * 2); ctx.fill(); ctx.restore();
   }
 }
 // Đoàn tàu 4 toa: mỗi toa là một khối hộp (đáy theo đường ray, nâng mái lên theo phối cảnh), mặt trước có kính + đèn
@@ -4975,7 +5045,9 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
           const w = fxShotW(tl, i, t);
           if (X.kind === 'plane') {
             drawAirportRise(ctx, S, P, X, on * (w > 1 ? 0.65 : 1));
-            if (w >= 0 && w < 1.15) drawPlane(ctx, S, P, v, X, w, on * clamp01(w / 0.06 + 0.3) * clamp01((1.15 - w) / 0.13), t);
+            // máy bay bay tiếp tới hết cảnh (góc rộng sau đó vẫn thấy máy bay lên cao + vệt khói)
+            const sec = fxShotSec(tl, i, t);
+            if (sec >= 0) drawPlane(ctx, S, P, v, X, sec / PLANE_TO, on * clamp01(sec / 0.3 + 0.3) * planeVis(tl, i, t), t);
           } else if (w >= 0) {
             drawTrain(ctx, S, P, v, X, w, on * clamp01(w / 0.08));
             // nét chấm nhà → điểm gần nhất trên tuyến metro + "Tuyến metro cách nhà … m" (khoảng cách thật tới đường ray)

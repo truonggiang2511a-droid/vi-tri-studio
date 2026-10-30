@@ -58,7 +58,7 @@ export function sfxEvents(tl) {
             add(s0 + sh.move * sw, 'pop', 0.42);
           }
           // 30/10: máy bay cất cánh (tiếng động cơ phản lực lớn dần) · đoàn tàu metro chạy vào ga (ầm ray + chuông vào ga)
-          if (sh.fx === 'plane') add(s0 + 0.06 * sw, 'jet', 0.75, 1.05 * sw);
+          if (sh.fx === 'plane') add(s0 + 0.06, 'jet', 0.75, Math.min(1.05 * sw, 6)); // cất cánh ~4,5 s (PLANE_TO trong render.js), tiếng tắt dần khi máy bay đã cao
           if (sh.fx === 'train') { add(s0 + 0.04 * sw, 'rail', 0.5, 0.8 * sw); add(s0 + 0.82 * sw, 'ding', 0.32); }
         }
         break;
