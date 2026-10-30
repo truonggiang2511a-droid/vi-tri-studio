@@ -20,8 +20,9 @@ const PAL_3D = { tim: ['#E9D6FF', '#8A2BEA'], vang: ['#FFF6B0', '#F0A800'], cam:
 // 30/10 Giang: mỗi phong cách MỘT màu nhấn cho từ khoá + icon (khoá = scene.style). Mặt chữ: trên → dưới (chuyển nhẹ)
 //   Neon đêm = xanh neon · Sang trọng = vàng kim · Trẻ trung = hồng · Tối giản = đỏ
 // 30/10 11:30 Giang: kiểu vàng kim là MẶC ĐỊNH (Neon đêm = phong cách mặc định), Sang trọng = vàng tươi bóng đậm vừa
-export const M1_ACCENT = { neon: ['#FBEBC0', '#D4A24C'], sangtrong: ['#FFF4A0', '#FFC800'], tretrung: ['#FFD6EA', '#FF4FA3'], toigian: ['#FF9C8F', '#EF3B2D'] };
-const M1_BADGE = { neon: ['#F6DFA4', '#B98532'], sangtrong: ['#FFE680', '#E0A800'], tretrung: ['#FFC6E2', '#EC4899'], toigian: ['#FF9C8F', '#D92D20'] };
+// 30/10 12:10 Giang: Neon = VÀNG GOLD KIM đậm (3 điểm màu: sáng trên → vàng kim giữa → vàng đồng đáy), bóng đậm vừa
+export const M1_ACCENT = { neon: ['#FFF1BE', '#F0BC45', '#A8700F'], sangtrong: ['#FFF4A0', '#FFC800'], tretrung: ['#FFD6EA', '#FF4FA3'], toigian: ['#FF9C8F', '#EF3B2D'] };
+const M1_BADGE = { neon: ['#FBE29A', '#B07818'], sangtrong: ['#FFE680', '#E0A800'], tretrung: ['#FFC6E2', '#EC4899'], toigian: ['#FF9C8F', '#D92D20'] };
 // Huy hiệu icon cùng màu với cụm chữ (mau1.md: xanh/lá/hồng + màu gốc cam)
 const BADGE = { ...M1_BADGE, cam: ['#FFB38F', '#FF5A36'], xanh: ['#BFE0FF', '#1E88FF'], la: ['#BBF7D0', '#16A34A'], hong: ['#FFC6E2', '#EC4899'],
   vang: ['#FFF3A6', '#F2A900'], tim: ['#E3C6FF', '#9338FF'], do: ['#FF8A7A', '#C90F0B'] };
@@ -161,7 +162,8 @@ function keywordSprite(text, L, col, outline, S, shine) {
   const x = pad, y = pad + L.asc;
   g.font = L.font(L.big); g.textBaseline = 'alphabetic'; g.textAlign = 'left';
   const face = g.createLinearGradient(0, y - L.asc, 0, y + L.desc);
-  face.addColorStop(0, col[0]); face.addColorStop(1, col[1]);
+  face.addColorStop(0, col[0]);
+  if (col.length > 2) { face.addColorStop(0.5, col[1]); face.addColorStop(1, col[2]); } else face.addColorStop(1, col[1]);
   if (L.d3) {
     // khối đùn xuống dưới (hơi sang phải), tối dần
     const steps = Math.max(2, Math.round(L.depth * S));
@@ -234,7 +236,7 @@ export function drawMau1(ctx, p, x, y, lt, dur, k, maxW) {
     };
     // bóng đổ đậm vừa, gọn (không quầng)
     // Sang trọng (vàng tươi) bóng đậm hơn một chút cho nổi trên ảnh vệ tinh sáng
-    ctx.shadowColor = p.color === 'sangtrong' ? 'rgba(0,0,0,0.78)' : 'rgba(0,0,0,0.62)'; ctx.shadowBlur = L.big * 0.07; ctx.shadowOffsetY = L.big * 0.065;
+    ctx.shadowColor = p.color === 'sangtrong' || p.color === 'neon' ? 'rgba(0,0,0,0.78)' : 'rgba(0,0,0,0.62)'; ctx.shadowBlur = L.big * 0.07; ctx.shadowOffsetY = L.big * 0.065;
     if (u < 1) {
       const dy = -(1 - ease.out(u)) * L.big * 1.1;
       const a0 = clamp01(q / 0.07) * A;
