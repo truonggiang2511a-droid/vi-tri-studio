@@ -2,13 +2,12 @@
 // lúc giọng đọc nói giá, khoảng cách, phút, diện tích, pháp lý). Đang thử: CHỈ tài khoản admin bật (ô #mau1On), khách thường không đổi.
 // Dùng lại đúng đường đi của "từ khoá bật lên" (findKeywords → buildKeyPops → OCC né thẻ/ghim/chữ), chỉ thay phần hình:
 //   cụm chữ 3 tầng như Hook Kit (kit/hook_type.py "mau1" / "mau1_3d"): dòng dẫn nhỏ trắng canh trái · từ khoá RẤT TO · chữ ký tay
-//   canh phải đè lên đáy từ khoá; giá = Anton đỏ viền trắng, số chạy; con số = chữ khối 3D vàng; còn lại Anton xoay màu; vệt sáng lướt.
+//   canh phải đè lên đáy từ khoá; MỘT font Montserrat (Giang chốt 30/10): khối 3D đổi màu theo lượt, giá đỏ viền trắng số chạy; vệt sáng lướt.
 //   icon tròn chuyển sắc (kit/hook_mg.py Icon + disc_sprite): nảy vào, vòng lan, tia lấp lánh, vòng sáng quay, lơ lửng — bộ 63 icon y hệt.
 import { spring, ease, countUp } from './motion.js';
 import { MAU1_ICONS } from './mau1-icons.js';
 
 const clamp01 = v => Math.max(0, Math.min(1, v));
-const F_ANTON = '"Anton", "Montserrat", "Be Vietnam Pro", sans-serif';
 const F_3D = '"Montserrat", "Be Vietnam Pro", sans-serif';
 const F_THIN = '"Be Vietnam Pro", "Segoe UI", system-ui, sans-serif';
 const F_SIGN = '"Dancing Script", "Be Vietnam Pro", cursive';
@@ -21,7 +20,7 @@ const PAL_3D = { tim: ['#E9D6FF', '#8A2BEA'], vang: ['#FFF6B0', '#F0A800'], cam:
 const BADGE = { cam: ['#FFB38F', '#FF5A36'], xanh: ['#BFE0FF', '#1E88FF'], la: ['#BBF7D0', '#16A34A'], hong: ['#FFC6E2', '#EC4899'],
   vang: ['#FFF3A6', '#F2A900'], tim: ['#E3C6FF', '#9338FF'], do: ['#FF8A7A', '#C90F0B'] };
 
-// Phông Anton + Dancing Script chỉ tải khi bật mẫu 1 (không làm chậm app của khách)
+// Phông Dancing Script (chữ ký tay) chỉ tải khi bật mẫu 1 (không làm chậm app của khách)
 let fontJob = null;
 export function loadMau1Fonts() {
   if (fontJob) return fontJob;
@@ -30,12 +29,11 @@ export function loadMau1Fonts() {
       if (!document.getElementById('mau1Fonts')) {
         const l = document.createElement('link');
         l.id = 'mau1Fonts'; l.rel = 'stylesheet';
-        l.href = 'https://fonts.googleapis.com/css2?family=Anton&family=Dancing+Script:wght@600&display=swap';
+        l.href = 'https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=swap';
         document.head.appendChild(l);
         await new Promise(r => { l.onload = r; l.onerror = r; setTimeout(r, 4000); });
       }
       await Promise.race([Promise.all([
-        document.fonts.load('60px "Anton"', 'GIÁ BÁN 500 MÉT Ồ'),
         document.fonts.load('600 30px "Dancing Script"', 'Phường An Lạc ạ'),
         document.fonts.load('900 60px "Montserrat"', '500 M Ồ'),
         document.fonts.load('500 20px "Be Vietnam Pro"', 'Chỉ cách ạ'),
@@ -127,8 +125,8 @@ const shade = (hex, f) => { const n = parseInt(hex.slice(1), 16); return `rgb(${
 // Kích thước cụm (đơn vị khung logic) — dùng cho cả chọn chỗ đặt
 export function mau1Layout(ctx, p, k, maxW) {
   const d3 = p.look === '3d';
-  const font = s => (d3 ? `900 ${s}px ${F_3D}` : `${s}px ${F_ANTON}`);
-  let big = (d3 ? 70 : 84) * k * (p.kind === 'price' ? 1.06 : 1);
+  const font = s => `900 ${s}px ${F_3D}`; // 30/10 Giang chốt một font: Montserrat
+  let big = 70 * k * (p.kind === 'price' ? 1.06 : 1);
   ctx.font = font(big);
   const iw = p.icon ? 76 * k : 0;
   let bw = ctx.measureText(p.text).width;
@@ -197,7 +195,7 @@ export function drawMau1(ctx, p, x, y, lt, dur, k, maxW) {
   const A = 1 - out;
   if (A <= 0.01) return;
   const S = Math.max(1, ctx.getTransform().a);
-  const col = (L.d3 ? PAL_3D : PAL_ANTON)[p.color] || PAL_ANTON.cam;
+  const col = (L.d3 ? PAL_3D : PAL_ANTON)[p.color] || PAL_3D.vang;
   const kx = x + L.iw, base = y + L.thinH + L.asc;
   ctx.save();
   // thu nhỏ nhẹ lúc rút

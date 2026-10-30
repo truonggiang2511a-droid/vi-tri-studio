@@ -975,23 +975,22 @@ function capWeight(s) {
 // cùng cách chia như phụ đề (chữ số đọc lâu hơn, dấu câu có ngắt). Mỗi cảnh 1 từ khoá (cảnh căn nhà 2), cách nhau ≥ 1,8 s.
 const KEY_POPS = false;
 function charWeight(ch) { return 1 + (/\d/.test(ch) ? 2.5 : 0) + (/[.!?…]/.test(ch) ? 5 : /[,;:]/.test(ch) ? 3 : 0); }
-// Mẫu 1: màu + kiểu chữ theo loại từ khoá (Hook Kit mau1.md: giá đỏ Anton số chạy; con số khối 3D vàng; còn lại Anton xoay màu),
+// Mẫu 1: màu + kiểu chữ theo loại từ khoá (một font Montserrat: khối 3D đổi màu theo lượt; giá đỏ viền trắng số chạy),
 // icon theo đúng ý (tiện ích theo nhóm, trục đường, phút, diện tích, sổ…), chữ ký tay = tên nơi đang nói tới (dữ liệu thật)
 const M1_POI_ICON = { truong: 'school', yte: 'hospital', cho: 'cart', hanhchinh: 'bank', congvien: 'park', kcn: 'city', khudothi: 'city', giaothong: 'map', congcong: 'pin', nganhang: 'bank' };
-const M1_ROT_ANTON = ['cam', 'xanh', 'hong', 'la'], M1_ROT_3D = ['xanh', 'hong', 'la', 'tim'];
+const M1_ROT_3D_ALL = ['vang', 'xanh', 'hong', 'la', 'tim'];
 const shortName = s => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > 26 ? s.slice(0, 25).replace(/\s+\S*$/, '') + '…' : s; };
 function mau1Style(k, ph, ctx, n) {
   const sc = ctx.scene, poi = ph.type === 'poi' ? ctx.pois[ph.poi] : null, road = ph.type === 'road' ? ctx.roads[ph.road] : null;
   const place = poi ? shortName(poi.name) : road ? shortName(road.label)
     : ['intro', 'house', 'province', 'front'].includes(ph.type) ? shortName(sc.adminArea?.wardName || sc.commune || '') : '';
-  let icon = 'pin', color = 'vang', look = '3d';
-  if (k.kind === 'price') { icon = 'tag'; color = 'do'; look = 'anton'; }
-  else if (k.kind === 'size' || k.kind === 'area') { icon = n % 2 ? 'ruler' : 'area'; }
-  else if (k.kind === 'time') { icon = 'clock'; color = M1_ROT_3D[n % 4]; }
-  else if (k.kind === 'dist') {
-    if (n % 2) { look = 'anton'; color = M1_ROT_ANTON[(n >> 1) % 4]; } // xen kẽ 3D vàng / Anton xoay màu cho đỡ đơn điệu
-    icon = poi ? (M1_POI_ICON[poi.cat] || 'pin') : road ? (road.level >= 3 ? 'highway' : 'road') : ph.type === 'boundary' ? 'map' : 'pin';
-  } else { look = 'anton'; color = M1_ROT_ANTON[n % 4]; icon = k.kind === 'legal' ? 'cert' : k.kind === 'beds' ? 'bed' : k.kind === 'floors' ? 'floors' : 'star'; }
+  // 30/10 Giang chốt MỘT font: Montserrat — mọi cụm chữ khối 3D, đổi màu theo lượt; giá Montserrat đỏ viền trắng (phẳng, số chạy)
+  let icon = 'pin', color = M1_ROT_3D_ALL[n % M1_ROT_3D_ALL.length], look = '3d';
+  if (k.kind === 'price') { icon = 'tag'; color = 'do'; look = 'flat'; }
+  else if (k.kind === 'size' || k.kind === 'area') icon = n % 2 ? 'ruler' : 'area';
+  else if (k.kind === 'time') icon = 'clock';
+  else if (k.kind === 'dist') icon = poi ? (M1_POI_ICON[poi.cat] || 'pin') : road ? (road.level >= 3 ? 'highway' : 'road') : ph.type === 'boundary' ? 'map' : 'pin';
+  else icon = k.kind === 'legal' ? 'cert' : k.kind === 'beds' ? 'bed' : k.kind === 'floors' ? 'floors' : 'star';
   return { icon, color, look, sign: place, count: k.kind === 'price' };
 }
 export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null) {
