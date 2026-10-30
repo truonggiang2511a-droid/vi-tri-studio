@@ -11,7 +11,6 @@ import { stretchBuffer } from './stretch.js';
 import { parseCoordText, checkPolygon, convertLot, MERIDIANS, fmtMeridian } from './vn2000.js';
 import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4, unlockAudioContext } from './export.js';
 import { MOTION } from './motion.js';
-import { loadFxIcons, fxIconsReady } from './fx.js';
 import { processPlan, FULL_QUAD, planNeedsAlpha } from './planimg.js';
 import { onAccountChange, initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount } from './account.js';
 import { splitVoice, joinForTts, splitAt } from './voicesplit.js';
@@ -76,7 +75,6 @@ const state = {
   fxV: 2,            // 28/10: phiên bản mặc định 2 hiệu ứng trên (2 = bật)
   aiTone: '', // phong cách kịch bản AI — để trống, khách phải tự chọn trước khi tạo
   scriptMode: 'ai', // 'ai' = AI viết (mặc định, nổi bật) | 'mau' = kịch bản mẫu | 'tu' = tự viết/dán
-  director: null,   // 30/10 "Dựng theo kịch bản" (admin): {on, sents, assign[], fx[], missing[], poiOrder, roadOrder, keys, fxOn}
   scriptOwn: false, // lời đang có do khách tự gõ/sửa → hỏi trước khi AI/mẫu thay
   voSig: '', // lựa chọn (cách viết + phong cách) của lần tạo giọng gần nhất
   lotArea: '',       // diện tích hiển thị (trống = tự tính)
@@ -218,9 +216,6 @@ function bindSeg(id, onPick) {
 
 // ---------- Cảnh dựng ----------
 function selectedPois() {
-  // Dựng theo kịch bản: CHỈ các tiện ích kịch bản nhắc tới, đúng thứ tự câu nói (camera bay theo lời)
-  if (dirActive()) return state.director.poiOrder.map(id => state.pois.find(p => p.id === id)).filter(Boolean)
-    .map(p => ({ ...p, route: state.routes[p.id] || null, star: (state.stars || []).includes(p.id) }));
   return state.selected
     .map(id => state.pois.find(p => p.id === id))
     .filter(Boolean)
@@ -312,14 +307,6 @@ async function fillRoadGaps(onlyIds = null) {
 }
 function selectedRoads() {
   const hi = state.roadStars || [];
-  if (dirActive()) {
-    return state.director.roadOrder.map(id => {
-      const r = state.roads.find(x => x.id === id);
-      if (r) return { ...r, ways: stitchedWays(r), hi: hi.includes(r.id) };
-      const m = (state.myRoads || []).find(x => x.id === id && x.pts?.length > 1);
-      return m ? { ...myRoadObj(m), hi: hi.includes(m.id) } : null;
-    }).filter(Boolean);
-  }
   const mine = (state.myRoads || []).filter(m => m.pts?.length > 1 && state.selectedRoads.includes(m.id)).map(m => ({ ...myRoadObj(m), hi: hi.includes(m.id) }));
   return [...state.roads.filter(r => state.selectedRoads.includes(r.id)).map(r => ({ ...r, ways: stitchedWays(r), hi: hi.includes(r.id) })), ...mine];
 }
@@ -367,21 +354,21 @@ function buildScene() {
     speed: state.speed,
     pois: selectedPois(),
     roads: selectedRoads(),
-    iso: (dirActive() ? dirHas('iso') : state.showIso) && state.iso && state.iso.areas?.length ? state.iso : null,
+    iso: state.showIso && state.iso && state.iso.areas?.length ? state.iso : null,
     region: regionScene(),
-    boundary: (dirActive() ? dirHas('boundary') : state.useBoundary) && state.admin?.boundary ? { ...state.admin.boundary, route: state.routes.__ranh || null } : null,
+    boundary: state.useBoundary && state.admin?.boundary ? { ...state.admin.boundary, route: state.routes.__ranh || null } : null,
     provinceShort: state.admin?.provinceShort || '',
     commune: state.admin?.commune || '',
     titleSub: state.showTitle === false ? '' : state.sub,
     style: state.style,
     base: state.base,
-    flow: dirActive() ? 'lanluot' : state.flow, // dựng theo kịch bản: bay tới từng tiện ích đúng thứ tự lời
+    flow: state.flow,
     lot: state.lot && state.lot.length >= 3 ? state.lot : null,
     lotLabel: { text: state.lotText, area: state.lotArea },
     plan: planScene(),
     streets: state.streets || null,
     // 24/10 tối (Giang): cảnh xã/phường sáng lên + lùi ra cả tỉnh/thành MẶC ĐỊNH TẮT (như bản đầu), khách tick mới vẽ
-    adminArea: (dirActive() ? dirHas('province') : state.showAdminArea) && state.adminArea ? {
+    adminArea: state.showAdminArea && state.adminArea ? {
       ward: state.adminArea.ward, province: state.adminArea.province,
       wardName: (state.areaWard || '').trim() || state.adminArea.ward?.name || state.admin?.commune || '',
       provName: (state.areaProv || '').trim() || state.adminArea.province?.name || state.admin?.province || '',
@@ -428,8 +415,7 @@ function voicedTexts() {
 }
 function timelineOpts() {
   const vd = voiceDurations();
-  const fx = dirFxItems();
-  return vd ? { voice: vd, captions: captionTexts(), keyTexts: sceneMotion() ? voicedTexts() : null, fx } : { fitDuration: voiceFitDuration(), fx };
+  return vd ? { voice: vd, captions: captionTexts(), keyTexts: sceneMotion() ? voicedTexts() : null } : { fitDuration: voiceFitDuration() };
 }
 function voiceSegsFor(T) {
   if (!state.aiVoiceOn) return [];
@@ -1657,7 +1643,7 @@ function resetHouseScoped() {
     { const a = $('adminAreaOn'), b = $('sweepOn'); if (a) a.checked = true; if (b) b.checked = true; }
   }
   Object.assign(state, { areaWard: '', areaProv: '', areaFor: '', roadWidth: '', sub: '', lotText: '', lotArea: '',
-    scriptEdits: {}, scriptAi: false, scriptOwn: false, director: null, voSig: '', adminArea: null, admin: null, roadStars: [], roadFills: {}, iso: null, isoFor: '', region: null, regionFor: '', regionOff: [] });
+    scriptEdits: {}, scriptAi: false, scriptOwn: false, voSig: '', adminArea: null, admin: null, roadStars: [], roadFills: {}, iso: null, isoFor: '', region: null, regionFor: '', regionOff: [] });
   media.voiceSegs.clear();
   media.voiceCache.clear();
   media.mixKey = '';
@@ -2004,9 +1990,8 @@ function regionScene() {
   const R = state.region;
   if (!R) return null;
   const off = new Set(state.regionOff || []);
-  const D = dirActive();
-  const anchors = (D ? dirHas('region') : state.showRegion !== false) ? (R.anchors || []).filter(a => !off.has(a.id)) : [];
-  const infra = (D ? dirHas('infra') : state.showInfra !== false) ? (R.infra || []).filter(a => !off.has(a.id)) : [];
+  const anchors = state.showRegion !== false ? (R.anchors || []).filter(a => !off.has(a.id)) : [];
+  const infra = state.showInfra !== false ? (R.infra || []).filter(a => !off.has(a.id)) : [];
   return anchors.length || infra.length ? { anchors, infra } : null;
 }
 const HUB_ICON = { center: '🏙️', airport: '✈️', port: '⚓', station: '🚆', metro: '🚇' };
@@ -2381,7 +2366,7 @@ function scriptSegments() {
   ];
   // Trình tự: trung cảnh "Đây là vị trí … thuộc phường …" → cả tỉnh/thành → cận cảnh thông tin → bán kính
   const ward = wardName(), prov = provName();
-  const hasProvScene = !!((dirActive() ? dirHas('province') : state.showAdminArea) && state.adminArea?.province?.rings?.length && state.adminArea?.ward?.rings?.length);
+  const hasProvScene = !!(state.showAdminArea && state.adminArea?.province?.rings?.length && state.adminArea?.ward?.rings?.length);
   if (ward) {
     const head = price ? (generic ? `${tw} giá chỉ ${price}${near}. ` : `${nameSpeak(title)}, giá chỉ ${price}. `) : (generic ? '' : `${nameSpeak(title)}. `);
     add('intro', 'Mở đầu · xã/phường', head + pick([`Đây là vị trí ${twl} thuộc ${midSentence(ward)}.`, `Đây là vị trí ${twl}, nằm tại ${midSentence(ward)}.`], 1));
@@ -2416,7 +2401,7 @@ function scriptSegments() {
       `Đặc biệt, ${infraSpeak(a.label)} đang thi công, cách nhà khoảng ${kmSpeak(a.nearKm)}${b ? `, cùng ${infraSpeak(b.label)}` : ''}, kết nối khu vực sẽ còn mạnh hơn.`,
       `Điểm cộng lớn: ${infraSpeak(a.label)} đang được xây dựng, chỉ cách khoảng ${kmSpeak(a.nearKm)}${b ? `, thêm ${infraSpeak(b.label)}` : ''}.`], 5));
   }
-  if ((dirActive() ? dirHas('iso') : state.showIso) && state.iso?.areas?.length) {
+  if (state.showIso && state.iso?.areas?.length) {
     const mins = state.iso.areas.map(a => a.min).join(', ').replace(/, (\d+)$/, ' rồi $1');
     add('iso', 'Vùng lái xe', pick([`Từ ${twl}, lái xe ${mins} phút, anh chị đi được tới đâu, nhìn bản đồ là thấy ngay.`,
       `Đây là vùng lái xe ${mins} phút tính từ ${twl}, kết nối rất nhanh đi khắp khu vực.`], 3));
@@ -2434,7 +2419,7 @@ function scriptSegments() {
     add('road:' + r.id, nameSpeak(r.label), line);
   });
 
-  const b = (dirActive() ? dirHas('boundary') : state.useBoundary) && state.admin?.boundary;
+  const b = state.useBoundary && state.admin?.boundary;
   if (b) {
     const r = state.routes.__ranh;
     const where = b.short === 'TP.HCM' ? 'Thành phố Hồ Chí Minh' : b.short;
@@ -2803,259 +2788,19 @@ function pasteScriptApply() {
   if (!raw) { $('scrMsg').textContent = 'Dán kịch bản vào ô trên trước.'; return; }
   let parts = /\n\s*\n/.test(raw) ? raw.split(/\n\s*\n/) : raw.split('\n');
   parts = parts.map(x => x.replace(/\s*\n\s*/g, ' ').trim()).filter(Boolean);
+  const segs = scriptSegments();
   if (!confirmReplace('Chia bài vừa dán vào từng cảnh')) return;
-  if (state.director) { state.director = null; renderDirReport(); }
-  const segs2 = scriptSegments();
   const ed = {};
-  segs2.forEach((sg, i) => { ed[sg.key] = i < segs2.length - 1 ? (parts[i] || '') : parts.slice(i).join(' '); });
+  segs.forEach((sg, i) => { ed[sg.key] = i < segs.length - 1 ? (parts[i] || '') : parts.slice(i).join(' '); });
   state.scriptEdits = ed; state.scriptAi = false; state.scriptOwn = true;
   renderScript(); scheduleRebuild(); save();
-  $('scrMsg').textContent = parts.length === segs2.length
-    ? `Đã chia ${parts.length} đoạn vào ${segs2.length} cảnh. Kiểm tra từng cảnh bên dưới rồi bấm "Tạo giọng đọc" ở Bước 2.`
-    : parts.length < segs2.length
-      ? `Bài có ${parts.length} đoạn, video có ${segs2.length} cảnh: ${segs2.length - parts.length} cảnh cuối để trống (không đọc). Kiểm tra bên dưới rồi bấm "Tạo giọng đọc".`
-      : `Bài có ${parts.length} đoạn, video có ${segs2.length} cảnh: các đoạn dư đã gộp vào cảnh cuối. Kiểm tra bên dưới rồi bấm "Tạo giọng đọc".`;
+  $('scrMsg').textContent = parts.length === segs.length
+    ? `Đã chia ${parts.length} đoạn vào ${segs.length} cảnh. Kiểm tra từng cảnh bên dưới rồi bấm "Tạo giọng đọc" ở Bước 2.`
+    : parts.length < segs.length
+      ? `Bài có ${parts.length} đoạn, video có ${segs.length} cảnh: ${segs.length - parts.length} cảnh cuối để trống (không đọc). Kiểm tra bên dưới rồi bấm "Tạo giọng đọc".`
+      : `Bài có ${parts.length} đoạn, video có ${segs.length} cảnh: các đoạn dư đã gộp vào cảnh cuối. Kiểm tra bên dưới rồi bấm "Tạo giọng đọc".`;
   updateVoCard();
   nudgeVoice();
-}
-// ---------- 🎬 Dựng theo kịch bản (30/10/2026, Giang — đang thử, CHỈ tài khoản admin @vitristudio.com) ----------
-// Khách dán cả bài → /api/direct (Haiku) xếp TỪNG CÂU vào đúng cảnh (câu nói tiện ích nào → cảnh tiện ích đó, nói tỉnh/thành →
-// cảnh khoanh tỉnh…) + gợi ý chữ điểm nhấn / icon động / biểu đồ giá. AI không viết lại lời (chỉ trả số câu → khoá cảnh).
-// Video giữ trình tự khối cảnh cố định (mở đầu → tỉnh → căn nhà → bán kính → vùng/hạ tầng → trục đường → tiện ích → tổng kết → kết);
-// trong mỗi khối, tiện ích/trục đường xếp ĐÚNG thứ tự kịch bản nhắc tới và CHỈ có những điểm kịch bản nhắc tới.
-// Câu nói khác thứ tự khối thì được đọc sớm hơn cho khớp hình — báo rõ trong #dirReport.
-function directorOn() { return /@vitristudio\.com$/i.test(String(account.profile?.login || '')); }
-function dirActive() { return !!(state.director && state.director.on && state.scriptMode === 'tu' && directorOn()); }
-function dirHas(k) { return !!state.director?.keys?.includes(k); }
-// Tách câu: theo dòng và dấu . ! ? … (không tách số thập phân "3,5"/"1.2" hay "TP.HCM"); mảnh quá ngắn gộp vào câu trước
-function splitSentences(raw) {
-  const out = [];
-  for (const line of String(raw || '').replace(/\r/g, '').split(/\n+/)) {
-    const parts = line.trim().split(/(?<=[.!?…])\s+(?=[^\s])/u);
-    for (let p of parts) {
-      p = p.replace(/\s+/g, ' ').trim();
-      if (!p) continue;
-      if (out.length && p.split(' ').length < 3 && !/[.!?…]$/.test(out[out.length - 1])) out[out.length - 1] += ' ' + p;
-      else if (out.length && p.split(' ').length < 2) out[out.length - 1] += ' ' + p;
-      else out.push(p);
-    }
-  }
-  return out.slice(0, 80);
-}
-// Danh sách cảnh AI được chọn: mọi cảnh app CÓ DỮ LIỆU (kể cả tiện ích/trục đường chưa tick), để câu nhắc điểm nào thì có điểm đó
-function dirCatalog() {
-  const tw = TYPE_WORD[state.typeLabel] || 'Căn nhà', twl = tw.toLowerCase();
-  const scenes = [];
-  const add = (khoa, mo_ta, extra = {}) => scenes.push({ khoa, mo_ta, ...extra });
-  const ward = wardName(), prov = provName();
-  add('intro', `Mở đầu: ghim ${twl}${ward ? ', ' + ward + ' sáng lên' : ''} — câu móc, chào, giá, giới thiệu chung`);
-  if (prov && state.adminArea?.province?.rings?.length && state.adminArea?.ward?.rings?.length) add('province', `Khoanh vùng cả ${prov} sáng lên, chữ tên tỉnh/thành`);
-  add('house', `Cận cảnh ${twl}: diện tích, kích thước, pháp lý, số tầng, phòng ngủ, đường trước nhà, mô tả căn`);
-  add('overview', `Toàn cảnh bán kính ${String(state.radiusKm).replace('.', ',')} km quanh nhà — nói chung về tiện ích, khu xung quanh`);
-  const R = state.region;
-  if (R?.anchors?.length) add('region', 'Kết nối vùng: số phút lái xe tới ' + R.anchors.map(a => `${a.name} (${a.min} phút)`).join(', '));
-  if (R?.infra?.length) add('infra', 'Hạ tầng đang thi công gần nhà: ' + R.infra.map(r => r.label).join(', '));
-  if (state.iso?.areas?.length) add('iso', 'Vùng lái xe 5, 10, 15 phút quanh nhà');
-  if (state.admin?.boundary) add('boundary', 'Ranh giới sang ' + state.admin.boundary.short);
-  const mine = (state.myRoads || []).filter(m => m.pts?.length > 1).map(myRoadObj);
-  for (const r of [...state.roads, ...mine].slice(0, 36)) add('road:' + r.id, r.manual ? 'Đường nhỏ quanh nhà' : 'Trục đường', { ten: r.label + (r.alt ? ` (${r.alt})` : ''), cach_km: +(r.nearKm || 0).toFixed(2) });
-  const sel = new Set(state.selected);
-  const pois = state.pois.slice().sort((a, b) => (sel.has(b.id) - sel.has(a.id)) || a.km - b.km).slice(0, 110);
-  for (const p of pois) add('poi:' + p.id, 'Tiện ích', { ten: p.name, nhom: CATEGORIES[p.cat]?.label || '', cach_km: +((state.routes[p.id]?.km) || p.km).toFixed(2) });
-  add('summary', 'Tổng kết các tiện ích quanh nhà');
-  add('outro', `Kết: kêu gọi liên hệ, đi ${isLandType() ? 'xem đất' : 'xem nhà'}, số điện thoại, thương hiệu`);
-  const endClips = Math.max(0, media.clips.length - (hasFrontClip() ? 1 : 0));
-  if (endClips) add('reel', `Mời xem video thực tế ${realWord()}`);
-  if (media.photos.length) add('photos', `Ảnh thực tế ${realWord()}`);
-  return scenes;
-}
-let dirBusy = false;
-async function directApply() {
-  if (!directorOn() || dirBusy) return;
-  const raw = $('pasteScript').value.trim();
-  const sents = splitSentences(raw);
-  const msg = $('scrMsg');
-  if (!sents.length) { msg.textContent = 'Dán kịch bản vào ô trên trước.'; $('pasteScript').focus(); return; }
-  if (!state.house || (!state.pois.length && !state.roads.length)) { msg.textContent = 'Quét tiện ích căn này trước (bước 1–2), rồi mới dựng theo kịch bản.'; return; }
-  if (!confirmReplace('Dựng theo kịch bản')) return;
-  const btn = $('dirApply');
-  dirBusy = true; btn.disabled = true; btn.textContent = '🎬 AI đang dựng… (10–20 giây)';
-  try {
-    const facts = { loai_bds: TYPE_WORD[state.typeLabel] || 'Căn nhà', xa_phuong: wardName(), tinh_thanh: provName(),
-      gia: state.price || null, dien_tich: state.area || null, phap_ly: state.legal || null };
-    const res = await fetch('/api/direct', {
-      method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ sents, scenes: dirCatalog(), facts }),
-    });
-    const j = await res.json().catch(() => ({}));
-    if (!res.ok) { msg.textContent = 'Chưa dựng được: ' + (j.error || 'HTTP ' + res.status); return; }
-    let prev = 'intro';
-    const assign = sents.map((_, i) => (j.assign?.[i] ? (prev = j.assign[i]) : prev));
-    state.director = { on: true, sents, assign, fx: (j.fx || []).map((f, i) => ({ ...f, id: i })), missing: j.missing || [], fxOn: $('dirFxOn').checked, meta: j.meta || null };
-    state.scriptMode = 'tu';
-    dirFinalize();
-    msg.textContent = 'Đã dựng theo kịch bản. Xem bảng bên trên, sửa câu nào chưa ưng ngay trong danh sách, rồi bấm "Tạo giọng đọc" ở Bước 2.';
-    nudgeVoice();
-  } catch (e) {
-    msg.textContent = 'Chưa dựng được (' + e.message + '), lời hiện tại giữ nguyên.';
-  } finally { dirBusy = false; btn.disabled = false; btn.textContent = '🎬 AI dựng theo kịch bản đã dán'; }
-}
-// Từ kết quả xếp câu: thứ tự tiện ích/trục đường, các khối cảnh có lời, tick thêm điểm kịch bản nhắc tới, chia lời vào cảnh
-function dirFinalize() {
-  const d = state.director;
-  const uniq = a => [...new Set(a)];
-  const poiIds = new Set(state.pois.map(p => p.id));
-  const roadIds = new Set([...state.roads.map(r => r.id), ...(state.myRoads || []).filter(m => m.pts?.length > 1).map(m => m.id)]);
-  d.poiOrder = uniq(d.assign.filter(k => k.startsWith('poi:')).map(k => k.slice(4))).filter(id => poiIds.has(id)).slice(0, 14);
-  d.roadOrder = uniq(d.assign.filter(k => k.startsWith('road:')).map(k => k.slice(5))).filter(id => roadIds.has(id)).slice(0, 8);
-  d.keys = uniq(d.assign.map(k => k.split(':')[0]));
-  // điểm kịch bản nhắc tới mà chưa tick → tick thêm (để có đường đi thật); quá MAX_POIS thì vẫn hiện, line là đường thẳng
-  for (const id of d.poiOrder) if (!state.selected.includes(id) && state.selected.length < MAX_POIS) state.selected.push(id);
-  for (const id of d.roadOrder) if (!state.selectedRoads.includes(id)) state.selectedRoads.push(id);
-  // khoá không có cảnh tương ứng (vd. tổng kết khi không có tiện ích) → dồn vào cảnh của câu trước
-  const segs = scriptSegments();
-  const valid = new Set(segs.map(x => x.key));
-  let prev = 'intro';
-  d.assign = d.assign.map(k => (valid.has(k) ? (prev = k) : prev));
-  const ed = {};
-  for (const sg of segs) ed[sg.key] = '';
-  d.assign.forEach((k, i) => { ed[k] = (ed[k] ? ed[k] + ' ' : '') + d.sents[i]; });
-  state.scriptEdits = ed; state.scriptAi = false; state.scriptOwn = true;
-  queueRoutes();
-  renderLists();
-  renderScript(); scheduleRebuild(); save();
-  renderDirReport();
-  updateVoCard();
-}
-function dirOff() {
-  if (!state.director) return;
-  state.director.on = false;
-  renderLists(); renderScript(); scheduleRebuild(); save(); renderDirReport(); updateVoCard();
-  $('scrMsg').textContent = 'Đã tắt dựng theo kịch bản: video quay lại các tiện ích đã tick và cách hiện cũ. Lời đã chia vẫn giữ.';
-}
-const FX_WORD = { text: 'Chữ', icon: 'Icon', chart: 'Biểu đồ', growth: 'Tăng trưởng' };
-function renderDirReport() {
-  const box = $('dirReport'), off = $('dirOff');
-  if (!box) return;
-  const d = state.director;
-  if (!d || !d.on) { box.innerHTML = ''; if (off) off.hidden = true; return; }
-  off.hidden = false;
-  const segs = scriptSegments();
-  const order = Object.fromEntries(segs.map((x, i) => [x.key, i]));
-  const label = Object.fromEntries(segs.map(x => [x.key, x.label]));
-  const cut = s => (s.length > 46 ? s.slice(0, 44) + '…' : s);
-  const moved = [];
-  let mx = -1;
-  d.assign.forEach((k, i) => { const o = order[k] ?? 0; if (o < mx) moved.push(`Câu ${i + 1} «${esc(cut(d.sents[i]))}» đọc sớm hơn để khớp cảnh ${esc(label[k] || k)}`); mx = Math.max(mx, o); });
-  const nScenes = new Set(d.assign).size;
-  const cnt = {};
-  for (const f of d.fx) if (!f.off) cnt[f.type] = (cnt[f.type] || 0) + 1;
-  const fxTxt = Object.entries(cnt).map(([t, n]) => `${n} ${FX_WORD[t].toLowerCase()}`).join(', ');
-  const fxBtns = d.fx.map(f => {
-    const what = f.type === 'chart' ? (f.points || []).map(p => p.label + ' ' + p.value).join(' → ') : f.text || f.icon;
-    return `<button type="button" data-fx="${f.id}" class="${f.off ? 'off' : ''}" title="Bấm để bỏ/bật lại">${FX_WORD[f.type]} · câu ${f.cau + 1}: ${esc(cut(String(what || '')))}</button>`;
-  }).join('');
-  box.innerHTML = `<div class="dir-sum">✓ ${d.sents.length} câu → ${nScenes} cảnh${fxTxt ? ` · ${fxTxt}` : ''}${d.fxOn === false ? ' (đang tắt hiệu ứng)' : ''}</div>`
-    + (d.missing || []).map(m => `<div class="dir-warn">⚠️ Câu ${m.cau + 1} nhắc «${esc(m.ten)}» nhưng app chưa có điểm này — thêm ở bước 2 ("Thiếu tiện ích?") rồi bấm dựng lại.</div>`).join('')
-    + moved.map(t => `<div class="dir-warn">↕️ ${t}</div>`).join('')
-    + (d.poiOrder.length > MAX_POIS ? `<div class="dir-warn">Kịch bản nhắc ${d.poiOrder.length} tiện ích (quá ${MAX_POIS}): các điểm sau vẽ đường thẳng.</div>` : '')
-    + (fxBtns ? `<div class="dir-fx">${fxBtns}</div>` : '');
-}
-// Mốc thời gian thật trong giọng: khoảng lặng ≥ 140 ms (chỗ ngắt câu/dấu phẩy) — dùng làm mốc cho dấu câu trong lời
-const marksCache = new WeakMap();
-function speechMarks(buf) {
-  if (marksCache.has(buf)) return marksCache.get(buf);
-  const x = buf.getChannelData(0), sr = buf.sampleRate, W = Math.max(1, Math.round(sr * 0.02));
-  const rms = [];
-  for (let i = 0; i + W <= x.length; i += W) { let s2 = 0; for (let j = i; j < i + W; j++) s2 += x[j] * x[j]; rms.push(Math.sqrt(s2 / W)); }
-  const thr = Math.max(0.004, Math.max(...rms, 0) * 0.08);
-  let a = rms.findIndex(v => v > thr), b = rms.length - 1;
-  while (b > 0 && rms[b] <= thr) b--;
-  if (a < 0) a = 0;
-  const pauses = [];
-  for (let i = a, run = -1; i <= b; i++) {
-    if (rms[i] <= thr) { if (run < 0) run = i; }
-    else if (run >= 0) { if (i - run >= 7) pauses.push({ a: run * 0.02, b: i * 0.02 }); run = -1; }
-  }
-  const m = { start: a * 0.02, end: (b + 1) * 0.02, pauses };
-  marksCache.set(buf, m);
-  return m;
-}
-function chW(ch) { return 1 + (/\d/.test(ch) ? 2.5 : 0); }
-// Giây (tính từ đầu giọng của cảnh) lúc đọc tới ký tự thứ ci của lời cảnh
-function anchorTime(buf, text, ci) {
-  const M = speechMarks(buf);
-  const cs = Array.from(text);
-  const wAt = n => { let w = 0; for (let i = 0; i < n && i < cs.length; i++) w += chW(cs[i]); return w; };
-  const totW = wAt(cs.length) || 1;
-  const pts = [[0, M.start]];
-  // ước lượng thời điểm từng dấu câu rồi ghép với khoảng lặng gần nhất (theo thứ tự)
-  const span = M.end - M.start;
-  let used = -1;
-  for (let i = 0; i < cs.length - 1; i++) {
-    if (!/[.,!?;:…]/.test(cs[i]) || !/\s/.test(cs[i + 1] || '')) continue;
-    const est = M.start + span * (wAt(i + 1) / totW);
-    let best = -1, bd = 0.9;
-    for (let k = used + 1; k < M.pauses.length; k++) { const mid = (M.pauses[k].a + M.pauses[k].b) / 2, dd = Math.abs(mid - est); if (dd < bd) { bd = dd; best = k; } }
-    if (best >= 0) { pts.push([i + 1, M.pauses[best].a], [i + 2, M.pauses[best].b]); used = best; }
-  }
-  pts.push([cs.length, M.end]);
-  for (let k = 1; k < pts.length; k++) {
-    if (ci <= pts[k][0]) {
-      const [c0, t0] = pts[k - 1], [c1, t1] = pts[k];
-      const w0 = wAt(c0), w1 = wAt(c1);
-      return t0 + (t1 - t0) * (w1 > w0 ? (wAt(Math.max(c0, Math.min(c1, ci))) - w0) / (w1 - w0) : 0);
-    }
-  }
-  return M.end;
-}
-// Hiệu ứng cho timeline: vkey + thời điểm (giây trong giọng của cảnh, hoặc tỉ lệ cảnh khi chưa có giọng)
-function dirFxItems() {
-  if (!dirActive() || state.director.fxOn === false || !state.director.fx?.length) return null;
-  if (!fxIconsReady()) loadFxIcons().then(ok => { if (ok) dirty = true; });
-  const d = state.director;
-  const segBy = Object.fromEntries(scriptSegments().map(x => [x.key, x]));
-  const out = [];
-  for (const f of d.fx) {
-    if (f.off) continue;
-    const key = d.assign[f.cau], sg = segBy[key], sent = d.sents[f.cau];
-    if (!sg || !sent) continue;
-    const base = sg.text.indexOf(sent);
-    if (base < 0) continue; // khách đã sửa câu này sau khi dựng → bỏ hiệu ứng của câu
-    const ai = f.neo ? sent.toLowerCase().indexOf(f.neo.toLowerCase()) : -1;
-    const ci = base + (ai >= 0 ? ai + Math.min(4, f.neo.length * 0.3) : sent.length * 0.4);
-    const buf = state.aiVoiceOn ? voiceBuf(sg) : null;
-    const cs = Array.from(sg.text), tot = cs.reduce((a, ch) => a + chW(ch), 0) || 1;
-    let w = 0; for (let i = 0; i < ci && i < cs.length; i++) w += chW(cs[i]);
-    const text = f.type === 'text' || f.type === 'growth' ? String(f.text || '').toUpperCase() : '';
-    const tAt = c => (buf ? anchorTime(buf, sg.text, c) : undefined);
-    const fracAt = c => { let x = 0; for (let i = 0; i < c && i < cs.length; i++) x += chW(cs[i]); return x / tot; };
-    let at = tAt(ci), frac = w / tot, stag = null;
-    // Biểu đồ: hiện lúc giọng nói tới mốc ĐẦU (vd. "Năm 2022 … 90 triệu"), từng cột mọc lên đúng lúc nói tới con số của nó
-    if (f.type === 'chart' && f.points?.length) {
-      const low = sent.toLowerCase();
-      let from = 0;
-      const pos = f.points.map(p => {
-        const v = String(p.value).replace('.', ',');
-        let i = low.indexOf(v, from);
-        if (i < 0) i = low.indexOf(String(p.label || '').toLowerCase(), from);
-        if (i >= 0) from = i + 1;
-        return i >= 0 ? base + i + Math.min(2, v.length) : null;
-      });
-      if (pos[0] != null) {
-        at = tAt(pos[0]) != null ? tAt(pos[0]) - 0.3 : undefined; frac = fracAt(pos[0]);
-        if (buf) stag = pos.map(c => (c == null ? null : Math.max(0, tAt(c) - at - 0.35)));
-      }
-    }
-    out.push({ vkey: key, type: f.type, text, kicker: f.kicker || '', icon: f.icon || '', points: f.points || null, unit: f.unit || '', title: f.title || '', stag,
-      kind: /tỷ|tỉ|triệu/i.test(text) ? 'price' : '', at, frac });
-  }
-  return out.length ? out : null;
-}
-function syncDirBox() {
-  const b = $('dirBox');
-  if (b) b.hidden = !directorOn();
-  renderDirReport();
 }
 // Bước 2 · 🎙️ tạo giọng: chỉ đọc lời đang có
 async function voiceOnly() {
@@ -3596,7 +3341,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'showTitle', 'brand', 'phone', 'price', 'area', 'beds', 'legal', 'highlights', 'buyer',
-  'scriptSeed', 'scriptEdits', 'scriptAi', 'scriptOwn', 'aiTone', 'scriptMode', 'director', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'myRoads', 'plan', 'planOn', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'lotStyle', 'lotColor', 'lotSrc', 'lotDims', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'scriptOwn', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'myRoads', 'plan', 'planOn', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'lotStyle', 'lotColor', 'lotSrc', 'lotDims', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -4865,18 +4610,6 @@ function init() {
   $('aiWriteBtn').addEventListener('click', () => aiWrite());
   $('mauApply').addEventListener('click', useSample);
   $('pasteApply').addEventListener('click', pasteScriptApply);
-  $('dirApply').addEventListener('click', directApply);
-  $('dirOff').addEventListener('click', dirOff);
-  $('dirFxOn').checked = state.director?.fxOn !== false;
-  $('dirFxOn').addEventListener('change', e => { if (state.director) { state.director.fxOn = e.target.checked; save(); scheduleRebuild(); renderDirReport(); } });
-  $('dirReport').addEventListener('click', e => {
-    const b = e.target.closest('[data-fx]');
-    const f = b && state.director?.fx?.find(x => String(x.id) === b.dataset.fx);
-    if (!f) return;
-    f.off = !f.off; save(); scheduleRebuild(); renderDirReport();
-  });
-  onAccountChange(() => { syncDirBox(); if (state.director?.on) { renderLists(); renderScript(); scheduleRebuild(); } });
-  syncDirBox();
   $('phoneInput').value = state.phone || '';
   $('phoneInput').addEventListener('input', e => { state.phone = e.target.value; renderScript(); scheduleRebuild(); });
   $('ttsBtn').addEventListener('click', voiceOnly);

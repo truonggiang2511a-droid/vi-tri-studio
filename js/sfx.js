@@ -107,17 +107,6 @@ export function sfxEvents(tl) {
     add(k.t + 0.02, 'pop', k.kind === 'price' ? 0.6 : 0.42);
     if (k.kind === 'price') add(k.t + 0.12, 'ding', 0.4);
   }
-  // Hiệu ứng theo kịch bản (js/fx.js, chế độ Dựng theo kịch bản): pop khi chữ/icon bật; biểu đồ: whoosh + tick từng cột + ding
-  for (const f of tl.fx || []) {
-    if (f.type === 'chart') {
-      add(f.t + 0.02, 'whoosh', 0.35, 0.9);
-      const bt = i => 0.35 + (f.stag && Number.isFinite(f.stag[i]) ? Math.max(i * 0.25, f.stag[i]) : i * 0.32); // khớp drawChart (js/fx.js)
-      const n = (f.points || []).length;
-      for (let i = 0; i < n; i++) add(f.t + bt(i), 'tick', 0.3);
-      if (n) add(f.t + bt(n - 1) + 0.2, 'ding', 0.4);
-    } else if (f.type === 'growth') { add(f.t + 0.05, 'pop', 0.38); add(f.t + 0.9, 'ding', 0.32); }
-    else add(f.t + 0.03, 'pop', f.type === 'icon' ? 0.34 : 0.4);
-  }
   // Radar quét bán kính: tiếng "ping" sonar mỗi vòng quét + tiếng ù radar quay vòng.
   // Thời điểm khớp với tia quét trong render.js (bắt đầu ở hướng 12 giờ, 1,25 giây một vòng)
   const ov = ph.find(x => x.type === 'overview'), rp = ph.find(x => x.type === 'radar'), sm = ph.find(x => x.type === 'summary');

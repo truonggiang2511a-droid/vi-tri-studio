@@ -5,7 +5,6 @@ import { project, unproject, haversineKm, metersPerPixel, formatKm, fitZoom } fr
 import { drawIcon } from './icons.js';
 import { CATEGORIES, iconOf } from './data.js';
 import { motionHook, motionTitle, keyPop, keyPopBox, findKeywords } from './motion.js';
-import { drawFx, buildFx } from './fx.js';
 
 export const BASE_FONT = '"Be Vietnam Pro", "Segoe UI", system-ui, sans-serif';
 // Chữ tên xã/phường, tỉnh/thành: Montserrat đậm, to rộng
@@ -908,8 +907,6 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   tl.hookEnd = hook ? tl.hookPh.t0 + tl.hookPh.hookLen : 0;
   // 25/10 22:07 Giang: BỎ từ khoá bật lên theo giọng đọc (giữ code, đổi KEY_POPS = true để bật lại)
   tl.keyPops = KEY_POPS && scene.motion && opts.keyTexts && vd ? buildKeyPops(phases, opts.keyTexts, vd, (tl.hookEnd || 0) + 0.4) : [];
-  // 30/10 (Giang, chế độ "Dựng theo kịch bản" — chỉ admin): chữ điểm nhấn, icon động, biểu đồ giá theo từng câu kịch bản (js/fx.js)
-  tl.fx = opts.fx && opts.fx.length ? buildFx(phases, opts.fx, vd, (tl.hookEnd || 0) + 0.3) : [];
   // Có video thực tế: đoạn đầu làm nền chuyển động cho thẻ giá mở đầu (ưu tiên hơn ảnh tĩnh)
   // Đoạn mặt tiền chiếu toàn khung suốt cảnh mở đầu `front` (thẻ giá nếu có đè lên 2,2 s đầu)
   const fp = first('front');
@@ -3059,7 +3056,7 @@ function drawHiWall(ctx, P, v, W, t, LW, LH) {
 }
 
 export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
-  OCC = (tl.keyPops && tl.keyPops.length) || (tl.fx && tl.fx.length) ? [] : null; OCC_CTX = ctx;
+  OCC = tl.keyPops && tl.keyPops.length ? [] : null; OCC_CTX = ctx;
   useStyle(tl.scene.style);
   useHiTheme(tl.scene.hiTheme);
   useBase(tl.scene.base);
@@ -4251,7 +4248,6 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   if (capL && capA > 0.01) occBox(ctx, capL.x, capL.y, capL.x + capL.w, capL.y + capL.h);
   OCC_CTX = null;
   drawKeyPops(ctx, tl, t);
-  drawFx(ctx, tl, t, OCC);
   OCC = null;
   drawHook(ctx, tl, t);
   drawBars(ctx, tl, t);

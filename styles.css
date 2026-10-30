@@ -925,15 +925,3 @@ html.fs-lock, html.fs-lock body { overflow: hidden; }
 .stage.fs .transport { padding: 0 12px 6px; color: #fff; }
 .stage.fs .transport .chip-btn, .stage.fs .lot-bar, .stage.fs .plan-bar, .stage.fs .look-pick, .stage.fs .buy-nudge { display: none !important; }
 .stage.fs:fullscreen { width: 100vw; height: 100vh; }
-
-/* Dựng theo kịch bản (admin, thử nghiệm) */
-.dir-box { margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--accent); border-radius: 12px; display: grid; gap: 8px; min-width: 0; }
-.dir-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-.dir-tag { font-size: 11px; padding: 2px 8px; border-radius: 99px; background: rgba(255,200,80,.16); color: var(--accent); white-space: nowrap; }
-.dir-report { display: grid; gap: 6px; font-size: 13px; min-width: 0; }
-.dir-report:empty { display: none; }
-.dir-sum { font-weight: 600; }
-.dir-warn { color: #ffb15c; overflow-wrap: anywhere; }
-.dir-fx { display: flex; flex-wrap: wrap; gap: 6px; }
-.dir-fx button { font: inherit; font-size: 12px; padding: 3px 8px; border-radius: 99px; border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.06); color: inherit; cursor: pointer; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dir-fx button.off { opacity: .45; text-decoration: line-through; }
