@@ -57,6 +57,9 @@ export function sfxEvents(tl) {
             add(s0 + 0.04 * sw, 'shimmer', 0.26, (sh.move - 0.04) * sw);
             add(s0 + sh.move * sw, 'pop', 0.42);
           }
+          // 30/10: máy bay cất cánh (tiếng động cơ phản lực lớn dần) · đoàn tàu metro chạy vào ga (ầm ray + chuông vào ga)
+          if (sh.fx === 'plane') add(s0 + 0.06 * sw, 'jet', 0.75, 1.05 * sw);
+          if (sh.fx === 'train') { add(s0 + 0.04 * sw, 'rail', 0.5, 0.8 * sw); add(s0 + 0.82 * sw, 'ding', 0.32); }
         }
         break;
       }
@@ -196,6 +199,38 @@ const SYNTH = {
     lp.frequency.exponentialRampToValueAtTime(1100, t + dur * 0.5);
     lp.frequency.exponentialRampToValueAtTime(220, t + dur);
     s2.connect(lp).connect(env(ctx, t, g * 0.9, dur * 0.5, dur)).connect(panner(ctx, 0.4, -0.4, t, dur)).connect(out);
+  },
+  // Máy bay cất cánh: tiếng gầm trầm (lọc thấp mở dần) + tiếng rít động cơ (dải giữa) lên cao, lia trái → phải
+  jet(ctx, out, t, g, dur = 3) {
+    dur = Math.max(1, Math.min(8, dur));
+    const s = noiseSrc(ctx, t, dur);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.7;
+    lp.frequency.setValueAtTime(180, t); lp.frequency.exponentialRampToValueAtTime(900, t + dur * 0.7); lp.frequency.exponentialRampToValueAtTime(400, t + dur);
+    const e = ctx.createGain();
+    e.gain.setValueAtTime(0.0001, t); e.gain.exponentialRampToValueAtTime(g, t + dur * 0.55); e.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(lp).connect(e).connect(panner(ctx, -0.5, 0.6, t, dur)).connect(out);
+    const s2 = noiseSrc(ctx, t, dur);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 6;
+    bp.frequency.setValueAtTime(1400, t); bp.frequency.exponentialRampToValueAtTime(3200, t + dur * 0.8);
+    const e2 = ctx.createGain();
+    e2.gain.setValueAtTime(0.0001, t); e2.gain.exponentialRampToValueAtTime(g * 0.22, t + dur * 0.6); e2.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s2.connect(bp).connect(e2).connect(out);
+  },
+  // Tàu chạy trên ray: tiếng ầm trầm + nhịp "cạch cạch" qua mối ray chậm dần khi tàu vào ga
+  rail(ctx, out, t, g, dur = 2.5) {
+    dur = Math.max(0.8, Math.min(6, dur));
+    const s = noiseSrc(ctx, t, dur);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420; lp.Q.value = 1.2;
+    s.connect(lp).connect(env(ctx, t, g * 0.8, dur * 0.25, dur)).connect(out);
+    let x = t + 0.1, gap = 0.16;
+    while (x < t + dur - 0.1) {
+      for (const dd of [0, 0.07]) {
+        const c = noiseSrc(ctx, x + dd, 0.05);
+        const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 3;
+        c.connect(bp).connect(env(ctx, x + dd, g * 0.35, 0.003, 0.05)).connect(out);
+      }
+      x += gap; gap *= 1.12;
+    }
   },
   // "ping" sonar: tiếng chuông kim loại trong + vang lặp lại nhỏ dần (như màn hình radar)
   sonar(ctx, out, t, g) {

@@ -1,6 +1,6 @@
 // Điều khiển giao diện: nhập toạ độ → quét → chọn → xem trước → xuất video.
 import { parseCoords, haversineKm, formatKm } from './geo.js';
-import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, placesNear, guessCategory, stitchWays, bridgeWays, localFrame, pickHubs, loadInfra, simplifyLine } from './data.js';
+import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, placesNear, guessCategory, stitchWays, bridgeWays, localFrame, pickHubs, loadInfra, simplifyLine, loadHubFx } from './data.js';
 import { ICON_PATHS } from './icons.js';
 import {
   FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, HI_THEMES, LOT_STYLES, LOT_COLORS, STYLES, BASES,
@@ -2016,13 +2016,43 @@ async function loadRegion(force = false) {
     renderRegion();
     save();
     scheduleRebuild();
+    ensureHubFx();
   } catch { /* để lần sau */ } finally { if (regionJob === k) { regionJob = ''; renderRegion(); } }
+}
+// 30/10 (Giang): hiệu ứng điểm mốc — sân bay khoanh ranh sáng + máy bay cất cánh, ga metro có đoàn tàu chạy trên tuyến.
+// ĐANG DUYỆT: chỉ tài khoản @vitristudio.com hoặc ?hubfx=1 (nhớ trên máy, ?hubfx=0 tắt). Khách thường: dữ liệu không tải, video y như cũ.
+function hubFxOn() {
+  try {
+    const q = new URLSearchParams(location.search).get('hubfx');
+    if (q === '1' || q === '0') localStorage.setItem('vitri.hubfx', q);
+    const v = localStorage.getItem('vitri.hubfx');
+    if (v === '1') return true;
+    if (v === '0') return false;
+  } catch { /* bỏ qua */ }
+  return /@vitristudio\.com$/i.test(String(account.profile?.login || ''));
+}
+let hubFxJob = '';
+async function ensureHubFx() {
+  const R = state.region;
+  if (!hubFxOn() || !R || !R.anchors) return;
+  const need = R.anchors.filter(a => (a.type === 'airport' || a.type === 'metro') && a.fx === undefined);
+  const key = state.regionFor + '|' + need.map(a => a.id).join(',');
+  if (!need.length || hubFxJob === key) return;
+  hubFxJob = key;
+  try {
+    const res = await Promise.all(need.map(a => loadHubFx(a).catch(() => undefined)));
+    if (state.region !== R) return;
+    need.forEach((a, i) => { if (res[i] !== undefined) a.fx = res[i]; });
+    save();
+    scheduleRebuild();
+  } finally { if (hubFxJob === key) hubFxJob = ''; }
 }
 function regionScene() {
   const R = state.region;
   if (!R) return null;
   const off = new Set(state.regionOff || []);
-  const anchors = state.showRegion !== false ? (R.anchors || []).filter(a => !off.has(a.id)) : [];
+  const fxOn = hubFxOn();
+  const anchors = state.showRegion !== false ? (R.anchors || []).filter(a => !off.has(a.id)).map(a => (fxOn || !a.fx ? a : { ...a, fx: undefined })) : [];
   const infra = state.showInfra !== false ? (R.infra || []).filter(a => !off.has(a.id)) : [];
   return anchors.length || infra.length ? { anchors, infra } : null;
 }
@@ -4357,6 +4387,7 @@ function init() {
   if (state.scannedAt && state.house && !state.sample) setTimeout(() => loadIso(), 2000);
   renderRegion();
   if (state.scannedAt && state.house && !state.region) setTimeout(() => loadRegion(), 2600);
+  setTimeout(() => ensureHubFx(), 1800); // căn cũ / video mẫu: lấy ranh sân bay, tuyến metro nếu chưa có
   $('regionBox').addEventListener('change', e => {
     const el = e.target;
     if (el.id === 'regionOn') state.showRegion = el.checked;
@@ -4558,7 +4589,7 @@ function init() {
     state.keyLook = e.target.checked ? 'mau1' : ''; save(); media.mixKey = ''; scheduleRebuild(); prepMau1();
     if (e.target.checked && !voiceDurations()) toast('Chữ điểm nhấn hiện theo giọng đọc — tạo giọng ở mục ③ để thấy.', 3500);
   });
-  onAccountChange(() => { syncMau1Row(); scheduleRebuild(); });
+  onAccountChange(() => { syncMau1Row(); ensureHubFx(); scheduleRebuild(); });
   syncMau1Row();
   for (const [id, key] of [['areaWardInput', 'areaWard'], ['areaProvInput', 'areaProv'], ['roadWidthInput', 'roadWidth']]) {
     $(id).value = state[key] || '';

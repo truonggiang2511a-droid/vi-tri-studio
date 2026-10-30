@@ -1369,3 +1369,114 @@ export function simplifyLine(pts, tolKm = 0.015) {
   const F = localFrame({ lat: pts[0][0], lng: pts[0][1] });
   return simplify(pts, F, tolKm).map(p => [Math.round(p[0] * 1e5) / 1e5, Math.round(p[1] * 1e5) / 1e5]);
 }
+
+// ---------- Hiệu ứng điểm mốc (30/10, Giang): ranh + đường băng sân bay, tuyến metro quanh ga ----------
+// Lấy từ ô bản đồ OpenFreeMap (OpenStreetMap). Sân bay: lớp aeroway class aerodrome (đa giác) + runway (đường) ở z11
+// (một ô ~20 km, đủ chứa cả sân bay). Đa giác có thể bị cắt ở mép ô → mỗi mảnh lưu khung ô `bb` (tô màu trong khung đó)
+// và các cạnh nằm trên mép ô `cut` (không vẽ viền ở đó). Metro: lớp transportation class transit (subway/light_rail)
+// chỉ có ở z14 → lấy các ô trong 1,6 km quanh ga, nối thành tuyến, cắt trong 1,5 km.
+function tilesAround(c, z, km) {
+  const dLat = km / 111.32, dLng = km / (111.32 * Math.cos(c.lat * Math.PI / 180));
+  const a = project(c.lat + dLat, c.lng - dLng, z), b = project(c.lat - dLat, c.lng + dLng, z);
+  const out = [];
+  for (let x = Math.floor(a.x / 256); x <= Math.floor(b.x / 256); x++) for (let y = Math.floor(a.y / 256); y <= Math.floor(b.y / 256); y++) out.push([x, y]);
+  return out;
+}
+async function airportFx(a, tpl, signal) {
+  const z = 11, F = localFrame(a);
+  const parts = [], runways = new Map();
+  await Promise.all(tilesAround(a, z, 4).map(async ([x, y]) => {
+    const buf = await fetchTile(tpl, z, x, y, signal).catch(e => { if (signal?.aborted) throw e; return null; });
+    if (!buf) return;
+    const L = new VectorTile(new Pbf(buf)).layers.aeroway;
+    if (!L) return;
+    const ext = L.extent;
+    const conv = pt => { const ll = unproject((x + pt.x / ext) * 256, (y + pt.y / ext) * 256, z); return [Math.round(ll.lat * 1e6) / 1e6, Math.round(ll.lng * 1e6) / 1e6]; };
+    const n = unproject(x * 256, y * 256, z), s = unproject((x + 1) * 256, (y + 1) * 256, z);
+    const bb = [n.lat, s.lat, n.lng, s.lng];
+    const side = p => (p.x <= 0 ? 1 : p.x >= ext ? 2 : 0) | (p.y <= 0 ? 4 : p.y >= ext ? 8 : 0);
+    for (let i = 0; i < L.length; i++) {
+      const f = L.feature(i), cls = f.properties.class;
+      if (cls === 'aerodrome' && f.type === 3) {
+        for (const ring of f.loadGeometry()) {
+          if (ring.length < 4) continue;
+          const pts = ring.map(conv);
+          // chỉ lấy sân bay chứa điểm mốc hoặc sát nó (≤ 3 km)
+          const xy = pts.map(F.xy);
+          let inside = false, dmin = Infinity;
+          for (let j = 0, k = xy.length - 1; j < xy.length; k = j++) {
+            const [xi, yi] = xy[j], [xk, yk] = xy[k];
+            if ((yi > 0) !== (yk > 0) && 0 < (xk - xi) * (0 - yi) / (yk - yi) + xi) inside = !inside;
+            dmin = Math.min(dmin, Math.hypot(xi, yi));
+          }
+          if (!inside && dmin > 3) continue;
+          const cut = [];
+          for (let j = 0; j + 1 < ring.length; j++) { const s1 = side(ring[j]), s2 = side(ring[j + 1]); if (s1 & s2) cut.push(j); }
+          parts.push({ bb, pts, cut });
+        }
+      } else if (cls === 'runway' && f.type === 2) {
+        const ref = f.properties.ref || 'rw' + i;
+        const r = runways.get(ref) || [];
+        for (const line of f.loadGeometry()) for (const q of line) if (q.x >= 0 && q.x <= ext && q.y >= 0 && q.y <= ext) r.push(conv(q));
+        runways.set(ref, r);
+      }
+    }
+  }));
+  if (!parts.length) return null;
+  // Đường băng dài nhất gần sân bay: 2 đầu = cặp điểm xa nhau nhất
+  let best = null;
+  for (const [ref, pts] of runways) {
+    let A = null, B = null, d = 0;
+    for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+      const dd = haversineKm({ lat: pts[i][0], lng: pts[i][1] }, { lat: pts[j][0], lng: pts[j][1] });
+      if (dd > d) { d = dd; A = pts[i]; B = pts[j]; }
+    }
+    if (!A || d < 0.8) continue;
+    const mid = { lat: (A[0] + B[0]) / 2, lng: (A[1] + B[1]) / 2 };
+    if (haversineKm(a, mid) > 4) continue;
+    if (!best || d > best.km) best = { ref, a: A, b: B, km: Math.round(d * 100) / 100 };
+  }
+  return { kind: 'airport', parts, runway: best };
+}
+async function metroFx(a, tpl, signal) {
+  const z = 14, F = localFrame(a);
+  const pieces = [];
+  await Promise.all(tilesAround(a, z, 1.6).map(async ([x, y]) => {
+    const buf = await fetchTile(tpl, z, x, y, signal).catch(e => { if (signal?.aborted) throw e; return null; });
+    if (!buf) return;
+    const L = new VectorTile(new Pbf(buf)).layers.transportation;
+    if (!L) return;
+    const ext = L.extent;
+    const conv = pt => { const ll = unproject((x + pt.x / ext) * 256, (y + pt.y / ext) * 256, z); return [ll.lat, ll.lng]; };
+    for (let i = 0; i < L.length; i++) {
+      const f = L.feature(i), pr = f.properties;
+      if (f.type !== 2 || pr.class !== 'transit' || !/^(subway|light_rail|monorail)$/.test(pr.subclass || '')) continue;
+      for (const line of f.loadGeometry()) for (const piece of clipLine(line, 0, ext)) {
+        const pts = piece.map(conv);
+        if (pts.length > 1) pieces.push(pts);
+      }
+    }
+  }));
+  if (!pieces.length) return null;
+  const chains = stitchWays(pieces, F, 0.08);
+  let best = null;
+  for (const c of chains) for (const part of clipToRadius(c, a, 1.5)) {
+    const xy = part.map(F.xy);
+    let d = Infinity, len = 0;
+    for (let i = 1; i < xy.length; i++) {
+      d = Math.min(d, segNearestXY(0, 0, xy[i - 1][0], xy[i - 1][1], xy[i][0], xy[i][1]).d);
+      len += Math.hypot(xy[i][0] - xy[i - 1][0], xy[i][1] - xy[i - 1][1]);
+    }
+    if (d > 0.35 || len < 0.6) continue;
+    if (!best || d - len * 0.05 < best.d - best.len * 0.05) best = { d, len, pts: part };
+  }
+  if (!best) return null;
+  const track = simplify(best.pts, F, 0.004).map(p => [Math.round(p[0] * 1e6) / 1e6, Math.round(p[1] * 1e6) / 1e6]);
+  return { kind: 'metro', track };
+}
+export async function loadHubFx(anchor, signal) {
+  const tpl = await tileTemplate(signal);
+  if (anchor.type === 'airport') return airportFx(anchor, tpl, signal);
+  if (anchor.type === 'metro') return metroFx(anchor, tpl, signal);
+  return null;
+}

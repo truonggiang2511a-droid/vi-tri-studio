@@ -742,15 +742,40 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     // 24/10 tối (Giang: góc máy xa, đứng yên lâu): mỗi điểm mốc một cú máy riêng — bay vòng cung từ khung trước, bám theo
     // đầu line đang chạy, hạ góc nghiêng 44° và đáp CẬN điểm mốc, rồi trôi/lia nhẹ; cuối cùng lùi ra toàn cảnh vùng.
     if (camHub) {
-      const shots = [], W_HUB = 1, W_REC = 1.15, tw = anchors.length * W_HUB + W_REC;
-      anchors.forEach((a, i) => {
-        const L = a.line, near = [a];
-        for (let j = 0; j < L.xs.length; j++) if (L.cum[j] >= 0.7 * L.len) near.push(unproject(L.xs[j], L.ys[j], 0));
-        const cam = fitCam(near, LW, LH, { left: safe.x + 80, right: safe.x + 80, top: safe.top + 170, bottom: safe.bottom + 150 }, 44, 9.5, 14.6) || camHub;
-        shots.push({ s: (i * W_HUB) / tw, e: ((i + 1) * W_HUB) / tw, cam, move: 0.68, anchor: i, line: L, side: i % 2 ? 1 : -1 });
+      // 30/10: điểm mốc có hiệu ứng (sân bay: máy bay cất cánh trên đường băng thật; ga metro: đoàn tàu chạy trên tuyến thật)
+      // có thêm MỘT cú máy bám theo máy bay / đoàn tàu ngay sau cú đáp tới điểm đó
+      // chỉ sân bay GẦN NHẤT (sân bay thứ 2 thường xa, có thể chưa khai thác) và ga metro có hiệu ứng
+      let airFx = false;
+      anchors.forEach(a => {
+        a.fxP = a.type === 'airport' && airFx ? null : prepHubFx(a, H);
+        if (a.fxP && a.fxP.kind === 'plane') airFx = true;
       });
-      shots.push({ s: (anchors.length * W_HUB) / tw, e: 1, cam: { ...camHub, pitch: 26 }, move: 0.55, recap: true, side: 1 });
-      raw.push({ type: 'region', d: 3.3 * anchors.length + 3.5, to: shots[shots.length - 1].cam, shots, vkey: 'region', n: anchors.length });
+      const W_HUB = 1, W_REC = 1.15, W_FX = { plane: 1.15, train: 1.0 };
+      const plan = [];
+      anchors.forEach((a, i) => { plan.push({ i, w: W_HUB }); if (a.fxP) plan.push({ i, w: W_FX[a.fxP.kind], fx: a.fxP.kind }); });
+      const tw = plan.reduce((x, q) => x + q.w, 0) + W_REC;
+      const shots = [];
+      let acc = 0;
+      for (const q of plan) {
+        const a = anchors[q.i], s0 = acc / tw, e0 = (acc + q.w) / tw;
+        acc += q.w;
+        if (!q.fx) {
+          const L = a.line, near = [a];
+          for (let j = 0; j < L.xs.length; j++) if (L.cum[j] >= 0.7 * L.len) near.push(unproject(L.xs[j], L.ys[j], 0));
+          if (a.fxP && a.fxP.kind === 'plane') near.push(...a.fxP.ring); // đáp tới khung thấy trọn sân bay
+          const cam = fitCam(near, LW, LH, { left: safe.x + 80, right: safe.x + 80, top: safe.top + 170, bottom: safe.bottom + 150 }, 44, 9.5, a.fxP ? 15.2 : 14.6) || camHub;
+          shots.push({ s: s0, e: e0, cam, move: 0.68, anchor: q.i, line: L, side: q.i % 2 ? 1 : -1 });
+        } else {
+          const X = a.fxP;
+          const follow = X.kind === 'plane'
+            ? w => { const p = X.at(w); return anchorCam(p.lat, p.lng, 14.75 - 0.5 * smooth(clamp01((w - 0.45) / 0.55)), 46, LW, LH, 0.5, 0.62); }
+            : w => { const p = X.at(w, -0.04); return anchorCam(p.lat, p.lng, 16.9, 56, LW, LH, 0.5, 0.58); };
+          shots.push({ s: s0, e: e0, cam: follow(1), follow, fxOf: q.i, fx: q.fx, move: 1, slide: true, side: 0 });
+        }
+      }
+      shots.push({ s: acc / tw, e: 1, cam: { ...camHub, pitch: 26 }, move: 0.55, recap: true, side: 1 });
+      const nFx = plan.filter(q => q.fx).length;
+      raw.push({ type: 'region', d: 3.3 * anchors.length + 3.4 * nFx + 3.5, to: shots[shots.length - 1].cam, shots, vkey: 'region', n: anchors.length });
     }
   }
   const infra = (RG?.infra || []).map(r => {
@@ -1299,6 +1324,18 @@ function camShots(ph, t) {
   const sh = ph.shots[i];
   const prev = i ? shotEnd(ph.shots[i - 1]) : ph.from;
   const w = clamp01((f - sh.s) / Math.max(1e-6, sh.e - sh.s));
+  if (sh.follow) {
+    // Bám theo máy bay / đoàn tàu: vào cú máy thì bay êm từ khung trước tới chỗ đang bám (lùi lên giữa chặng nếu xa)
+    const fc = sh.follow(w), b0 = smooth(clamp01(w / 0.3));
+    if (sh._arc === undefined) {
+      const f0 = sh.follow(0), pa = project(prev.lat, prev.lng, 0), pb = project(f0.lat, f0.lng, 0);
+      const dpx = Math.hypot(pb.x - pa.x, pb.y - pa.y) * Math.pow(2, Math.min(prev.zoom, f0.zoom));
+      sh._arc = Math.max(0, Math.min(1.6, Math.log2(dpx / 420)));
+    }
+    const cam = lerpCam(prev, fc, b0);
+    cam.zoom -= sh._arc * Math.sin(Math.PI * b0);
+    return cam;
+  }
   const e = sh.slide ? smooth(w) : smooth(clamp01(w / sh.move));
   const cam = lerpCam(prev, sh.cam, e);
   if (sh._arc === undefined) {
@@ -2555,6 +2592,319 @@ export const CLIP_MAX = 5;
 const HUB_COL = { center: '#FFD54A', airport: '#5BC0FF', port: '#2EE6C5', station: '#FF9F43', metro: '#E77CFF' };
 const HUB_ICON = { center: 'city', airport: 'plane', port: 'ship', station: 'train', metro: 'train' };
 const INFRA_COL = '#FFC233';
+
+// ---------- Hiệu ứng điểm mốc (30/10, Giang): sân bay + ga metro ----------
+// Sân bay: ranh sân bay sáng + vệt sáng chạy vòng quanh + ranh "nổi" lên, đèn chạy dọc đường băng, máy bay cất cánh
+// trên ĐƯỜNG BĂNG THẬT (đầu xa nhà → về phía nhà), có bóng đổ dưới đất; máy quay bám theo.
+// Ga metro: đoàn tàu 4 toa (khối 3D vẽ tay, không logo hãng) chạy trên TUYẾN THẬT vào ga, giảm tốc rồi dừng; máy quay bám theo.
+// Dữ liệu (ranh, đường băng, tuyến) lấy từ OpenStreetMap trong app (loadHubFx) → anchor.fx; không có dữ liệu thì không có hiệu ứng.
+const M_LAT = 111320;
+const llOff = (lat, lng, dx, dy) => ({ lat: lat + dy / M_LAT, lng: lng + dx / (M_LAT * Math.cos(lat * Math.PI / 180)) });
+function prepHubFx(a, H) {
+  const X = a.fx;
+  if (!X) return null;
+  if (X.kind === 'airport' && X.runway && X.parts && X.parts.length) {
+    const r = X.runway;
+    let A = { lat: r.a[0], lng: r.a[1] }, B = { lat: r.b[0], lng: r.b[1] };
+    if (haversineKm(A, H) < haversineKm(B, H)) [A, B] = [B, A];   // cất cánh từ đầu xa nhà, bay về phía nhà
+    const kx = M_LAT * Math.cos(A.lat * Math.PI / 180);
+    const ex = (B.lng - A.lng) * kx, ey = (B.lat - A.lat) * M_LAT, len = Math.hypot(ex, ey) || 1;
+    const ux = ex / len, uy = ey / len;                            // hướng đường băng (m Đông, m Bắc)
+    const rwM = len, total = rwM * 1.55, lift = rwM * 0.6;
+    const ring = [];
+    for (const pt of X.parts) for (let j = 0; j < pt.pts.length; j += Math.max(1, Math.floor(pt.pts.length / 24))) ring.push({ lat: pt.pts[j][0], lng: pt.pts[j][1] });
+    // vị trí máy bay theo tiến độ w của cú máy: lăn bánh tăng tốc, rời đất ở 60% đường băng, leo cao
+    const at = (w, ahead = 0) => {
+      const d = total * Math.pow(clamp01(w), 1.75) + ahead * 1000;
+      const p = llOff(A.lat, A.lng, ux * d, uy * d);
+      return { lat: p.lat, lng: p.lng, alt: Math.max(0, d - lift) * 0.22, d };
+    };
+    return { kind: 'plane', parts: X.parts, A, B, ux, uy, rwM, ring, at };
+  }
+  if (X.kind === 'metro' && X.track && X.track.length > 1) {
+    // làm dày tuyến (mỗi 10 m) để tàu đi êm theo đường cong
+    const la = [], lo = [], cum = [];
+    let c = 0;
+    for (let i = 0; i < X.track.length; i++) {
+      const [y1, x1] = X.track[i];
+      if (i) {
+        const [y0, x0] = X.track[i - 1];
+        const seg = haversineKm({ lat: y0, lng: x0 }, { lat: y1, lng: x1 }), n = Math.max(1, Math.ceil(seg / 0.01));
+        for (let k = 1; k <= n; k++) { la.push(y0 + (y1 - y0) * k / n); lo.push(x0 + (x1 - x0) * k / n); cum.push(c + seg * k / n); }
+        c += seg;
+      } else { la.push(y1); lo.push(x1); cum.push(0); }
+    }
+    let ist = 0, bd = Infinity;
+    for (let i = 0; i < la.length; i++) { const d = haversineKm(a, { lat: la[i], lng: lo[i] }); if (d < bd) { bd = d; ist = i; } }
+    const sSt = cum[ist], total = c;
+    const before = sSt, after = total - sSt;
+    const dir = before >= after ? 1 : -1;                          // tàu chạy tới ga từ phía còn nhiều đường ray
+    const run = Math.min(0.7, Math.max(before, after) - 0.04);
+    if (run < 0.25 || bd > 0.4) return null;
+    const s0 = sSt - dir * run;
+    const posAt = sk => {
+      sk = Math.max(0, Math.min(total, sk));
+      let lo2 = 0, hi = cum.length - 1;
+      while (hi - lo2 > 1) { const m = (lo2 + hi) >> 1; if (cum[m] < sk) lo2 = m; else hi = m; }
+      const f = (sk - cum[lo2]) / Math.max(1e-9, cum[hi] - cum[lo2]);
+      return { lat: la[lo2] + (la[hi] - la[lo2]) * f, lng: lo[lo2] + (lo[hi] - lo[lo2]) * f };
+    };
+    // đầu tàu theo tiến độ w: chạy đều rồi giảm tốc, dừng đúng ga ở 82% cú máy
+    const headS = w => { const k = clamp01(w / 0.82); return s0 + (sSt - s0) * (1 - Math.pow(1 - k, 2.2)); };
+    const at = (w, ahead = 0) => posAt(headS(w) + dir * ahead);
+    return { kind: 'train', la, lo, cum, total, sSt, s0, dir, posAt, headS, at };
+  }
+  return null;
+}
+// Tiến độ cú máy hiệu ứng của điểm mốc i (−1 khi chưa tới)
+function fxShotW(tl, i, t) {
+  const ph = tl.regionPh;
+  if (!ph || !ph.shots) return -1;
+  const sh = ph.shots.find(x => x.fxOf === i);
+  if (!sh) return -1;
+  const f = (t - ph.t0) / (ph.t1 - ph.t0);
+  return (f - sh.s) / Math.max(1e-6, sh.e - sh.s);
+}
+// Mặt đất: ranh sân bay sáng + vệt sáng chạy vòng, đèn chạy dọc đường băng; tuyến metro phát sáng
+function drawHubFxGround(g, v, tl, t) {
+  const ph = tl.regionPh;
+  tl.anchors.forEach((a, i) => {
+    const X = a.fxP;
+    if (!X) return;
+    const k = hubReveal(tl, i, t);
+    const aOn = clamp01((k - 0.85) / 0.15) * fadeWin(t, ph.t0, ph.t1 + 0.45, 0.01, 0.5);
+    if (aOn <= 0.01) return;
+    const col = HUB_COL[a.type] || GOLD;
+    g.save();
+    if (X.kind === 'plane') {
+      for (const pt of X.parts) {
+        const n = gLL(v, pt.bb[0], pt.bb[2]), s = gLL(v, pt.bb[1], pt.bb[3]);
+        g.save();
+        g.beginPath(); g.rect(n.x, n.y, s.x - n.x, s.y - n.y); g.clip();
+        const path = new Path2D();
+        pt.pts.forEach((q, j) => { const gq = gLL(v, q[0], q[1]); j ? path.lineTo(gq.x, gq.y) : path.moveTo(gq.x, gq.y); });
+        path.closePath();
+        g.globalAlpha = 0.2 * aOn; g.fillStyle = col; g.fill(path);
+        glowStroke(g, path, '#DDF4FF', col, 3.2, aOn);
+        // vệt sáng chạy vòng quanh ranh
+        g.globalAlpha = aOn; g.strokeStyle = '#ffffff'; g.lineWidth = 4.5; g.lineCap = 'round';
+        g.shadowColor = col; g.shadowBlur = 14;
+        g.setLineDash([70, 520]); g.lineDashOffset = -t * 260; g.stroke(path);
+        g.setLineDash([]); g.shadowBlur = 0;
+        g.restore();
+      }
+      // đường băng: vạch tim sáng + đèn chạy dọc theo hướng cất cánh
+      const A = gLL(v, X.A.lat, X.A.lng), B = gLL(v, X.B.lat, X.B.lng);
+      const L = Math.hypot(B.x - A.x, B.y - A.y);
+      if (L > 12) {
+        g.globalAlpha = 0.85 * aOn; g.strokeStyle = '#ffffff'; g.lineWidth = 1.6; g.setLineDash([10, 9]);
+        g.beginPath(); g.moveTo(A.x, A.y); g.lineTo(B.x, B.y); g.stroke(); g.setLineDash([]);
+        const nx = -(B.y - A.y) / L, ny = (B.x - A.x) / L, half = Math.max(3, Math.min(9, L * 0.012));
+        const nDot = Math.max(8, Math.min(40, Math.round(L / 14)));
+        for (let j = 0; j <= nDot; j++) {
+          const f = j / nDot, wave = Math.pow(0.5 + 0.5 * Math.cos((f - ((t * 0.9) % 1)) * Math.PI * 2 * 3), 6);
+          for (const sd of [-1, 1]) {
+            const x = A.x + (B.x - A.x) * f + nx * half * sd, y = A.y + (B.y - A.y) * f + ny * half * sd;
+            g.globalAlpha = aOn * (0.35 + 0.65 * wave); g.fillStyle = wave > 0.5 ? '#ffffff' : '#9FE3FF';
+            g.beginPath(); g.arc(x, y, 1.4 + 1.4 * wave, 0, Math.PI * 2); g.fill();
+          }
+        }
+      }
+    } else {
+      const w = fxShotW(tl, i, t);
+      const aT = aOn * (w < 0 ? 0 : clamp01(w / 0.12));
+      if (aT > 0.01) {
+        const path = new Path2D();
+        for (let j = 0; j < X.la.length; j += 2) { const q = gLL(v, X.la[j], X.lo[j]); j ? path.lineTo(q.x, q.y) : path.moveTo(q.x, q.y); }
+        glowStroke(g, path, '#F6D8FF', col, 2.6, aT);
+      }
+    }
+    g.restore();
+  });
+}
+// Hình máy bay nhìn từ trên (mũi theo +x, cánh theo ±y), toạ độ đơn vị: dài 1
+const PLANE_BODY = (() => {
+  const p = new Path2D();
+  p.moveTo(0.5, 0); p.bezierCurveTo(0.5, 0.045, 0.44, 0.055, 0.36, 0.055);
+  p.lineTo(-0.38, 0.045); p.lineTo(-0.5, 0.02); p.lineTo(-0.5, -0.02); p.lineTo(-0.38, -0.045);
+  p.lineTo(0.36, -0.055); p.bezierCurveTo(0.44, -0.055, 0.5, -0.045, 0.5, 0); p.closePath();
+  return p;
+})();
+const PLANE_WING = (() => {
+  const p = new Path2D();
+  for (const sd of [1, -1]) {
+    p.moveTo(0.12, 0.05 * sd); p.lineTo(-0.16, 0.5 * sd); p.lineTo(-0.25, 0.5 * sd); p.lineTo(-0.1, 0.05 * sd); p.closePath();
+    p.moveTo(-0.36, 0.04 * sd); p.lineTo(-0.47, 0.19 * sd); p.lineTo(-0.52, 0.19 * sd); p.lineTo(-0.46, 0.035 * sd); p.closePath();
+  }
+  return p;
+})();
+// Máy bay + bóng đổ + vệt khói, vẽ trên màn hình. Hướng/tỉ lệ lấy từ phép chiếu thật tại chỗ máy bay → đúng phối cảnh.
+function drawPlane(ctx, S, P, v, X, w, a, t) {
+  if (a <= 0.01 || w < 0) return;
+  const p = X.at(Math.min(w, 1.25));
+  const g0 = S(p.lat, p.lng);
+  if (g0.w < 0.05) return;
+  const f1 = llOff(p.lat, p.lng, X.ux * 10, X.uy * 10), r1 = llOff(p.lat, p.lng, X.uy * 10, -X.ux * 10);
+  const sf = S(f1.lat, f1.lng), sr = S(r1.lat, r1.lng);
+  let fx = sf.x - g0.x, fy = sf.y - g0.y, rx = sr.x - g0.x, ry = sr.y - g0.y;
+  const fl = Math.hypot(fx, fy) || 1;
+  const climb = clamp01(p.alt / 260);
+  const Lpx = (78 + 34 * climb) / g0.w;
+  const sc = Lpx / fl;
+  fx *= sc; fy *= sc; rx *= sc; ry *= sc;
+  const mpp = metersPerPixel(p.lat, v.zoom);
+  const lift = p.alt / mpp * P.s / g0.w;
+  ctx.save();
+  // bóng đổ trên mặt đất (mờ dần khi máy bay lên cao)
+  ctx.save();
+  ctx.globalAlpha = a * 0.42 * (1 - 0.65 * climb);
+  ctx.transform(fx, fy, rx, ry, g0.x + 6 * climb, g0.y + 3);
+  ctx.fillStyle = '#000'; ctx.fill(PLANE_BODY); ctx.fill(PLANE_WING);
+  ctx.restore();
+  const x = g0.x, y = g0.y - lift;
+  // vệt khói sau 2 động cơ khi đã rời đất
+  if (climb > 0.02) {
+    for (const sd of [-0.2, 0.2]) {
+      const sx = x - fx * 0.05 + rx * sd, sy = y - fy * 0.05 + ry * sd;
+      const ex = sx - fx * (1.6 + 1.6 * climb), ey = sy - fy * (1.6 + 1.6 * climb);
+      const gr = ctx.createLinearGradient(sx, sy, ex, ey);
+      gr.addColorStop(0, `rgba(255,255,255,${0.75 * a})`); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.strokeStyle = gr; ctx.lineWidth = Math.max(1.5, Lpx * 0.05); ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = a;
+  ctx.transform(fx, fy, rx, ry, x, y);
+  ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 6 / sc; ctx.shadowOffsetY = 2;
+  const wg = ctx.createLinearGradient(0, -0.5, 0, 0.5);
+  wg.addColorStop(0, '#C9D4DF'); wg.addColorStop(0.5, '#EEF3F7'); wg.addColorStop(1, '#AEBBC8');
+  ctx.fillStyle = wg; ctx.fill(PLANE_WING);
+  ctx.shadowColor = 'transparent';
+  const bg = ctx.createLinearGradient(0, -0.06, 0, 0.06);
+  bg.addColorStop(0, '#E3EAF1'); bg.addColorStop(0.45, '#FFFFFF'); bg.addColorStop(1, '#B9C6D3');
+  ctx.fillStyle = bg; ctx.fill(PLANE_BODY);
+  // sọc thân + cửa sổ buồng lái (màu chung chung, không theo hãng nào)
+  ctx.fillStyle = HUB_COL.airport; ctx.fillRect(-0.36, -0.012, 0.7, 0.024);
+  ctx.fillStyle = '#23384F';
+  ctx.beginPath(); ctx.ellipse(0.43, 0, 0.035, 0.035, 0, -1.2, 1.2); ctx.fill();
+  // động cơ
+  ctx.fillStyle = '#8F9DAB';
+  for (const sd of [-1, 1]) { ctx.beginPath(); ctx.ellipse(0.0, 0.2 * sd, 0.07, 0.035, 0, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+  // đèn chớp đầu cánh (đỏ trái, xanh phải)
+  const blink = Math.sin(t * 9) > 0.3 ? 1 : 0.35;
+  for (const [sd, c] of [[-1, '#FF3B30'], [1, '#34C759']]) {
+    const tx = x + fx * -0.2 + rx * 0.5 * sd, ty = y + fy * -0.2 + ry * 0.5 * sd;
+    ctx.save(); ctx.globalAlpha = a * blink;
+    const gr = ctx.createRadialGradient(tx, ty, 0, tx, ty, 7);
+    gr.addColorStop(0, '#fff'); gr.addColorStop(0.3, c); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(tx, ty, 7, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  }
+}
+// Đoàn tàu 4 toa: mỗi toa là một khối hộp (đáy theo đường ray, nâng mái lên theo phối cảnh), mặt trước có kính + đèn
+function drawTrain(ctx, S, P, v, X, w, a) {
+  if (a <= 0.01 || w < 0) return;
+  const head = X.headS(Math.min(1, w));
+  const mpp = metersPerPixel(X.la[0], v.zoom);
+  const carL = 50 * mpp / 1000, gap = 2.5 * mpp / 1000, halfW = 9.5 * mpp;   // kích thước phóng đại cho dễ nhìn (km / m)
+  const cars = [];
+  for (let c = 0; c < 4; c++) {
+    const sF = head - X.dir * c * (carL + gap), sR = sF - X.dir * carL;
+    cars.push({ c, sF, sR });
+  }
+  const corner = (sk, side) => {
+    const p = X.posAt(sk), q = X.posAt(sk + X.dir * 0.004);
+    const kx = M_LAT * Math.cos(p.lat * Math.PI / 180);
+    let ex = (q.lng - p.lng) * kx, ey = (q.lat - p.lat) * M_LAT;
+    const l = Math.hypot(ex, ey) || 1; ex /= l; ey /= l;
+    const o = llOff(p.lat, p.lng, ey * halfW * side, -ex * halfW * side);
+    return S(o.lat, o.lng);
+  };
+  const faces = [];
+  for (const car of cars) {
+    const b = [corner(car.sF, -1), corner(car.sF, 1), corner(car.sR, 1), corner(car.sR, -1)];
+    if (b.some(q => q.w < 0.05)) continue;
+    const hh = 23 * P.s / ((b[0].w + b[2].w) / 2);
+    const r = b.map(q => ({ x: q.x, y: q.y - hh }));
+    car.b = b; car.r = r; car.depth = (b[0].y + b[2].y) / 2;
+    faces.push(car);
+  }
+  faces.sort((p, q) => p.depth - q.depth);
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.lineJoin = 'round';
+  const quad = (p) => { ctx.beginPath(); ctx.moveTo(p[0].x, p[0].y); for (let j = 1; j < p.length; j++) ctx.lineTo(p[j].x, p[j].y); ctx.closePath(); };
+  for (const car of faces) {
+    const { b, r } = car;
+    // bóng dưới gầm
+    ctx.fillStyle = 'rgba(0,0,0,0.38)'; quad(b.map(q => ({ x: q.x + 2.5, y: q.y + 2 }))); ctx.fill();
+    // các mặt bên: vẽ mặt xa trước, mặt gần sau
+    const sides = [[0, 1], [1, 2], [2, 3], [3, 0]].map(([i, j]) => ({ i, j, y: (b[i].y + b[j].y) / 2 })).sort((p, q) => p.y - q.y);
+    for (const sd of sides) {
+      const front = (sd.i === 0 && sd.j === 1);
+      const pts = [b[sd.i], b[sd.j], r[sd.j], r[sd.i]];
+      if (front) ctx.fillStyle = car.c === 0 ? '#1B2A3A' : '#AEBAC6';
+      else {
+        const sg = ctx.createLinearGradient(0, (b[sd.i].y + b[sd.j].y) / 2, 0, (r[sd.i].y + r[sd.j].y) / 2);
+        sg.addColorStop(0, '#9FADBB'); sg.addColorStop(1, '#E6ECF2');
+        ctx.fillStyle = sg;
+      }
+      quad(pts); ctx.fill();
+      if (!front && (sd.i === 1 || sd.i === 3)) {
+        // dải cửa sổ sáng trên thân toa
+        const hy = r[sd.i].y - b[sd.i].y;
+        const m = (u, h) => ({ x: b[sd.i].x + (b[sd.j].x - b[sd.i].x) * u, y: b[sd.i].y + (b[sd.j].y - b[sd.i].y) * u + hy * h });
+        const wg = ctx.createLinearGradient(m(0.5, 0.4).x, m(0.5, 0.4).y, m(0.5, 0.82).x, m(0.5, 0.82).y);
+        wg.addColorStop(0, '#1C3550'); wg.addColorStop(1, '#4E7FA8');
+        ctx.fillStyle = wg; quad([m(0.06, 0.4), m(0.94, 0.4), m(0.94, 0.82), m(0.06, 0.82)]); ctx.fill();
+        // khung cửa sổ chia ô
+        ctx.strokeStyle = 'rgba(230,240,248,0.85)'; ctx.lineWidth = 0.9;
+        for (let u = 0.06 + 0.88 / 5; u < 0.93; u += 0.88 / 5) { const p1 = m(u, 0.4), p2 = m(u, 0.82); ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke(); }
+        ctx.fillStyle = HUB_COL.metro; quad([m(0.0, 0.14), m(1, 0.14), m(1, 0.26), m(0.0, 0.26)]); ctx.fill();
+      }
+    }
+    // mái
+    const rg = ctx.createLinearGradient(r[0].x, r[0].y, r[2].x, r[2].y);
+    rg.addColorStop(0, '#FFFFFF'); rg.addColorStop(1, '#DCE4EC');
+    ctx.fillStyle = rg; quad(r); ctx.fill();
+    ctx.strokeStyle = 'rgba(30,45,60,0.35)'; ctx.lineWidth = 0.8; quad(r); ctx.stroke();
+    if (car.c === 0) {
+      // đèn đầu tàu
+      for (const u of [0.22, 0.78]) {
+        const x = b[0].x + (b[1].x - b[0].x) * u, y = b[0].y + (b[1].y - b[0].y) * u - (b[0].y - r[0].y) * 0.35;
+        const gr = ctx.createRadialGradient(x, y, 0, x, y, 9);
+        gr.addColorStop(0, 'rgba(255,255,255,0.95)'); gr.addColorStop(0.35, 'rgba(255,240,200,0.55)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+  ctx.restore();
+}
+// Ranh sân bay "nổi" lên: viền sáng nâng khỏi mặt đất + màn sáng mờ nối xuống (như tuyến ★), vẽ trên màn hình
+function drawAirportRise(ctx, S, P, X, a) {
+  if (a <= 0.01) return;
+  ctx.save();
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  const col = HUB_COL.airport;
+  for (const pt of X.parts) {
+    const cut = new Set(pt.cut);
+    const sp = pt.pts.map(q => S(q[0], q[1]));
+    for (let j = 0; j + 1 < sp.length; j++) {
+      if (cut.has(j)) continue;
+      const p = sp[j], q = sp[j + 1];
+      if (p.w < 0.05 || q.w < 0.05) continue;
+      const hp = 12 * P.s / p.w, hq = 12 * P.s / q.w;
+      const gr = ctx.createLinearGradient(0, (p.y + q.y) / 2, 0, (p.y + q.y) / 2 - (hp + hq) / 2);
+      gr.addColorStop(0, 'rgba(91,192,255,0)'); gr.addColorStop(1, `rgba(91,192,255,${0.38 * a})`);
+      ctx.fillStyle = gr;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.lineTo(q.x, q.y - hq); ctx.lineTo(p.x, p.y - hp); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = a; ctx.strokeStyle = col; ctx.lineWidth = 2.4;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y - hp); ctx.lineTo(q.x, q.y - hq); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  }
+  ctx.restore();
+}
 // Đường tới điểm mốc thứ i chạy ra trong cú máy của nó, cùng nhịp với máy bay tới (camShots, sfx.js dùng cùng công thức)
 function shotW(ph, sh, t) { return clamp01(((t - ph.t0) / (ph.t1 - ph.t0) - sh.s) / Math.max(1e-6, sh.e - sh.s)); }
 function hubReveal(tl, i, t) {
@@ -3739,6 +4089,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       if (head && k < 1) headGlow(g, head, col, 13);
     });
   }
+  if (tl.regionPh && tl.anchors.some(a => a.fxP)) drawHubFxGround(g, v, tl, t);
   // Hạ tầng đang thi công: nét đứt vàng/đen kiểu rào công trường, chạy ra hai phía từ điểm gần nhà nhất
   if (tl.infraPh && tl.infra.length) {
     const aI = infraAlpha(tl, t);
@@ -4583,11 +4934,26 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       if (aH > 0.01) {
         chip(ctx, LW / 2, bannerY, 'KẾT NỐI VÙNG', Math.min(aH, fadeWin(t, rp.t0 + 0.3, rp.t1, 0.4, 0.4)), GOLD);
         used.push({ x: LW / 2 - 80, y: bannerY - 14, w: 160, h: 28 });
+        // Hiệu ứng điểm mốc trên màn hình: ranh sân bay nổi lên, máy bay cất cánh, đoàn tàu metro
+        tl.anchors.forEach((a, i) => {
+          const X = a.fxP;
+          if (!X) return;
+          const on = clamp01((hubReveal(tl, i, t) - 0.85) / 0.15) * aH;
+          if (on <= 0.01) return;
+          const w = fxShotW(tl, i, t);
+          if (X.kind === 'plane') {
+            drawAirportRise(ctx, S, P, X, on * (w > 1 ? 0.65 : 1));
+            if (w >= 0 && w < 1.3) drawPlane(ctx, S, P, v, X, w, on * clamp01(w / 0.06 + 0.3) * clamp01((1.3 - w) / 0.2), t);
+          } else if (w >= 0) drawTrain(ctx, S, P, v, X, w, on * clamp01(w / 0.08));
+        });
         const items = tl.anchors.map((a, i) => ({ a, i, k: hubReveal(tl, i, t), s: S(a.lat, a.lng) }));
         // Mọi ghim (kể cả ghim chưa hiện) đều được né, để thẻ đã đặt không phải dời chỗ khi ghim sau hiện ra
         for (const it of items) used.push({ x: it.s.x - 17, y: it.s.y - 17, w: 34, h: 34 });
         for (const it of items) {
-          const ca = aH * clamp01((it.k - 0.92) / 0.08) * onScr(it.s);
+          // thẻ nhường chỗ cho máy bay / đoàn tàu trong cú máy hiệu ứng của chính điểm đó (tàu dừng ở ga thì thẻ hiện lại)
+          const fw = it.a.fxP ? fxShotW(tl, it.i, t) : -1;
+          const fxHide = fw < 0 || fw > 1.05 ? 1 : it.a.fxP.kind === 'train' ? clamp01((fw - 0.86) / 0.1) + clamp01(1 - fw / 0.12) : clamp01(1 - fw / 0.12);
+          const ca = aH * clamp01((it.k - 0.92) / 0.08) * onScr(it.s) * Math.min(1, fxHide);
           if (ca > 0.01) hubCard(ctx, tl, it.a, it.s.x, it.s.y, ca, used, 'hub' + it.i, hs.x, hs.y);
         }
         for (const it of items) if (it.k > 0) hubPin(ctx, it.s.x, it.s.y, it.a.type, 0.6 + 0.4 * easeOutBack(clamp01(it.k * 1.4)), aH * clamp01(it.k * 4));
