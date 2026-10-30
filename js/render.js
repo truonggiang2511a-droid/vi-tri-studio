@@ -2215,8 +2215,14 @@ function infoFullItems(scene) {
     fl ? (num(fl) ? fl + ' tầng' : fl) : '',
     beds ? (num(beds) ? beds + ' phòng ngủ' : beds) : '',
     legal,
-    rw ? 'Đường trước nhà ' + (num(rw) ? rw + 'm' : rw) : '',
+    rw ? 'Đường trước ' + infoKind(scene).front + ' ' + (num(rw) ? rw + 'm' : rw) : '',
   ].filter(Boolean);
+}
+// Loại BĐS theo nút khách chọn (scene.label = "VỊ TRÍ CĂN NHÀ" | "VỊ TRÍ CĂN VILLA" | "VỊ TRÍ LÔ ĐẤT" | "VỊ TRÍ DỰ ÁN")
+function infoKind(scene) {
+  const t = String(scene.label || '').replace(/^VỊ TRÍ\s*/i, '').trim();
+  const front = /LÔ ĐẤT/i.test(t) ? 'lô' : /DỰ ÁN/i.test(t) ? 'dự án' : /VILLA/i.test(t) ? 'villa' : 'nhà';
+  return { title: 'THÔNG TIN ' + (/^(CĂN NHÀ|CĂN VILLA|LÔ ĐẤT|DỰ ÁN)$/i.test(t) ? t.toUpperCase() : 'BẤT ĐỘNG SẢN'), front };
 }
 // Chia các mục thông tin thành tối đa 2 dòng (xuống dòng theo từng mục, không cắt giữa mục) — đo bằng canvas phụ
 let INFO_MC = null;
@@ -2236,7 +2242,7 @@ function infoFullLines(items, maxW) {
 // Vị trí thẻ thông tin: lúc giới thiệu căn nhà nằm dưới cùng (ngang: góc phải dưới), lúc kết nằm trên cùng
 function infoBox(tl, where, logo) {
   let d = infoData(tl.scene);
-  if (tl.infoFull) { const full = infoFullItems(tl.scene); d = full.length ? { price: '', det: full, full: true } : null; }
+  if (tl.infoFull) { const full = infoFullItems(tl.scene); d = full.length ? { price: '', det: full, full: true, title: infoKind(tl.scene).title } : null; }
   if (!d) return null;
   const { LW, LH, safe } = tl;
   if (d.full) d.lines = infoFullLines(d.det, (tl.fmt === 'h' ? 384 : LW - safe.x * 2) - 32);
@@ -2267,7 +2273,7 @@ function drawInfo(ctx, box, alpha) {
     // Nhãn nhỏ + tối đa 2 dòng thông tin, xuống dòng theo từng mục (không cắt giữa mục)
     ctx.fillStyle = CA();
     ctx.font = `700 11px ${FONT}`;
-    spacedCaps(ctx, 'THÔNG TIN BẤT ĐỘNG SẢN', x + 16, y + 23, 1.2);
+    spacedCaps(ctx, d.title || 'THÔNG TIN BẤT ĐỘNG SẢN', x + 16, y + 23, 1.2);
     ctx.fillStyle = ST.ink;
     ctx.font = `700 15px ${FONT}`;
     const maxW = w - 32;
