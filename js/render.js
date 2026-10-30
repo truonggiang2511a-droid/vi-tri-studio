@@ -921,7 +921,10 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     prev = camAtPhase(ph, ph.t1);
     return ph;
   });
-  const captions = opts.captions && vd ? buildCaptions(phases, opts.captions, vd, fmtKey, scene.keyLook === 'mau1') : [];
+  // 30/10 14:25 Giang: phụ đề trắng bóng đậm từng từ (Hook Kit, có gõ phím) CHỈ cho phong cách đầu tiên Neon đêm;
+  // 5 phong cách còn lại giữ phụ đề riêng của phong cách (nền thẻ màu) như video khách thường
+  const capM1 = scene.keyLook === 'mau1' && (scene.style || 'neon') === 'neon';
+  const captions = opts.captions && vd ? buildCaptions(phases, opts.captions, vd, fmtKey, capM1) : [];
   const first = type => phases.find(p => p.type === type);
   const tl = {
     fmt: fmtKey, LW, LH, safe, duration: t, phases, scene, panelH,
