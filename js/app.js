@@ -2546,7 +2546,7 @@ function scriptSegments() {
     : pick(['Vị trí như thế này không có nhiều.', 'Vị trí đẹp thế này không dễ tìm đâu.', 'Cơ hội sở hữu vị trí này không còn nhiều.'], 4);
   const phone = phoneDisplay(state.phone);
   const brand = (state.brand || '').trim() ? nameSpeak(state.brand.trim()) : '';
-  const xem = isLandType() ? 'xem đất' : isRoomType() ? 'xem phòng' : shop ? 'xem mặt bằng' : 'xem nhà';
+  const xem = viewWord();
   const cta = phone && brand ? `Gọi ngay ${brand}, số ${phone}, để đi ${xem} trực tiếp!`
     : phone ? `Gọi ngay số ${phone} để đi ${xem} trực tiếp!`
     : brand ? `Liên hệ ${brand} để đi ${xem} ngay hôm nay!`
@@ -2740,7 +2740,7 @@ async function aiRewrite() {
     };
     // KHÔNG gửi câu mẫu (AI sẽ chép lại y chang) — chỉ gửi hình đang hiện + dữ liệu của từng cảnh
     const SCENE = { intro: 'Mở đầu: trung cảnh ghim bất động sản, xã/phường sáng lên', province: 'Cả tỉnh/thành phố hiện lên', house: 'Cận cảnh bất động sản, máy lượn quanh',
-      reel: `Bản đồ đã xong, chuyển sang video thực tế ${realWord()}: 1 câu mời người xem cùng xem video (và hình ảnh) thực tế`, overview: 'Toàn cảnh vòng bán kính quanh nhà', region: 'Kết nối vùng: đường đi + số phút lái xe tới trung tâm, sân bay, cảng, ga', infra: 'Hạ tầng đang thi công gần nhà (nét đứt)', iso: 'Vùng lái xe 5, 10, 15 phút quanh nhà sáng lên lần lượt', boundary: 'Ranh giới sang tỉnh/thành bên cạnh', summary: 'Tổng kết tất cả tiện ích', photos: 'Ảnh thực tế của bất động sản', outro: `Kết video, kêu gọi đi ${isLandType() ? 'xem đất' : 'xem nhà'}` };
+      reel: `Bản đồ đã xong, chuyển sang video thực tế ${realWord()}: 1 câu mời người xem cùng xem video (và hình ảnh) thực tế`, overview: 'Toàn cảnh vòng bán kính quanh nhà', region: 'Kết nối vùng: đường đi + số phút lái xe tới trung tâm, sân bay, cảng, ga', infra: 'Hạ tầng đang thi công gần nhà (nét đứt)', iso: 'Vùng lái xe 5, 10, 15 phút quanh nhà sáng lên lần lượt', boundary: 'Ranh giới sang tỉnh/thành bên cạnh', summary: 'Tổng kết tất cả tiện ích', photos: 'Ảnh thực tế của bất động sản', outro: `Kết video, kêu gọi liên hệ đi ${viewWord()} (đúng chữ "${viewWord()}", không nói "xem nhà" nếu không phải nhà)` };
     if (hasFrontClip()) SCENE.intro = `Mở đầu: video thực tế mặt tiền ${realWord()} chiếu toàn khung (chưa vào bản đồ). Câu móc + giới thiệu ${realWord()}`;
     if (media.photos.length) SCENE.photos = media.clips.length > (hasFrontClip() ? 1 : 0) ? `Thêm ảnh thực tế của ${realWord()}` : 'Bản đồ đã xong, chuyển sang ảnh thực tế: 1 câu mời người xem cùng xem hình ảnh thực tế';
     const roadById = Object.fromEntries(selectedRoads().map(r => [r.id, r]));
@@ -3751,6 +3751,16 @@ const isLandType = () => /LÔ ĐẤT/.test(state.typeLabel || '');
 // 30/10: nhà / mặt tiền CHO THUÊ — giá là giá thuê (mỗi tháng): chữ "Giá thuê" thay "Giá bán", không tính giá mỗi m²
 const isRentType = () => /CHO THUÊ/.test(state.typeLabel || '');
 const isRoomType = () => /PHÒNG CHO THUÊ/.test(state.typeLabel || '');
+// 30/10 (Giang): câu kết "đi xem …" phải đúng loại BĐS (biệt thự mà đọc "xem nhà" là sai)
+function viewWord() {
+  const t = state.typeLabel || '';
+  if (/LÔ ĐẤT/.test(t)) return 'xem lô đất';
+  if (/VILLA|BIỆT THỰ/.test(t)) return /VILLA/.test(state.label || '') && !/BIỆT THỰ/.test(state.label || '') ? 'xem villa' : 'xem biệt thự';
+  if (/DỰ ÁN/.test(t)) return 'xem dự án';
+  if (/PHÒNG CHO THUÊ/.test(t)) return 'xem phòng';
+  if (/MẶT TIỀN CHO THUÊ/.test(t)) return 'xem mặt bằng';
+  return 'xem nhà';
+}
 const roomList = () => (isLandType() ? LAND_ROOMS : ROOMS);
 const realWord = () => (TYPE_WORD[state.typeLabel] || 'Căn nhà').toLowerCase();
 // Đoạn video đầu chỉ mở đầu video khi là mặt tiền (khớp render.js: frontClip)
