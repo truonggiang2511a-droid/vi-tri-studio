@@ -438,6 +438,14 @@
           <div id="tuWrap" hidden>
             <textarea id="pasteScript" class="input" rows="4" autocomplete="off" placeholder="Dán cả kịch bản ở đây (mỗi đoạn là lời 1 cảnh), hoặc sửa thẳng từng cảnh bên dưới"></textarea>
             <button id="pasteApply" class="btn btn-quiet btn-block" type="button">📋 Chia bài đã dán vào từng cảnh</button>
+            <div id="dirBox" class="dir-box" hidden>
+              <div class="dir-head"><strong>🎬 Dựng theo kịch bản</strong><span class="dir-tag">Thử nghiệm · admin</span></div>
+              <p class="hint">AI xếp từng câu vào đúng cảnh — nói tới đâu camera lia tới đó — và thêm chữ điểm nhấn, icon động, biểu đồ giá. Lời đọc giữ nguyên.</p>
+              <button id="dirApply" class="btn btn-primary btn-block" type="button">🎬 AI dựng theo kịch bản đã dán</button>
+              <label class="check"><input autocomplete="off" id="dirFxOn" type="checkbox" checked> Hiệu ứng động (chữ, icon, biểu đồ)</label>
+              <div id="dirReport" class="dir-report" aria-live="polite"></div>
+              <button id="dirOff" class="btn btn-quiet btn-block" type="button" hidden>Tắt dựng theo kịch bản</button>
+            </div>
           </div>
           <span class="field-label">Lời đọc từng cảnh <em>sửa thẳng ở đây</em></span>
           <div id="scriptList" class="script-list"></div>
