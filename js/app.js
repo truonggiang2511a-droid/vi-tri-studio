@@ -74,6 +74,7 @@ const state = {
   showAdminArea: true, // cảnh khoanh vùng xã/phường + cả tỉnh/thành (28/10 Giang: MẶC ĐỊNH BẬT lại, khách bỏ tick để tắt)
   showSweep: true,   // tia radar quét ở cảnh bán kính + tổng kết (28/10 Giang: MẶC ĐỊNH BẬT lại; SFX radar vẫn tắt vì chói tai)
   fxV: 2,            // 28/10: phiên bản mặc định 2 hiệu ứng trên (2 = bật)
+  rentPick: '', // loại cho thuê chọn gần nhất (nút "Cho thuê" mở lại đúng loại đó)
   aiTone: '', // phong cách kịch bản AI — để trống, khách phải tự chọn trước khi tạo
   keyLook: '',      // 30/10 'mau1' = chữ điểm nhấn + icon mẫu 1 (Hook Kit) lúc giọng đọc nói giá/mét/phút… — chỉ admin bật (mau1On())
   scriptMode: 'ai', // 'ai' = AI viết (mặc định, nổi bật) | 'mau' = kịch bản mẫu | 'tu' = tự viết/dán
@@ -375,8 +376,8 @@ function buildScene() {
     photos: media.photos.map(p => p.img),
     photoLabels: media.photos.map(p => roomLabel(p.room)),
     clips: media.clips.map(c => ({ el: c.el, dur: c.dur, room: c.room || '', label: roomLabel(c.room) })),
-    info: { price: state.price, area: state.area, thoCu: state.thoCu, beds: isLandType() ? '' : state.beds, legal: state.legal,
-      floors: isLandType() ? '' : state.floors, roadWidth: state.roadWidth },
+    info: { price: state.price, area: state.area, thoCu: isRentType() ? '' : state.thoCu, beds: isLandType() || isRoomType() ? '' : state.beds,
+      legal: isRentType() ? '' : state.legal, floors: isLandType() || isRoomType() ? '' : state.floors, roadWidth: state.roadWidth },
     radiusKm: state.radiusKm,
     speed: state.speed,
     pois: selectedPois(),
@@ -2249,7 +2250,7 @@ function renderLists() {
 
 // ---------- Kịch bản lời đọc theo từng cảnh ----------
 const TYPE_WORD = { 'VỊ TRÍ CĂN NHÀ': 'Căn nhà', 'VỊ TRÍ CĂN VILLA': 'Căn villa', 'VỊ TRÍ LÔ ĐẤT': 'Lô đất', 'VỊ TRÍ DỰ ÁN': 'Dự án',
-  'VỊ TRÍ NHÀ CHO THUÊ': 'Nhà cho thuê', 'VỊ TRÍ MẶT TIỀN CHO THUÊ': 'Mặt tiền cho thuê' };
+  'VỊ TRÍ NHÀ CHO THUÊ': 'Nhà cho thuê', 'VỊ TRÍ PHÒNG CHO THUÊ': 'Phòng cho thuê', 'VỊ TRÍ MẶT TIỀN CHO THUÊ': 'Mặt tiền cho thuê' };
 // Khoảng cách trong kịch bản: viết số kiểu Việt Nam (1,8 km); lúc gửi giọng đọc sẽ đổi thành chữ
 function kmSpeak(km) {
   if (km < 0.95) return Math.max(50, Math.round(km * 1000 / 50) * 50) + ' mét';
@@ -2342,8 +2343,8 @@ const POI_LINES = {
 // Câu thông tin căn nhà: "Diện tích 5x20m, 3 phòng ngủ, sổ hồng riêng, giá chỉ 3,2 tỷ."
 function infoSentence(pick, skipPrice = false) {
   const c = v => String(v || '').replace(/\s+/g, ' ').trim();
-  const isLand = /LÔ ĐẤT/.test(state.typeLabel || '');
-  const beds = c(state.beds), legal = c(state.legal), floors = c(state.floors), thoCu = c(state.thoCu), rw = c(state.roadWidth);
+  const isLand = /LÔ ĐẤT/.test(state.typeLabel || ''), rent = isRentType(), noRooms = isLand || isRoomType();
+  const beds = noRooms ? '' : c(state.beds), legal = rent ? '' : c(state.legal), floors = noRooms ? '' : c(state.floors), thoCu = rent ? '' : c(state.thoCu), rw = c(state.roadWidth);
   const parts = [];
   if (c(state.area)) parts.push('diện tích ' + c(state.area));
   if (thoCu) parts.push(/thổ cư/i.test(thoCu) ? thoCu : thoCu + ' thổ cư');
@@ -2388,9 +2389,9 @@ function scriptSegments() {
   // Có giá: nói giá + điểm mạnh nhất ngay câu đầu (khớp cảnh mở đầu trên video), người xem biết ngay căn này có đáng xem không
   const price = String(state.price || '').replace(/\s+/g, ' ').trim();
   const near = r0 && r0.nearKm < 3 ? (r0.nearKm < 0.12 ? `, mặt tiền ${nameSpeak(r0.label)}` : `, cách ${nameSpeak(r0.label)} chỉ ${kmSpeak(r0.nearKm)}`) : '';
-  const rent = isRentType(), giaChi = rent ? 'giá thuê' : 'giá chỉ';
+  const rent = isRentType(), giaChi = rent ? 'chỉ' : 'giá chỉ'; // "Phòng cho thuê chỉ 3,5 triệu/tháng" (tránh lặp "cho thuê giá thuê")
   const priceHooks = rent ? [
-    `${tw} giá thuê ${price}${near}. Xem ngay vị trí này nhé!`,
+    `${tw} chỉ ${price}${near}. Xem ngay vị trí này nhé!`,
     `Chỉ ${price} để thuê ${twl.replace(/ cho thuê$/, '')}${near}! Cùng xem xung quanh có gì nhé!`,
     `${tw} ${price}${near}, vị trí này rất dễ kín người thuê. Xem ngay nhé!`,
   ] : [
@@ -2464,16 +2465,24 @@ function scriptSegments() {
   const seen = {};
   for (const p of pois) {
     const k = seen[p.cat] = (seen[p.cat] || 0) + 1;
-    const pool = KIND_LINES[p.kind] || POI_LINES[p.cat] || ['{n}, cách khoảng {d}.'];
+    let pool = KIND_LINES[p.kind] || POI_LINES[p.cat] || ['{n}, cách khoảng {d}.'];
+    // cho thuê: bỏ câu kiểu bán/đầu tư ("giá trị tăng tốt", "hợp đầu tư cho thuê")
+    if (isRentType()) { const ok = pool.filter(l => !/đầu tư|giá trị|tăng|sở hữu|dân trí/i.test(l)); pool = ok.length ? ok : ['{n} chỉ cách {d}.']; }
     add('poi:' + p.id, p.name, fill(pool[(seed + k + 1) % pool.length], { n: nameSpeak(p.name), d: kmSpeak(p.route ? p.route.km : p.km) }));
   }
-  if (pois.length || b) add('summary', 'Tổng kết', pick([`Tất cả chỉ trong bán kính ${R} km quanh nhà, sống tiện, đi lại dễ.`, `Mọi tiện ích thiết yếu đều nằm trong bán kính ${R} km.`], 3));
+  if (pois.length || b) add('summary', 'Tổng kết', pick(isRentType()
+    ? [`Tất cả chỉ trong bán kính ${R} km, ${/MẶT TIỀN/.test(state.typeLabel) ? 'thuận tiện cho kinh doanh' : 'ở tiện, đi làm đi học đều gần'}.`, `Mọi tiện ích thiết yếu đều nằm trong bán kính ${R} km.`]
+    : [`Tất cả chỉ trong bán kính ${R} km quanh nhà, sống tiện, đi lại dễ.`, `Mọi tiện ích thiết yếu đều nằm trong bán kính ${R} km.`], 3));
 
   // Kết: tạo cảm giác khan hiếm + kêu gọi xem nhà (đọc số điện thoại nếu khách nhập)
-  const scarce = pick(['Vị trí như thế này không có nhiều.', 'Vị trí đẹp thế này không dễ tìm đâu.', 'Cơ hội sở hữu vị trí này không còn nhiều.'], 4);
+  const rentT = isRentType(), shop = /MẶT TIỀN CHO THUÊ/.test(state.typeLabel || '');
+  const scarce = rentT
+    ? pick(shop ? ['Mặt tiền vị trí này thường có người thuê rất nhanh.', 'Vị trí kinh doanh thế này không dễ tìm đâu.', 'Ai đến xem trước sẽ được ưu tiên trước nhé.']
+      : ['Vị trí như thế này thường kín người thuê rất nhanh.', 'Giá thuê này ở khu vực này không dễ tìm đâu.', 'Ai đến xem trước sẽ được ưu tiên trước nhé.'], 4)
+    : pick(['Vị trí như thế này không có nhiều.', 'Vị trí đẹp thế này không dễ tìm đâu.', 'Cơ hội sở hữu vị trí này không còn nhiều.'], 4);
   const phone = phoneDisplay(state.phone);
   const brand = (state.brand || '').trim() ? nameSpeak(state.brand.trim()) : '';
-  const xem = isLandType() ? 'xem đất' : 'xem nhà';
+  const xem = isLandType() ? 'xem đất' : isRoomType() ? 'xem phòng' : shop ? 'xem mặt bằng' : 'xem nhà';
   const cta = phone && brand ? `Gọi ngay ${brand}, số ${phone}, để đi ${xem} trực tiếp!`
     : phone ? `Gọi ngay số ${phone} để đi ${xem} trực tiếp!`
     : brand ? `Liên hệ ${brand} để đi ${xem} ngay hôm nay!`
@@ -2713,7 +2722,9 @@ const voMode = () => (state.scriptMode === 'tu' ? 'tu' : state.scriptMode === 'm
 // Giữ cho tương thích: voSig khác rỗng = căn này đã tạo giọng (lúc mở app không xoá phong cách đã chọn)
 const voChoice = () => voMode() === 'ai' ? 'ai|' + (state.aiTone || '') : voMode();
 const needTone = () => voMode() === 'ai' && !state.aiTone;
-const TONE_LABEL = { 'hai-huoc': 'Hài hước', 'ke-chuyen': 'Kể chuyện', 'chuyen-gia': 'Chuyên gia', 'tre-trung': 'Trẻ trung', 'sang-trong': 'Sang trọng', 'chot-sale': 'Chốt sale' };
+const TONE_LABEL = { 'hai-huoc': 'Hài hước', 'ke-chuyen': 'Kể chuyện', 'chuyen-gia': 'Chuyên gia', 'tre-trung': 'Trẻ trung', 'sang-trong': 'Sang trọng', 'chot-sale': 'Chốt sale',
+  'hoi-dap': 'Hỏi – đáp người thuê', 'dan-xem': 'Dẫn đi xem' };
+const RENT_TONES = ['hoi-dap', 'dan-xem'];
 function voStatus() {
   const segs = scriptSegments().filter(s => speakable(s.text));
   let ok = 0;
@@ -3674,6 +3685,7 @@ const LAND_ROOMS = [['mattien', 'Mặt tiền lô đất', 'Mặt tiền'], ['kh
 const isLandType = () => /LÔ ĐẤT/.test(state.typeLabel || '');
 // 30/10: nhà / mặt tiền CHO THUÊ — giá là giá thuê (mỗi tháng): chữ "Giá thuê" thay "Giá bán", không tính giá mỗi m²
 const isRentType = () => /CHO THUÊ/.test(state.typeLabel || '');
+const isRoomType = () => /PHÒNG CHO THUÊ/.test(state.typeLabel || '');
 const roomList = () => (isLandType() ? LAND_ROOMS : ROOMS);
 const realWord = () => (TYPE_WORD[state.typeLabel] || 'Căn nhà').toLowerCase();
 // Đoạn video đầu chỉ mở đầu video khi là mặt tiền (khớp render.js: frontClip)
@@ -3701,12 +3713,32 @@ const sortRooms = list => list.map((x, i) => [x, i]).sort((a, b) => (ROOM_IDX[a[
 const roomSelect = (cur, i, kind) => `<select class="room-sel" data-room-${kind}="${i}" aria-label="Nhãn ảnh/video">${roomList().map(([k, l, sh]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${sh || l}</option>`).join('')}</select>`;
 // Tiêu đề + hướng dẫn mục ảnh/video đổi theo loại bất động sản
 const set2 = (el, t) => { if (el.textContent !== t) el.textContent = t; };
+// Hàng nút loại BĐS + hàng phụ "Cho thuê" + phong cách kịch bản riêng cho thuê
+function syncTypeUi() {
+  const rent = isRentType();
+  setSeg('typeSeg', rent ? 'RENT' : state.typeLabel);
+  const rs = $('rentSeg'); if (rs) { rs.hidden = !rent; setSeg('rentSeg', state.typeLabel); }
+  const seg = $('aiToneSeg');
+  if (seg) {
+    for (const b of seg.querySelectorAll('.rent-only')) b.hidden = !rent;
+    const lab = { 'chuyen-gia': rent ? '📈 Tư vấn thuê' : '📈 Chuyên gia', 'chot-sale': rent ? '🔥 Chốt khách thuê' : '🔥 Chốt sale' };
+    for (const [v, t] of Object.entries(lab)) { const b = seg.querySelector(`[data-v="${v}"]`); if (b) set2(b, t); }
+    // đổi sang loại bán mà đang chọn phong cách riêng cho thuê → bỏ chọn, khách chọn lại
+    if (!rent && RENT_TONES.includes(state.aiTone)) { state.aiTone = ''; setSeg('aiToneSeg', ''); }
+  }
+  const hl = $('highlightsInput');
+  if (hl) hl.placeholder = rent
+    ? (/MẶT TIỀN/.test(state.typeLabel) ? 'Mỗi dòng 1 ý, VD:\nNgang 5m, trống suốt\nHợp mở cửa hàng, văn phòng\nCọc 2 tháng, ký hợp đồng 1 năm'
+      : 'Mỗi dòng 1 ý, VD:\nFull nội thất, có máy lạnh\nWC riêng, giờ giấc tự do\nCó chỗ để xe, camera an ninh')
+    : 'Mỗi dòng 1 ý, VD:\nNhà mới xây 2025\nHẻm thông 6m, xe hơi vào tận nhà\nChủ cần bán gấp, giảm 200 triệu';
+}
 function syncRoomUi() {
   const land = isLandType(), w = realWord();
   const order = land ? 'mặt tiền → toàn cảnh → đường trước lô → hiện trạng → xung quanh' : 'mặt tiền → phòng khách → bếp → phòng ngủ → toilet';
   const set = (id, t) => { const el = $(id); if (el && el.textContent !== t) el.textContent = t; };
   set('clipTitle', `Video thực tế ${w}`);
-  for (const id of ['floorsInput', 'bedsInput']) { const f = $(id)?.closest('.field'); if (f) f.hidden = land; } // lô đất: không có số tầng/phòng ngủ
+  for (const id of ['floorsInput', 'bedsInput']) { const f = $(id)?.closest('.field'); if (f) f.hidden = land || isRoomType(); } // lô đất, phòng cho thuê: không có số tầng/phòng ngủ
+  for (const id of ['thoCuInput', 'legalInput']) { const f = $(id)?.closest('.field'); if (f) f.hidden = isRentType(); } // cho thuê: thổ cư, pháp lý không cần
   // Cho thuê: ô giá thành "Giá thuê" (mỗi tháng)
   const pf = $('priceInput'), pl = pf?.closest('.field')?.querySelector('.field-label');
   if (pl) set2(pl, isRentType() ? 'Giá thuê / tháng' : 'Giá bán');
@@ -4276,7 +4308,7 @@ function init() {
   $('brandInput').value = state.brand;
   $('musicVol').value = state.musicVol;
   $('fitVoice').checked = state.fitVoice;
-  setSeg('typeSeg', state.typeLabel); syncRoomUi();
+  syncTypeUi(); syncRoomUi();
   setSeg('fmtSeg', state.fmt);
   setSeg('speedSeg', state.speed);
   if (['cungluc', 'tiaxa'].includes(state.flow)) state.flow = 'radar';
@@ -4303,10 +4335,14 @@ function init() {
       toast('Nhấn giữ vào ô toạ độ rồi chọn Dán.');
     }
   });
-  bindSeg('typeSeg', v => {
+  // Loại BĐS: 4 loại bán + 1 nút "Cho thuê" gộp 3 loại (nhà / phòng / mặt tiền) ở hàng phụ #rentSeg (30/10 Giang: gộp cho gọn)
+  const pickType = v => {
     state.typeLabel = v; state.label = v; $('labelInput').value = v;
-    syncRoomUi(); showPhotos(); showClips(); scheduleRebuild();
-  });
+    if (/CHO THUÊ/.test(v)) state.rentPick = v;
+    syncTypeUi(); syncRoomUi(); showPhotos(); showClips(); scheduleRebuild();
+  };
+  bindSeg('typeSeg', v => pickType(v === 'RENT' ? (state.rentPick || 'VỊ TRÍ NHÀ CHO THUÊ') : v));
+  bindSeg('rentSeg', v => pickType(v));
   $('labelInput').addEventListener('input', e => { state.label = e.target.value; scheduleRebuild(); });
   $('subInput').addEventListener('input', e => { state.sub = e.target.value.trim(); scheduleRebuild(); });
   syncIsoUi();

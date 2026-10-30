@@ -200,8 +200,12 @@
           <button type="button" role="radio" data-v="VỊ TRÍ CĂN VILLA">Villa</button>
           <button type="button" role="radio" data-v="VỊ TRÍ LÔ ĐẤT">Lô đất</button>
           <button type="button" role="radio" data-v="VỊ TRÍ DỰ ÁN">Dự án</button>
-          <button type="button" role="radio" data-v="VỊ TRÍ NHÀ CHO THUÊ">Nhà cho thuê</button>
-          <button type="button" role="radio" data-v="VỊ TRÍ MẶT TIỀN CHO THUÊ">Mặt tiền cho thuê</button>
+          <button type="button" role="radio" data-v="RENT">🔑 Cho thuê</button>
+        </div>
+        <div class="seg seg-sub" id="rentSeg" role="radiogroup" aria-label="Loại cho thuê" hidden>
+          <button type="button" role="radio" data-v="VỊ TRÍ NHÀ CHO THUÊ">Nhà</button>
+          <button type="button" role="radio" data-v="VỊ TRÍ PHÒNG CHO THUÊ">Phòng</button>
+          <button type="button" role="radio" data-v="VỊ TRÍ MẶT TIỀN CHO THUÊ">Mặt tiền</button>
         </div>
       </div>
       <details class="more">
@@ -432,6 +436,8 @@
               <button type="button" role="radio" data-v="tre-trung">⚡ Trẻ trung</button>
               <button type="button" role="radio" data-v="sang-trong">💎 Sang trọng</button>
               <button type="button" role="radio" data-v="chot-sale">🔥 Chốt sale</button>
+              <button type="button" role="radio" data-v="hoi-dap" class="rent-only" hidden>🙋 Hỏi – đáp người thuê</button>
+              <button type="button" role="radio" data-v="dan-xem" class="rent-only" hidden>🚶 Dẫn đi xem</button>
             </div>
             <button id="aiWriteBtn" class="btn btn-primary btn-block vo-write" type="button">✨ AI viết kịch bản</button>
           </div>
