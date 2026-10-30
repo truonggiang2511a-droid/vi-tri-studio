@@ -5,6 +5,7 @@ import { project, unproject, haversineKm, metersPerPixel, formatKm, fitZoom } fr
 import { drawIcon } from './icons.js';
 import { CATEGORIES, iconOf } from './data.js';
 import { motionHook, motionTitle, keyPop, keyPopBox, findKeywords } from './motion.js';
+import { drawMau1, mau1Layout } from './mau1.js';
 
 export const BASE_FONT = '"Be Vietnam Pro", "Segoe UI", system-ui, sans-serif';
 // Chữ tên xã/phường, tỉnh/thành: Montserrat đậm, to rộng
@@ -906,7 +907,10 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   tl.hookPh = first('front') || tl.intro;
   tl.hookEnd = hook ? tl.hookPh.t0 + tl.hookPh.hookLen : 0;
   // 25/10 22:07 Giang: BỎ từ khoá bật lên theo giọng đọc (giữ code, đổi KEY_POPS = true để bật lại)
-  tl.keyPops = KEY_POPS && scene.motion && opts.keyTexts && vd ? buildKeyPops(phases, opts.keyTexts, vd, (tl.hookEnd || 0) + 0.4) : [];
+  // 30/10: "mẫu 1" (chữ điểm nhấn + icon của Hook Kit) — chỉ admin bật (scene.keyLook = 'mau1'); khách thường giữ KEY_POPS = false như cũ
+  const MAU1 = scene.keyLook === 'mau1';
+  tl.keyPops = ((KEY_POPS && scene.motion) || MAU1) && opts.keyTexts && vd
+    ? buildKeyPops(phases, opts.keyTexts, vd, (tl.hookEnd || 0) + 0.4, MAU1 ? { pois, roads, scene } : null) : [];
   // Có video thực tế: đoạn đầu làm nền chuyển động cho thẻ giá mở đầu (ưu tiên hơn ảnh tĩnh)
   // Đoạn mặt tiền chiếu toàn khung suốt cảnh mở đầu `front` (thẻ giá nếu có đè lên 2,2 s đầu)
   const fp = first('front');
@@ -971,7 +975,26 @@ function capWeight(s) {
 // cùng cách chia như phụ đề (chữ số đọc lâu hơn, dấu câu có ngắt). Mỗi cảnh 1 từ khoá (cảnh căn nhà 2), cách nhau ≥ 1,8 s.
 const KEY_POPS = false;
 function charWeight(ch) { return 1 + (/\d/.test(ch) ? 2.5 : 0) + (/[.!?…]/.test(ch) ? 5 : /[,;:]/.test(ch) ? 3 : 0); }
-export function buildKeyPops(phases, texts, voice, notBefore = 0) {
+// Mẫu 1: màu + kiểu chữ theo loại từ khoá (Hook Kit mau1.md: giá đỏ Anton số chạy; con số khối 3D vàng; còn lại Anton xoay màu),
+// icon theo đúng ý (tiện ích theo nhóm, trục đường, phút, diện tích, sổ…), chữ ký tay = tên nơi đang nói tới (dữ liệu thật)
+const M1_POI_ICON = { truong: 'school', yte: 'hospital', cho: 'cart', hanhchinh: 'bank', congvien: 'park', kcn: 'city', khudothi: 'city', giaothong: 'map', congcong: 'pin', nganhang: 'bank' };
+const M1_ROT_ANTON = ['cam', 'xanh', 'hong', 'la'], M1_ROT_3D = ['xanh', 'hong', 'la', 'tim'];
+const shortName = s => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > 26 ? s.slice(0, 25).replace(/\s+\S*$/, '') + '…' : s; };
+function mau1Style(k, ph, ctx, n) {
+  const sc = ctx.scene, poi = ph.type === 'poi' ? ctx.pois[ph.poi] : null, road = ph.type === 'road' ? ctx.roads[ph.road] : null;
+  const place = poi ? shortName(poi.name) : road ? shortName(road.label)
+    : ['intro', 'house', 'province', 'front'].includes(ph.type) ? shortName(sc.adminArea?.wardName || sc.commune || '') : '';
+  let icon = 'pin', color = 'vang', look = '3d';
+  if (k.kind === 'price') { icon = 'tag'; color = 'do'; look = 'anton'; }
+  else if (k.kind === 'size' || k.kind === 'area') { icon = n % 2 ? 'ruler' : 'area'; }
+  else if (k.kind === 'time') { icon = 'clock'; color = M1_ROT_3D[n % 4]; }
+  else if (k.kind === 'dist') {
+    if (n % 2) { look = 'anton'; color = M1_ROT_ANTON[(n >> 1) % 4]; } // xen kẽ 3D vàng / Anton xoay màu cho đỡ đơn điệu
+    icon = poi ? (M1_POI_ICON[poi.cat] || 'pin') : road ? (road.level >= 3 ? 'highway' : 'road') : ph.type === 'boundary' ? 'map' : 'pin';
+  } else { look = 'anton'; color = M1_ROT_ANTON[n % 4]; icon = k.kind === 'legal' ? 'cert' : k.kind === 'beds' ? 'bed' : k.kind === 'floors' ? 'floors' : 'star'; }
+  return { icon, color, look, sign: place, count: k.kind === 'price' };
+}
+export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null) {
   const out = [];
   let last = -9;
   for (const ph of phases) {
@@ -990,7 +1013,14 @@ export function buildKeyPops(phases, texts, voice, notBefore = 0) {
     const pick = keys.slice().sort((a, b) => a.rank - b.rank || a.i - b.i).slice(0, max).sort((a, b) => a.i - b.i);
     for (const k of pick) {
       const t = start + dur * at(k.i + k.len * 0.5) - 0.12;
-      if (t < notBefore || t - last < 1.8 || t > ph.t1 - 0.3) continue;
+      if (t < notBefore || t - last < (m1 ? 2.2 : 1.8) || t > ph.t1 - 0.3) continue;
+      if (m1) {
+        // mẫu 1 giữ lâu hơn (Hook Kit: tối thiểu ~3 s; bản đồ chuyển cảnh nhanh nên 1,9–2,8 s), được lấn 0,4 s sang cảnh sau
+        const dur = Math.min(2.8, Math.max(1.9, ph.t1 + 0.4 - t));
+        out.push({ t, dur, text: k.text, kicker: k.kicker, kind: k.kind, id: out.length, ...mau1Style(k, ph, m1, out.length) });
+        last = t + dur - 2.2;
+        continue;
+      }
       out.push({ t, dur: Math.min(1.6, Math.max(1.1, ph.t1 - t - 0.1)), text: k.text, kicker: k.kicker, kind: k.kind, id: out.length });
       last = t;
     }
@@ -2594,7 +2624,60 @@ function drawHook(ctx, tl, t) {
 // Từ khoá bật lên đúng lúc giọng đọc nói tới (giá, cách nhà …m, …phút, diện tích, sổ hồng): phía trên gần giữa màn hình,
 // chọn chỗ KHÔNG đè thẻ/ghim/tên đường/phụ đề đang hiện (OCC); chọn 1 lần lúc bật rồi giữ nguyên chỗ cho tới khi rút.
 const POP_YS = [0.33, 0.27, 0.39, 0.22, 0.45, 0.17];
+// Mẫu 1: chọn chỗ trống nhất (né OCC) trong vùng an toàn, giữ chỗ suốt lúc hiện; cụm sau đổi phía so với cụm trước
+const ease01 = x => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const M1_XS = [0.5, 0.3, 0.7], M1_YS = [0.3, 0.22, 0.38, 0.16, 0.46, 0.54];
+function drawMau1Pops(ctx, tl, t) {
+  const { LW, LH, safe, fmt } = tl;
+  const k = (Math.min(LW, LH) / 540) * (fmt === 'v' ? 1 : 0.82);
+  const right = fmt === 'v' ? 60 : 30; // cột nút thả tim/bình luận TikTok/Reels
+  const Z = { x0: safe.x + 8, x1: LW - Math.max(safe.x + 8, right), y0: safe.top + 50, y1: LH - safe.bottom - 10 };
+  const maxW = Z.x1 - Z.x0;
+  tl._m1Pos ||= new Map();
+  const m = ctx.getTransform();
+  for (const p of tl.keyPops) {
+    const lt = t - p.t;
+    if (lt < 0 || lt > p.dur) continue;
+    const L = mau1Layout(ctx, p, k, maxW);
+    const scoreAt = (x, y) => {
+      const d = { x0: m.a * x + m.e, y0: m.d * y + m.f, x1: m.a * (x + L.w) + m.e, y1: m.d * (y + L.h) + m.f };
+      let sc = 0;
+      for (const o of OCC || []) {
+        const ov = Math.max(0, Math.min(d.x1, o.x1) - Math.max(d.x0, o.x0)) * Math.max(0, Math.min(d.y1, o.y1) - Math.max(d.y0, o.y0));
+        if (ov > 0) sc += Math.min(1, ov / Math.max(1, (o.x1 - o.x0) * (o.y1 - o.y0)));   // phần bị che của TỪNG thứ: che nhãn nhỏ cũng phạt
+      }
+      return sc;
+    };
+    const bestSpot = prev => {
+      let best = null;
+      M1_YS.forEach((fy, yi) => M1_XS.forEach((fx, xi) => {
+        const x = Math.max(Z.x0, Math.min(Z.x1 - L.w, Z.x0 + maxW * fx - L.w / 2));
+        const y = Math.max(Z.y0, Math.min(Z.y1 - L.h, Z.y0 + (Z.y1 - Z.y0) * fy - L.h / 2));
+        const sc = scoreAt(x, y) + (yi * 3 + xi) * 0.01 + (prev && Math.abs(prev.x - x) < 30 * k && Math.abs(prev.y - y) < 30 * k ? 0.2 : 0);
+        if (!best || sc < best.sc) best = { x, y, sc };
+      }));
+      return best;
+    };
+    let pos = tl._m1Pos.get(p.id);
+    if (!pos || lt < 0.05 || t < pos.tm - 0.001) {
+      const best = bestSpot(tl._m1Last && tl._m1Last.id !== p.id ? tl._m1Last : null);
+      pos = { x: best.x, y: best.y, fx: best.x, fy: best.y, tm: t };
+      tl._m1Pos.set(p.id, pos);
+      tl._m1Last = { id: p.id, x: best.x, y: best.y };
+    } else if (lt > 0.4 && t - pos.tm > 0.6) {
+      // máy lia làm ghim/thẻ/tên đường chạy vào chỗ cụm chữ đang đứng → lướt êm sang chỗ trống hơn
+      const cur = scoreAt(pos.x, pos.y);
+      if (cur > 0.3) {
+        const best = bestSpot(null);
+        if (best.sc < cur - 0.25) Object.assign(pos, { fx: pos.x, fy: pos.y, x: best.x, y: best.y, tm: t });
+      }
+    }
+    const g = ease01(clamp01((t - pos.tm) / 0.35));
+    drawMau1(ctx, p, pos.fx + (pos.x - pos.fx) * g, pos.fy + (pos.y - pos.fy) * g, lt, p.dur, k, maxW);
+  }
+}
 function drawKeyPops(ctx, tl, t) {
+  if (tl.keyPops && tl.keyPops.length && tl.scene.keyLook === 'mau1') return drawMau1Pops(ctx, tl, t);
   if (!tl.keyPops || !tl.keyPops.length || !tl.scene.motion) return;
   const { LW, LH, safe } = tl;
   const k = (Math.min(LW, LH) / 540) * (tl.fmt === 'v' ? 1 : 0.8);

@@ -103,10 +103,13 @@ export function sfxEvents(tl) {
     }
   }
   // Từ khoá bật lên theo giọng đọc (chữ động): "pop" khi bật, giá thêm tiếng "ding" sáng (khớp tl.keyPops trong render.js)
-  for (const k of tl.keyPops || []) {
+  // Mẫu 1 (Hook Kit): mỗi cụm CHỈ 1 tiếng lúc từ khoá chạm (0,1 + 0,2 s sau khi bật), đổi lk_a ↔ lk_b (tiếng Giang gửi 28/10); icon không tiếng
+  const m1 = tl.scene?.keyLook === 'mau1';
+  (tl.keyPops || []).forEach((k, i) => {
+    if (m1) { add(k.t + 0.28, i % 2 ? 'lk_b' : 'lk_a', 0.85); return; }
     add(k.t + 0.02, 'pop', k.kind === 'price' ? 0.6 : 0.42);
     if (k.kind === 'price') add(k.t + 0.12, 'ding', 0.4);
-  }
+  });
   // Radar quét bán kính: tiếng "ping" sonar mỗi vòng quét + tiếng ù radar quay vòng.
   // Thời điểm khớp với tia quét trong render.js (bắt đầu ở hướng 12 giờ, 1,25 giây một vòng)
   const ov = ph.find(x => x.type === 'overview'), rp = ph.find(x => x.type === 'radar'), sm = ph.find(x => x.type === 'summary');
@@ -348,5 +351,16 @@ export function scheduleSfx(ctx, events, vol = 0.7) {
   comp.threshold.value = -14;
   comp.ratio.value = 4;
   master.connect(comp).connect(ctx.destination);
-  for (const e of events) SYNTH[e.kind]?.(ctx, master, e.t, e.gain, e.dur);
+  for (const e of events) {
+    if (SYNTH[e.kind]) SYNTH[e.kind](ctx, master, e.t, e.gain, e.dur);
+    else if (SAMPLES[e.kind]) {
+      const src = ctx.createBufferSource(); src.buffer = SAMPLES[e.kind];
+      const g = ctx.createGain(); g.gain.value = e.gain;
+      src.connect(g).connect(master); src.start(Math.max(0, e.t));
+    } else if (/^lk_/.test(e.kind)) SYNTH.pop(ctx, master, e.t, e.gain * 0.6); // chưa tải được tiếng gốc → pop tổng hợp
+  }
 }
+// Tiếng thu sẵn (AudioBuffer dùng chung mọi AudioContext): lk_a, lk_b của mẫu 1 — app tải khi bật mẫu 1 (setSfxSample)
+const SAMPLES = {};
+export function setSfxSample(name, buf) { if (buf) SAMPLES[name] = buf; }
+export const hasSfxSample = name => !!SAMPLES[name];

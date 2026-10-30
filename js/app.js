@@ -6,7 +6,8 @@ import {
   FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, HI_THEMES, LOT_STYLES, LOT_COLORS, STYLES, BASES,
   CLIP_MAX, clipTime, camAt,
 } from './render.js';
-import { sfxEvents } from './sfx.js';
+import { sfxEvents, setSfxSample, hasSfxSample } from './sfx.js';
+import { loadMau1Fonts } from './mau1.js';
 import { stretchBuffer } from './stretch.js';
 import { parseCoordText, checkPolygon, convertLot, MERIDIANS, fmtMeridian } from './vn2000.js';
 import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4, unlockAudioContext } from './export.js';
@@ -74,6 +75,7 @@ const state = {
   showSweep: true,   // tia radar quét ở cảnh bán kính + tổng kết (28/10 Giang: MẶC ĐỊNH BẬT lại; SFX radar vẫn tắt vì chói tai)
   fxV: 2,            // 28/10: phiên bản mặc định 2 hiệu ứng trên (2 = bật)
   aiTone: '', // phong cách kịch bản AI — để trống, khách phải tự chọn trước khi tạo
+  keyLook: '',      // 30/10 'mau1' = chữ điểm nhấn + icon mẫu 1 (Hook Kit) lúc giọng đọc nói giá/mét/phút… — chỉ admin bật (mau1On())
   scriptMode: 'ai', // 'ai' = AI viết (mặc định, nổi bật) | 'mau' = kịch bản mẫu | 'tu' = tự viết/dán
   scriptOwn: false, // lời đang có do khách tự gõ/sửa → hỏi trước khi AI/mẫu thay
   voSig: '', // lựa chọn (cách viết + phong cách) của lần tạo giọng gần nhất
@@ -334,8 +336,31 @@ function sceneMotion() {
   }
   return STYLE_MOTION[state.style] || null;
 }
+// Mẫu 1: chỉ tài khoản admin (@vitristudio.com) bật được; khách thường luôn tắt
+function mau1On() { return state.keyLook === 'mau1' && /@vitristudio\.com$/i.test(String(account.profile?.login || '')); }
+let mau1Ready = false;
+async function prepMau1() {
+  if (!mau1On() || mau1Ready) return;
+  await loadMau1Fonts();
+  try {
+    const ac = new OfflineAudioContext(1, 44100, 44100);
+    for (const n of ['lk_a', 'lk_b']) if (!hasSfxSample(n)) {
+      const r = await fetch(`music/sfx_${n}.m4a`);
+      if (r.ok) setSfxSample(n, await ac.decodeAudioData(await r.arrayBuffer()));
+    }
+  } catch { /* không có tiếng gốc thì dùng pop tổng hợp */ }
+  mau1Ready = true;
+  media.mixKey = ''; dirty = true; rebuild();
+}
+function syncMau1Row() {
+  const row = $('mau1Row');
+  if (row) row.hidden = !/@vitristudio\.com$/i.test(String(account.profile?.login || ''));
+  const cb = $('mau1On'); if (cb) cb.checked = state.keyLook === 'mau1';
+  if (mau1On()) prepMau1();
+}
 function buildScene() {
   return {
+    keyLook: mau1On() ? 'mau1' : '',
     motion: sceneMotion(),
     motionHookOnly: !motionOn(),
     house: state.house,
@@ -3341,7 +3366,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'showTitle', 'brand', 'phone', 'price', 'area', 'beds', 'legal', 'highlights', 'buyer',
-  'scriptSeed', 'scriptEdits', 'scriptAi', 'scriptOwn', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'myRoads', 'plan', 'planOn', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'lotStyle', 'lotColor', 'lotSrc', 'lotDims', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'scriptOwn', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'myRoads', 'plan', 'planOn', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'keyLook', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'lotStyle', 'lotColor', 'lotSrc', 'lotDims', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -4470,6 +4495,12 @@ function init() {
   $('adminAreaOn').checked = !!state.showAdminArea;
   $('adminAreaOn').addEventListener('change', e => { state.showAdminArea = e.target.checked; save(); renderScript(); scheduleRebuild(); });
   $('sweepOn').addEventListener('change', e => { state.showSweep = e.target.checked; save(); scheduleRebuild(); });
+  $('mau1On').addEventListener('change', e => {
+    state.keyLook = e.target.checked ? 'mau1' : ''; save(); media.mixKey = ''; scheduleRebuild(); prepMau1();
+    if (e.target.checked && !voiceDurations()) toast('Chữ điểm nhấn hiện theo giọng đọc — tạo giọng ở mục ③ để thấy.', 3500);
+  });
+  onAccountChange(() => { syncMau1Row(); scheduleRebuild(); });
+  syncMau1Row();
   for (const [id, key] of [['areaWardInput', 'areaWard'], ['areaProvInput', 'areaProv'], ['roadWidthInput', 'roadWidth']]) {
     $(id).value = state[key] || '';
     $(id).addEventListener('input', e => { state[key] = e.target.value; scheduleRebuild(); });
