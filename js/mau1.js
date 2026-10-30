@@ -202,68 +202,49 @@ function keywordSprite(text, L, col, outline, S, shine) {
 export function drawMau1(ctx, p, x, y, lt, dur, k, maxW) {
   if (lt < 0 || lt > dur) return;
   const L = mau1Layout(ctx, p, k, maxW);
-  const out = clamp01((lt - (dur - 0.3)) / 0.3);
-  const A = 1 - out;
+  // 30/10 13:25 Giang: vào chỉ MỜ DẦN (không rơi, không nảy, không vòng lan/tia); ra = HÚT VÀO thu nhỏ mạnh + mờ dần
+  const OUT = 0.4;
+  const out = clamp01((lt - (dur - OUT)) / OUT);
+  const A = clamp01(lt / 0.35) * (1 - out);
   if (A <= 0.01) return;
   const S = Math.max(1, ctx.getTransform().a);
   const col = M1_ACCENT[p.color] || (L.d3 ? PAL_3D : PAL_ANTON)[p.color] || M1_ACCENT.neon;
   const kx = x + L.iw, base = y + L.thinH + L.asc;
   ctx.save();
-  // thu nhỏ nhẹ lúc rút
-  if (out > 0) { const cx = x + L.w / 2, cy = y + L.h / 2; ctx.translate(cx, cy); ctx.scale(1 - 0.06 * out, 1 - 0.06 * out); ctx.translate(-cx, -cy); }
-  // icon tròn bên trái, ngang từ khoá (hiện trước chữ 0,08 s)
-  if (p.icon) drawBadge(ctx, p.icon, x + 33 * k, base - L.asc * 0.45, 29 * k, lt + 0.08, dur + 0.08, p.color, A);
-  // dòng dẫn nhỏ: mờ dần vào + trồi lên
+  if (out > 0) {
+    const sc = 1 - 0.82 * out * out;   // hút vào tâm cụm, nhanh dần
+    const cx = x + L.vw / 2, cy = y + L.h / 2;
+    ctx.translate(cx, cy); ctx.scale(sc, sc); ctx.translate(-cx, -cy);
+  }
+  // icon tròn bên trái, ngang từ khoá — bỏ phần nảy/vòng lan lúc vào (lt + 1), chỉ mờ dần theo cả cụm
+  if (p.icon) drawBadge(ctx, p.icon, x + 33 * k, base - L.asc * 0.45, 29 * k, lt + 1, dur + 1 + 1, p.color, A);
   if (p.kicker) {
-    const a = clamp01(lt / 0.2) * A;
-    ctx.globalAlpha = a;
+    ctx.globalAlpha = A;
     ctx.font = `500 ${L.thin}px ${F_THIN}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = L.thin * 0.25; ctx.shadowOffsetY = L.thin * 0.08;
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillText(p.kicker, kx + L.big * 0.08, y + L.thin * 1.0 + (1 - ease.out(clamp01(lt / 0.25))) * 6 * k);
+    ctx.fillText(p.kicker, kx + L.big * 0.08, y + L.thin * 1.0);
     ctx.shadowColor = 'transparent';
   }
-  // từ khoá: rơi từ trên xuống có vệt nhoè dọc, chạm thì nảy nhẹ; giá: số chạy từ 0 lên
-  const q = lt - 0.1;
-  if (q > 0) {
-    const text = p.count ? countUp(p.text, clamp01(q / 1.0)) : p.text;
-    const [c, ox, oy, W, H] = keywordSprite(text, L, col, false, S, -1);   // 30/10: chữ phẳng, không viền, không vệt sáng
-    // 30/10 12:45 Giang: lúc vào hơi giật → vào ÊM: trượt xuống ngắn (0,45 × cỡ chữ) trong 0,38 s, mờ dần vào,
-    // KHÔNG vệt nhoè, KHÔNG rung nhanh; chạm xong chỉ phồng nhẹ một lần
-    const u = clamp01(q / 0.38);
-    const draw = (dy, alpha, sc = 1) => {
-      ctx.globalAlpha = alpha;
-      const cx = kx + L.bw / 2, cy = base - L.asc / 2 + dy;
-      ctx.save();
-      ctx.translate(cx, cy); ctx.scale(sc, sc); ctx.translate(-cx, -cy);
-      ctx.drawImage(c, 0, 0, W * S, H * S, kx + ox, base + oy + dy, W, H);
-      ctx.restore();
-    };
-    // bóng đổ đậm vừa, gọn (không quầng)
-    // Sang trọng (vàng tươi) bóng đậm hơn một chút cho nổi trên ảnh vệ tinh sáng
+  // từ khoá: giá thì số chạy từ 0 lên
+  {
+    const text = p.count ? countUp(p.text, clamp01(lt / 1.0)) : p.text;
+    const [c, ox, oy, W, H] = keywordSprite(text, L, col, false, S, -1);   // chữ phẳng, không viền, không vệt sáng
     ctx.shadowColor = p.color === 'sangtrong' ? 'rgba(0,0,0,0.78)' : 'rgba(0,0,0,0.62)'; ctx.shadowBlur = L.big * 0.07; ctx.shadowOffsetY = L.big * 0.065;
-    if (u < 1) {
-      const e = 1 - Math.pow(1 - u, 3);
-      draw(-(1 - e) * L.big * 0.45, clamp01(q / 0.25) * A);
-    } else {
-      const sc = 1 + 0.025 * Math.sin(Math.PI * clamp01((q - 0.38) / 0.4));   // phồng nhẹ 1 lần, êm
-      draw(0, A, sc);
-    }
+    ctx.globalAlpha = A;
+    ctx.drawImage(c, 0, 0, W * S, H * S, kx + ox, base + oy, W, H);
     ctx.shadowColor = 'transparent';
   }
-  // chữ ký tay: viết dần từ trái sang phải, canh phải, đè lên đáy từ khoá
+  // chữ ký tay: canh phải, đè lên đáy từ khoá, mờ dần vào sau từ khoá một chút
   if (p.sign) {
-    const sq = (lt - 0.45) / 0.5;
-    if (sq > 0) {
+    const sa = clamp01((lt - 0.15) / 0.35) * (1 - out);
+    if (sa > 0.01) {
       ctx.font = `600 ${L.sign}px ${F_SIGN}`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
       const sx = Math.max(kx, kx + L.bw + L.big * 0.08 - L.sgw), sy = base + L.desc + L.depth + L.sign * 0.5;
-      ctx.save();
-      ctx.beginPath(); ctx.rect(sx - 4, sy - L.sign * 1.4, (L.sgw + 8) * ease.out(clamp01(sq)), L.sign * 2.2); ctx.clip();
-      ctx.globalAlpha = A;
+      ctx.globalAlpha = sa;
       ctx.shadowColor = 'rgba(0,0,0,0.72)'; ctx.shadowBlur = L.sign * 0.12; ctx.shadowOffsetY = L.sign * 0.06;
       ctx.fillStyle = '#FFFFFF';
       ctx.fillText(p.sign, sx, sy, L.sgw + 1);
-      ctx.restore();
     }
   }
   ctx.restore();

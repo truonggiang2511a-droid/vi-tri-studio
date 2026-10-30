@@ -112,8 +112,6 @@ export function sfxEvents(tl) {
     // 30/10 11:30 Giang: tiếng dài hơn (thêm đuôi vang), bắt đầu ngay lúc cụm hiện ra để cả lúc rơi xuống + chạm đều có tiếng
     if (m1) {
       add(k.t + 0.1, i % 2 ? 'lk_b' : 'lk_a', 0.6); lkAt.push(k.t + 0.3);
-      // danh sách thông tin căn: các dòng sau mỗi dòng 1 tiếng gõ nhẹ đúng lúc hiện (30/10 13:00)
-      if (k.kind === 'feats') (k.items || []).slice(1).forEach((it, j) => add(it.t + 0.05, 'key' + (j % 6 + 1), 0.45));
       return;
     }
     add(k.t + 0.02, 'pop', k.kind === 'price' ? 0.6 : 0.42);
@@ -125,8 +123,6 @@ export function sfxEvents(tl) {
       if (!c.m1) continue;
       const t = c.words?.[0]?.t ?? c.t0;
       if (t - lastKey < 2.5 || lkAt.some(x => Math.abs(x - t) < 0.6)) continue;
-      // phụ đề đang ẩn vì cụm chữ đứng ở chỗ phụ đề (render.js m1CapHide) → không gõ phím
-      if ((tl.keyPops || []).some(k => t > k.t - 0.3 && t < k.t + k.dur + 0.25)) continue;
       add(t, 'key' + (n++ % 6 + 1), 0.5);
       lastKey = t;
     }

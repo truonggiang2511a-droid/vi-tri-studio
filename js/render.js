@@ -5,7 +5,7 @@ import { project, unproject, haversineKm, metersPerPixel, formatKm, fitZoom } fr
 import { drawIcon } from './icons.js';
 import { CATEGORIES, iconOf } from './data.js';
 import { motionHook, motionTitle, keyPop, keyPopBox, findKeywords } from './motion.js';
-import { drawMau1, mau1Layout, drawM1Feats, drawM1Cta, m1CtaSize } from './mau1.js';
+import { drawMau1, mau1Layout, drawM1Cta, m1CtaSize } from './mau1.js';
 
 export const BASE_FONT = '"Be Vietnam Pro", "Segoe UI", system-ui, sans-serif';
 // Chữ tên xã/phường, tỉnh/thành: Montserrat đậm, to rộng
@@ -994,7 +994,7 @@ function mau1Style(k, ph, ctx, n) {
   else if (k.kind === 'size' || k.kind === 'area') icon = n % 2 ? 'ruler' : 'area';
   else if (k.kind === 'time') icon = 'clock';
   else if (k.kind === 'dist') icon = poi ? (M1_POI_ICON[poi.cat] || 'pin') : road ? (road.level >= 3 ? 'highway' : 'road') : ph.type === 'boundary' ? 'map' : 'pin';
-  else icon = k.kind === 'legal' ? 'cert' : k.kind === 'beds' ? 'bed' : k.kind === 'floors' ? 'floors' : 'star';
+  else icon = k.kind === 'legal' ? 'cert' : k.kind === 'beds' ? 'bed' : k.kind === 'floors' ? 'floors' : k.kind === 'furn' ? 'sofa' : 'star';
   return { icon, color, look, sign: place, count: k.kind === 'price' };
 }
 const M1_FEAT = { size: 'area', area: 'area', floors: 'floors', beds: 'bed', furn: 'sofa', legal: 'cert' };
@@ -1022,20 +1022,38 @@ export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null) {
     if (m1) {
       // 30/10 13:00 Giang: giá để CUỐI video (cảnh kết, số chạy tới giá) — ghi nhớ, không bật ở chỗ khác
       for (const k of all) if (k.kind === 'price') m1Prices.push({ k, ph, t: kt(k) });
-      // cảnh căn nhà: thông tin căn (diện tích, tầng, phòng ngủ, nội thất, sổ…) NHẤN thành danh sách hiện lần lượt theo lời đọc
+      // cảnh căn nhà: thông tin căn được NHẤN đúng lúc giọng đọc nói tới, MỖI ý một cụm (30/10 13:25 Giang: không liệt kê
+      // thành danh sách — nói "4 phòng ngủ" thì nhấn "4 phòng ngủ", diện tích thì nhấn "Diện tích 5x20 m"); thẻ thông tin giữ như cũ.
+      // Cụm sau thay cụm trước (cùng một chỗ trên cùng), lọc theo loại BĐS (bán đất không phòng ngủ/tầng/nội thất; cho thuê không pháp lý)
       if (ph.type === 'house') {
-        const okF = m1Type(m1.scene).feats;   // bán đất: không phòng ngủ/tầng/nội thất; cho thuê: không pháp lý
-        const items = all.filter(k => M1_FEAT[k.kind] && okF.includes(k.kind)).map(k => ({ text: m1FeatText(k), icon: M1_FEAT[k.kind], t: Math.max(kt(k), notBefore) }))
-          .filter(it => it.t < ph.t1 - 0.2).slice(0, 5);
-        if (items.length && items[0].t - last >= 0.8) {
-          const t0 = items[0].t, d = Math.max(ph.t1 + 0.3, items[items.length - 1].t + 1.6) - t0;
-          out.push({ t: t0, dur: d, kind: 'feats', items, color: m1.scene.style || 'neon', id: out.length });
-          last = t0 + d - 2.2;
+        const okF = m1Type(m1.scene).feats;
+        const fs = all.filter(k => M1_FEAT[k.kind] && okF.includes(k.kind)).map(k => ({ k, t: kt(k) }))
+          .filter(f => f.t >= notBefore && f.t < ph.t1 - 0.3);
+        // lời đọc liệt kê nhanh (≈ 1 s một ý) → mỗi cụm cần ≥ 1,5 s để đọc kịp: xếp theo độ quan trọng
+        // (diện tích > phòng ngủ > pháp lý > nội thất > tầng), mỗi cụm được trễ tối đa 0,7 s so với lúc nói, không có chỗ thì bỏ
+        const PRI = { size: 0, area: 0, beds: 1, legal: 2, furn: 3, floors: 4 };
+        const keep = [];
+        for (const f of fs.slice().sort((x, y) => PRI[x.k.kind] - PRI[y.k.kind] || x.t - y.t)) {
+          if (keep.length >= 4 || keep.some(q => q.k.kind === f.k.kind)) continue;
+          for (let s0 = f.t; s0 <= f.t + 0.7; s0 += 0.05) {
+            if (s0 - last < 2.2 || s0 < notBefore || s0 > ph.t1 - 0.4 || keep.some(q => Math.abs(q.t - s0) < 1.5)) continue;
+            keep.push({ k: f.k, t: s0 }); break;
+          }
+        }
+        keep.sort((x, y) => x.t - y.t);
+        if (keep.length) {
+          keep.forEach((f, i, arr) => {
+            const nx = arr[i + 1];
+            const d = nx ? Math.min(2.5, nx.t - f.t - 0.05) : Math.min(2.5, Math.max(1.6, ph.t1 + 0.4 - f.t));
+            const txt = String(f.k.text).toLowerCase().replace('×', 'x');
+            out.push({ t: f.t, dur: d, text: txt, kicker: f.k.kicker, kind: f.k.kind, id: out.length, ...mau1Style(f.k, ph, m1, out.length) });
+            last = f.t + d - 2.2;
+          });
           continue;
         }
       }
     }
-    // Mẫu 1: cụm chữ lẻ chỉ còn khoảng cách, số phút (giá dời xuống cuối; thông tin căn thành danh sách ở cảnh căn nhà)
+    // Mẫu 1: các cảnh khác chỉ còn khoảng cách, số phút (giá dời xuống cuối; thông tin căn nhấn ở cảnh căn nhà)
     const keys = all.filter(k => !m1 || k.kind === 'dist' || k.kind === 'time');
     if (!keys.length) continue;
     const max = ph.type === 'house' ? 2 : 1;
@@ -2175,6 +2193,9 @@ function drawTitle(ctx, tl, text, sub, alpha, topY = 0) {
     ctx.fillText(sub, 0, sy + 0.5);
   }
   ctx.restore();
+  // đáy tiêu đề (không tính hiệu ứng trồi vào) — mẫu 1 đặt cụm chữ ngay dưới
+  const y0 = y - (1 - easeOut(alpha)) * -10, ly = y0 + (lines.length - 1) * (size + (kind === 'sticker' ? 14 : 8));
+  return sub ? ly + size * (kind === 'serif' || kind === 'thin' ? 1.35 : 0.95) + (kind === 'sticker' ? 8 : 0) + 12 : ly + size * (kind === 'serif' || kind === 'thin' ? 0.9 : 0.6);
 }
 
 // Chữ 3D đứng (bảng hiệu): đùn xuống dưới, tâm tại gốc toạ độ hiện tại
@@ -2391,24 +2412,8 @@ function captionAt(tl, t) {
 // Phụ đề mẫu 1: chữ trắng Be Vietnam ExtraBold, không nền, không viền, bóng vừa đổ gần chữ hơi mềm, một dòng.
 // Cỡ 0,075 × cạnh ngắn (Hook Kit 0,095 cho video người dẫn; bản đồ nhiều nhãn nên nhỏ hơn). Hook Kit đặt ở y 0,43 (trên đầu người dẫn); video map giữa khung là ghim nhà/tiện ích
 // nên dùng chỗ Hook Kit hạ phụ đề khi có cụm chữ lớn (pos_lock y ≈ 0,76) = phía dưới, trên các thẻ ở đáy khung.
-// 30/10 Giang: cụm chữ mẫu 1 hiện thì xuống ĐÚNG chỗ phụ đề trắng, phụ đề ẩn đi; cụm rút thì phụ đề chạy lại bình thường.
-// Trả 0..1 = mức ẩn phụ đề tại t (mờ ra/vào 0,25 s, tắt hẳn trước khi cụm vào). sfx.js dùng cùng cửa sổ [k.t − 0,3; k.t + dur + 0,25] để bỏ tiếng gõ phím.
-const M1_CAP_Y = 0.72;   // 30/10 12:20 Giang: phụ đề mẫu 1 nhích lên một chút (trước 0,76) — cụm chữ dưới đứng đúng chỗ này
-function m1CapHide(tl, t) {
-  let h = 0;
-  for (const k of tl.keyPops || []) {
-    // 30/10 12:45: phụ đề mờ đi 0,25 s và tắt hẳn TRƯỚC khi cụm vào (đổi chỗ êm, không giật)
-    const a = t - (k.t - 0.3), b = k.t + k.dur - t;
-    if (a > 0 && b > -0.25) h = Math.max(h, Math.min(clamp01(a / 0.25), clamp01((b + 0.25) / 0.25)));
-  }
-  return h;
-}
-// Chỗ phụ đề mẫu 1 (đáy dòng phụ đề), để cụm chữ đứng vào đúng chỗ đó
-function m1CapBottom(tl) {
-  const { LW, LH, safe } = tl;
-  const h = 0.075 * Math.min(LW, LH) * 1.3;
-  return Math.min(LH - safe.bottom - (tl.fmt === 'v' ? 14 : 8), tl.fmt === 'v' ? LH * M1_CAP_Y + h / 2 : Infinity);
-}
+// 30/10 13:25 Giang: cụm chữ mẫu 1 nay luôn ở trên cùng (dưới tiêu đề) → phụ đề chạy bình thường, không ẩn nữa.
+const M1_CAP_Y = 0.72;   // 30/10 12:20 Giang: phụ đề mẫu 1 nhích lên một chút (trước 0,76)
 function captionLayoutM1(ctx, tl, cap, occ) {
   const { LW, LH, safe } = tl;
   let left = safe.x + 6, right = LW - safe.x - 6;
@@ -2943,32 +2948,29 @@ function drawMau1Pops(ctx, tl, t) {
   const maxW = Z.x1 - Z.x0;
   tl._m1Pos ||= new Map();
   tl._m1Boxes = []; tl._m1BoxT = t;
-  const m = ctx.getTransform();
   for (const p of tl.keyPops) {
     const lt = t - p.t;
     if (lt < 0 || lt > p.dur) continue;
-    if (p.kind === 'feats') { drawM1Feats(ctx, p, t, LW / 2, LH - safe.bottom - (fmt === 'v' ? 12 : 8), k, p.color); continue; }
     const L = mau1Layout(ctx, p, k, maxW);
-    const scoreAt = (x, y) => {
-      const pad = 12 * k; // chừa khoảng hở quanh cụm, không sát mép thẻ tiện ích/ghim
-      const d = { x0: m.a * (x - pad) + m.e, y0: m.d * (y - pad) + m.f, x1: m.a * (x + L.w + pad) + m.e, y1: m.d * (y + L.h + pad) + m.f };
-      let sc = 0;
-      for (const o of OCC || []) {
-        const ov = Math.max(0, Math.min(d.x1, o.x1) - Math.max(d.x0, o.x0)) * Math.max(0, Math.min(d.y1, o.y1) - Math.max(d.y0, o.y0));
-        if (ov > 0) sc += Math.min(1, ov / Math.max(1, (o.x1 - o.x0) * (o.y1 - o.y0)));   // phần bị che của TỪNG thứ: che nhãn nhỏ cũng phạt
-      }
-      return sc;
-    };
-    // 30/10 12:20 Giang: cụm KHÔNG đổi chỗ — chỉ 2 chỗ cố định: TRÊN (ngay dưới dải tiêu đề) nếu trống, còn lại DƯỚI (chỗ phụ đề,
-    // phụ đề ẩn lúc cụm hiện). Chọn 1 lần lúc cụm bật, đứng yên tới khi thoát (không lướt); thẻ tiện ích tự né cụm.
+    // 30/10 13:25 Giang: cụm luôn ở TRÊN CÙNG, canh giữa — ngay dưới dòng xã/phường của tiêu đề khi tiêu đề còn hiện,
+    // tiêu đề hết thì đứng đúng chỗ tiêu đề. Chọn 1 lần lúc cụm bật, đứng yên tới khi thoát; thẻ tiện ích tự né cụm.
     let pos = tl._m1Pos.get(p.id);
     if (!pos || lt < 0.05 || t < pos.tm - 0.001) {
-      // 30/10 12:50 Giang: canh GIỮA khung theo phần nhìn thấy (icon + chữ), không theo vùng an toàn lệch trái vì cột nút TikTok
       const x = Math.max(Z.x0, Math.min(Z.x1 - L.vw, LW / 2 - L.vw / 2));
-      const yTop = Math.max(Z.y0, Math.min(Z.y1 - L.h, safe.top + (fmt === 'v' ? 88 : 72) * k));
-      const yBot = Math.max(Z.y0, Math.min(Z.y1 - L.h, m1CapBottom(tl) - L.h));
-      const sTop = scoreAt(x, yTop), sBot = scoreAt(x, yBot);
-      const y = sTop <= 0.001 ? yTop : sBot <= 0.001 ? yBot : sTop < sBot ? yTop : yBot;
+      const T = tl._title || { top: safe.top, bot: safe.top, t0: 0, t1: -1 };
+      const withTitle = p.t < T.t1 && p.t + p.dur > T.t0;
+      let y = withTitle ? T.bot + 12 * k : T.top;
+      // cảnh Kết nối vùng / Hạ tầng có nhãn cảnh ở trên cùng → cụm đứng ngay dưới nhãn
+      if (tl.phases.some(q => (q.type === 'region' || q.type === 'infra') && p.t < q.t1 && p.t + p.dur > q.t0)) {
+        const lg = logoBox(tl), bannerY = lg && fmt !== 'h' ? lg.y + lg.h + 20 : safe.top + 24;
+        y = Math.max(y, bannerY + 12 + 8 * k);
+      }
+      // cảnh kết: thẻ thông tin nằm trên cùng → cụm (giá chạy số) đứng ngay dưới thẻ
+      const ou = tl.phases.find(q => q.type === 'outro');
+      if (ou && p.t + p.dur > ou.t0 + 0.6) {
+        const ib = infoBox(tl, 'top', logoBox(tl));
+        if (ib) y = Math.max(y, ib.y + ib.h + 12 * k);
+      }
       pos = { x, y, tm: t };
       tl._m1Pos.set(p.id, pos);
     }
@@ -4403,7 +4405,12 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     const tTop = logo && tl.fmt !== 'h' ? logo.y + logo.h + 8 : 0;
     const mEnv = { LW: tl.LW, LH: tl.LH, safe: tl.safe, fmt: tl.fmt, lt: t - tStart, A: tA, k: (Math.min(tl.LW, tl.LH) / 540) * (tl.fmt === 'v' ? 1 : 0.85),
       text: String(scene.title || '').toUpperCase(), sub: scene.titleSub, top: Math.max((tl.fmt === 'v' ? tl.safe.top + 8 : tl.safe.top - 6) - (scene.keyLook === 'mau1' && tl.keyPops && tl.keyPops.length ? 12 : 0), tTop) };
-    if (!(tA > 0.01 && scene.motion && !scene.motionHookOnly && motionTitle(ctx, scene.motion, mEnv))) drawTitle(ctx, tl, scene.title, scene.titleSub, tA, tTop);
+    let tBot = null;
+    if (!(tA > 0.01 && scene.motion && !scene.motionHookOnly && motionTitle(ctx, scene.motion, mEnv))) tBot = drawTitle(ctx, tl, scene.title, scene.titleSub, tA, tTop);
+    else if (tA > 0.01) tBot = mEnv.top + (scene.titleSub ? 82 : 56) * mEnv.k;   // chữ động: đáy dòng xã/phường (đo theo 4 gói motion.js)
+    // Mẫu 1: cụm chữ điểm nhấn đứng ngay DƯỚI tiêu đề khi tiêu đề còn hiện, tiêu đề hết thì đứng đúng chỗ tiêu đề
+    tl._title = { top: mEnv.top, bot: tBot || (tl._title && tl._title.bot) || mEnv.top + (scene.titleSub ? 82 : 56) * mEnv.k,
+      t0: tStart, t1: scene.title ? ov.t0 + 0.5 + 0.6 : -1 };
     if (tA > 0.2) occBox(ctx, tl.safe.x, mEnv.top - 6, tl.LW - tl.safe.x, mEnv.top + (scene.titleSub ? 118 : 80) * mEnv.k);
   }
   const houseCardA = Math.max(fadeWin(t, ho.t0 + 0.5, ov.t0 + 0.4, 0.45, 0.4), fadeWin(t, ou.t0 + 0.5, T + 10, 0.45, 0.4));
@@ -4441,10 +4448,8 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     occ.top = Math.min(occ.top, bottom - S.h - 8);
   }
   let cap = captionAt(tl, t);
-  const capHide = cap && cap.m1 ? m1CapHide(tl, t) : 0;   // cụm chữ mẫu 1 đang ở chỗ phụ đề → ẩn phụ đề
-  if (capHide >= 0.999) cap = null;
   const capL = cap ? captionLayout(ctx, tl, cap, occ) : null;
-  const capA = cap ? (cap.m1 ? clamp01((cap.t1 - t) / 0.1) * (1 - capHide) : Math.min(clamp01((t - cap.t0) / 0.12), clamp01((cap.t1 - t) / 0.12))) : 0;
+  const capA = cap ? (cap.m1 ? clamp01((cap.t1 - t) / 0.1) : Math.min(clamp01((t - cap.t0) / 0.12), clamp01((cap.t1 - t) / 0.12))) : 0;
 
   // Nhãn "5 phút / 10 phút / 15 phút lái xe" ở mép trên mỗi vùng (vị trí trên màn hình, kẹp trong khung an toàn)
   if (tl.isoPh && scene.iso && scene.iso.areas) {
