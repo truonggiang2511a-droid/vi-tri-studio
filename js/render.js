@@ -983,8 +983,8 @@ const M1_POI_ICON = { truong: 'school', yte: 'hospital', cho: 'cart', hanhchinh:
 const shortName = s => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > 26 ? s.slice(0, 25).replace(/\s+\S*$/, '') + '…' : s; };
 function mau1Style(k, ph, ctx, n) {
   const sc = ctx.scene, poi = ph.type === 'poi' ? ctx.pois[ph.poi] : null, road = ph.type === 'road' ? ctx.roads[ph.road] : null;
-  const place = poi ? shortName(poi.name) : road ? shortName(road.label)
-    : ['intro', 'house', 'province', 'front'].includes(ph.type) ? shortName(sc.adminArea?.wardName || sc.commune || '') : '';
+  // Chữ ký tay chỉ ghi khi có nghĩa: khoảng cách/phút tới đúng tiện ích hoặc trục đường đang nói (30/10 Giang: "Sổ hồng riêng · Phường An Lạc" không ăn nhập)
+  const place = (k.kind === 'dist' || k.kind === 'time') ? (poi ? shortName(poi.name) : road ? shortName(road.label) : '') : '';
   // 30/10 Giang: MỘT font Montserrat, chữ phẳng bóng đổ vừa, mỗi phong cách một màu nhấn (mau1.js M1_ACCENT); giá vẫn số chạy
   let icon = 'pin';
   const color = sc.style || 'neon', look = 'flat';
@@ -1003,7 +1003,8 @@ export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null) {
     const dur = ph.vkey && voice[ph.vkey];
     if (!text || !dur || ph.type === 'clip' || ph.type === 'photos') continue;
     const s = String(text).normalize('NFC');
-    const keys = findKeywords(s);
+    // Mẫu 1: chỉ giá, khoảng cách, số phút — diện tích/pháp lý/phòng/tầng đã có trên thẻ thông tin (30/10 Giang: không lặp 2 chỗ)
+    const keys = findKeywords(s).filter(k => !m1 || k.kind === 'price' || k.kind === 'dist' || k.kind === 'time');
     if (!keys.length) continue;
     const cw = Array.from(s).map(charWeight);
     const tot = cw.reduce((a, b) => a + b, 0) || 1;
@@ -1018,7 +1019,8 @@ export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null) {
       if (m1) {
         // mẫu 1 giữ lâu hơn (Hook Kit: tối thiểu ~3 s; bản đồ chuyển cảnh nhanh nên 1,9–2,8 s), được lấn 0,4 s sang cảnh sau
         const dur = Math.min(2.8, Math.max(1.9, ph.t1 + 0.4 - t));
-        out.push({ t, dur, text: k.text, kicker: k.kicker, kind: k.kind, id: out.length, ...mau1Style(k, ph, m1, out.length) });
+        // đơn vị viết thường cho đồng bộ với thẻ thông tin: "3,2 tỷ", "200 m", "7,9 km", "18 phút"
+        out.push({ t, dur, text: k.text.toLowerCase(), kicker: k.kicker, kind: k.kind, id: out.length, ...mau1Style(k, ph, m1, out.length) });
         last = t + dur - 2.2;
         continue;
       }
@@ -2216,13 +2218,29 @@ function infoFullItems(scene) {
     rw ? 'Đường trước nhà ' + (num(rw) ? rw + 'm' : rw) : '',
   ].filter(Boolean);
 }
+// Chia các mục thông tin thành tối đa 2 dòng (xuống dòng theo từng mục, không cắt giữa mục) — đo bằng canvas phụ
+let INFO_MC = null;
+function infoFullLines(items, maxW) {
+  if (!INFO_MC) INFO_MC = (typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(1, 1) : document.createElement('canvas')).getContext('2d');
+  const g = INFO_MC;
+  g.font = `700 15px ${FONT}`;
+  const sep = '  ·  ', lines = [''];
+  for (const it of items) {
+    const cur = lines[lines.length - 1], test = cur ? cur + sep + it : it;
+    if (!cur || g.measureText(test).width <= maxW) lines[lines.length - 1] = test;
+    else lines.push(it);
+  }
+  if (lines.length > 2) lines.splice(1, lines.length, lines.slice(1).join(sep));
+  return lines;
+}
 // Vị trí thẻ thông tin: lúc giới thiệu căn nhà nằm dưới cùng (ngang: góc phải dưới), lúc kết nằm trên cùng
 function infoBox(tl, where, logo) {
   let d = infoData(tl.scene);
   if (tl.infoFull) { const full = infoFullItems(tl.scene); d = full.length ? { price: '', det: full, full: true } : null; }
   if (!d) return null;
   const { LW, LH, safe } = tl;
-  const h = d.full ? 82 : d.price ? (d.det.length ? 92 : 66) : 46;
+  if (d.full) d.lines = infoFullLines(d.det, (tl.fmt === 'h' ? 384 : LW - safe.x * 2) - 32);
+  const h = d.full ? 38 + d.lines.length * 22 : d.price ? (d.det.length ? 92 : 66) : 46;
   if (tl.fmt === 'h') {
     const w = 384;
     return where === 'top'
@@ -2252,14 +2270,8 @@ function drawInfo(ctx, box, alpha) {
     spacedCaps(ctx, 'THÔNG TIN BẤT ĐỘNG SẢN', x + 16, y + 23, 1.2);
     ctx.fillStyle = ST.ink;
     ctx.font = `700 15px ${FONT}`;
-    const maxW = w - 32, sep = '  ·  ', lines = [''];
-    for (const it of d.det) {
-      const cur = lines[lines.length - 1], test = cur ? cur + sep + it : it;
-      if (!cur || ctx.measureText(test).width <= maxW) lines[lines.length - 1] = test;
-      else lines.push(it);
-    }
-    if (lines.length > 2) lines.splice(1, lines.length, lines.slice(1).join(sep));
-    lines.forEach((ln, k) => ctx.fillText(fitOneLine(ctx, ln, maxW), x + 16, y + 48 + k * 22));
+    const maxW = w - 32;
+    d.lines.forEach((ln, k) => ctx.fillText(fitOneLine(ctx, ln, maxW), x + 16, y + 48 + k * 22));
   } else if (d.price) {
     ctx.fillStyle = CA();
     ctx.font = `700 11px ${FONT}`;
@@ -2288,14 +2300,14 @@ function captionAt(tl, t) {
 }
 // Đặt phụ đề phía trên các thẻ đang hiện ở đáy khung (thẻ ranh, bảng tổng kết, thẻ liên hệ, thẻ giá)
 // Phụ đề mẫu 1: chữ trắng Be Vietnam ExtraBold, không nền, không viền, bóng vừa đổ gần chữ hơi mềm, một dòng.
-// Cỡ 0,095 × cạnh ngắn như Hook Kit. Hook Kit đặt ở y 0,43 (trên đầu người dẫn); video map giữa khung là ghim nhà/tiện ích
+// Cỡ 0,075 × cạnh ngắn (Hook Kit 0,095 cho video người dẫn; bản đồ nhiều nhãn nên nhỏ hơn). Hook Kit đặt ở y 0,43 (trên đầu người dẫn); video map giữa khung là ghim nhà/tiện ích
 // nên dùng chỗ Hook Kit hạ phụ đề khi có cụm chữ lớn (pos_lock y ≈ 0,76) = phía dưới, trên các thẻ ở đáy khung.
 function captionLayoutM1(ctx, tl, cap, occ) {
   const { LW, LH, safe } = tl;
   let left = safe.x + 6, right = LW - safe.x - 6;
   if (occ.rightPanel) right = occ.rightPanel - 12;
   const maxW = right - left;
-  let size = 0.095 * Math.min(LW, LH);
+  let size = 0.075 * Math.min(LW, LH);   // 30/10: nhỏ hơn Hook Kit (0,095) vì bản đồ đã nhiều nhãn
   ctx.save();
   ctx.font = `800 ${size}px ${FONT}`;
   let tw = ctx.measureText(cap.text).width;
