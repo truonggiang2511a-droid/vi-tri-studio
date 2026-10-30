@@ -42,28 +42,28 @@ let GOLD = '#FFD166';
 export const STYLES = {
   neon: {
     // 30/10 14:20 Giang: đồng bộ màu — Neon đêm lấy XANH NEON làm màu chính (thẻ, thẻ mở đầu, chữ điểm nhấn, CTA), vàng là màu phụ
-    label: 'Neon đêm', desc: 'Chữ 3D, line phát sáng, nổi bật trên TikTok',
+    label: 'Xanh neon', desc: 'Line phát sáng, chữ 3D — nổi bật trên TikTok',
     head: BASE_FONT, headW: 800, acc: '#5EEAF5', accInk: '#04161A', acc2: '#FFD166',
     card: 'rgba(12,16,24,0.9)', ink: '#ffffff', soft: 'rgba(255,255,255,0.82)', mute: 'rgba(255,255,255,0.6)',
     tint: '#9fc4be', dark: 0.12, title: '3d', capBg: 'rgba(0,0,0,0.62)', capInk: '#ffffff',
     road: 'auto', route: 'vang', swatch: ['#0c1513', '#5EEAF5', '#FFD166'],
   },
   sangtrong: {
-    label: 'Sang trọng', desc: 'Vàng đồng, chữ có chân, khung điện ảnh — hợp nhà phố, biệt thự',
+    label: 'Vàng sang trọng', desc: 'Chữ có chân, khung viền vàng — nhà phố, biệt thự',
     head: '"Playfair Display", Georgia, "Times New Roman", serif', headW: 700, acc: '#D8B26A', accInk: '#17120a', acc2: '#F1DFB6',
     card: 'rgba(16,13,10,0.9)', ink: '#F7F1E6', soft: 'rgba(247,241,230,0.8)', mute: 'rgba(247,241,230,0.58)',
     tint: '#c2b8a4', dark: 0.24, title: 'serif', bars: true, outline: true, capBg: 'rgba(16,13,10,0.7)', capInk: '#F7F1E6',
     road: 'vang', route: 'trang', swatch: ['#16120d', '#D8B26A', '#F1DFB6'],
   },
   tretrung: {
-    label: 'Trẻ trung', desc: 'Màu hồng – xanh tươi, chữ tròn, hiệu ứng nảy — hợp căn hộ, đất nền',
+    label: 'Hồng trẻ trung', desc: 'Chữ tròn, khối màu nảy — căn hộ, nhà cho thuê',
     head: '"Baloo 2", ' + BASE_FONT, headW: 800, acc: '#FF4FA3', accInk: '#ffffff', acc2: '#FFE14D',
     card: 'rgba(30,14,52,0.9)', ink: '#ffffff', soft: 'rgba(255,255,255,0.85)', mute: 'rgba(255,255,255,0.62)',
     tint: '#b4c8f0', dark: 0.06, title: 'sticker', pop: true, capBg: '#FFE14D', capInk: '#1d1030',
     road: 'xanh', route: 'hong', swatch: ['#1e0e34', '#FF4FA3', '#FFE14D'],
   },
   toigian: {
-    label: 'Tối giản', desc: 'Thẻ trắng, chữ mảnh, gọn gàng — hợp khách cao cấp, văn phòng',
+    label: 'Trắng tối giản', desc: 'Thẻ trắng, chữ mảnh, gọn gàng — khách cao cấp',
     head: BASE_FONT, headW: 300, acc: '#ffffff', accInk: '#11161b', acc2: '#ffffff', light: true, cardAcc: '#11161b', cardAccInk: '#ffffff',
     card: 'rgba(255,255,255,0.95)', ink: '#11161b', soft: 'rgba(17,22,27,0.72)', mute: 'rgba(17,22,27,0.5)',
     tint: '#c4c9c9', dark: 0.2, title: 'thin', capBg: 'rgba(255,255,255,0.92)', capInk: '#11161b',
@@ -71,7 +71,7 @@ export const STYLES = {
   },
   // 30/10 14:15 Giang: phong cách thứ 5 màu xanh lá
   xanhla: {
-    label: 'Xanh sinh thái', desc: 'Xanh lá tươi mát, gần thiên nhiên — hợp đất nền, nhà vườn, dự án ven sông',
+    label: 'Xanh sinh thái', desc: 'Tươi mát, gần thiên nhiên — đất nền, nhà vườn',
     head: BASE_FONT, headW: 800, acc: '#4ADE80', accInk: '#05210F', acc2: '#D9F99D',
     card: 'rgba(6,24,14,0.9)', ink: '#ffffff', soft: 'rgba(255,255,255,0.84)', mute: 'rgba(255,255,255,0.6)',
     tint: '#a6c9a2', dark: 0.1, title: '3d', capBg: 'rgba(4,22,12,0.66)', capInk: '#ffffff',
@@ -79,7 +79,7 @@ export const STYLES = {
   },
   // 30/10 14:20 Giang: phong cách thứ 6 màu đỏ
   doruc: {
-    label: 'Đỏ nổi bật', desc: 'Đỏ mạnh, gây chú ý — hợp tin gấp, cần bán nhanh, giảm giá',
+    label: 'Đỏ nổi bật', desc: 'Đỏ mạnh, gây chú ý — tin gấp, cần bán nhanh',
     head: BASE_FONT, headW: 800, acc: '#FF4D3D', accInk: '#ffffff', acc2: '#FFD0C9',
     card: 'rgba(30,8,8,0.9)', ink: '#ffffff', soft: 'rgba(255,255,255,0.84)', mute: 'rgba(255,255,255,0.6)',
     tint: '#c9a9a2', dark: 0.1, title: '3d', capBg: 'rgba(30,6,6,0.66)', capInk: '#ffffff',

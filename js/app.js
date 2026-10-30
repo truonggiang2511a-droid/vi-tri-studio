@@ -3005,9 +3005,9 @@ function renderStyles() {
 // Mỗi kiểu = phong cách chữ + nền bản đồ + màu line trục đường ★. Ảnh xem trước vẽ bằng chính bộ dựng video,
 // tại cảnh trục đường điểm nhấn của căn đang làm. Bấm một kiểu: áp dụng + phát lại từ đầu.
 const LOOKS = [
-  { id: 'neon', label: 'Neon đêm', style: 'neon', base: 'phim', hiTheme: 'dien' },
-  { id: 'sang', label: 'Sang trọng', style: 'sangtrong', base: 'vetinh', hiTheme: 'vang' },
-  { id: 'gian', label: 'Tối giản', style: 'toigian', base: 'duongpho', hiTheme: 'trang' },
+  { id: 'neon', label: 'Xanh neon', style: 'neon', base: 'phim', hiTheme: 'dien' },
+  { id: 'sang', label: 'Vàng sang trọng', style: 'sangtrong', base: 'vetinh', hiTheme: 'vang' },
+  { id: 'gian', label: 'Trắng tối giản', style: 'toigian', base: 'duongpho', hiTheme: 'trang' },
 ];
 const isLook = L => state.style === L.style && state.base === L.base && state.hiTheme === L.hiTheme;
 function lookState(L) {
