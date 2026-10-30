@@ -2,7 +2,8 @@
 // lúc giọng đọc nói giá, khoảng cách, phút, diện tích, pháp lý). Đang thử: CHỈ tài khoản admin bật (ô #mau1On), khách thường không đổi.
 // Dùng lại đúng đường đi của "từ khoá bật lên" (findKeywords → buildKeyPops → OCC né thẻ/ghim/chữ), chỉ thay phần hình:
 //   cụm chữ 3 tầng như Hook Kit (kit/hook_type.py "mau1" / "mau1_3d"): dòng dẫn nhỏ trắng canh trái · từ khoá RẤT TO · chữ ký tay
-//   canh phải đè lên đáy từ khoá; MỘT font Montserrat (Giang chốt 30/10): khối 3D đổi màu theo lượt, giá đỏ viền trắng số chạy; vệt sáng lướt.
+//   canh phải đè lên đáy từ khoá; MỘT font Montserrat (Giang chốt 30/10), chữ PHẲNG bóng đổ vừa (không khối 3D, không vệt sáng,
+//   không quầng), mỗi phong cách video MỘT màu nhấn (M1_ACCENT); giá số chạy.
 //   icon tròn chuyển sắc (kit/hook_mg.py Icon + disc_sprite): nảy vào, vòng lan, tia lấp lánh, vòng sáng quay, lơ lửng — bộ 63 icon y hệt.
 import { spring, ease, countUp } from './motion.js';
 import { MAU1_ICONS } from './mau1-icons.js';
@@ -16,8 +17,12 @@ const PAL_ANTON = { cam: ['#FFF7F0', '#FF5A36'], tim: ['#F3E6FF', '#9338FF'], va
   xanh: ['#EAF4FF', '#1E88FF'], la: ['#EFFFF2', '#22C55E'], hong: ['#FFF0F7', '#FF4FA3'] };
 const PAL_3D = { tim: ['#E9D6FF', '#8A2BEA'], vang: ['#FFF6B0', '#F0A800'], cam: ['#FFE9DC', '#FF5A2A'], do: ['#FF8A7A', '#C90F0B'],
   xanh: ['#D6ECFF', '#1F6FEB'], la: ['#DCFCE7', '#16A34A'], hong: ['#FFE0F0', '#EC4899'] };
+// 30/10 Giang: mỗi phong cách MỘT màu nhấn cho từ khoá + icon (khoá = scene.style). Mặt chữ: trên → dưới (chuyển nhẹ)
+//   Neon đêm = xanh neon · Sang trọng = vàng kim · Trẻ trung = hồng · Tối giản = đỏ
+export const M1_ACCENT = { neon: ['#C8FAFF', '#22D3EE'], sangtrong: ['#FBEBC0', '#D4A24C'], tretrung: ['#FFD6EA', '#FF4FA3'], toigian: ['#FF9C8F', '#EF3B2D'] };
+const M1_BADGE = { neon: ['#A5F3FC', '#0EA5C6'], sangtrong: ['#F6DFA4', '#B98532'], tretrung: ['#FFC6E2', '#EC4899'], toigian: ['#FF9C8F', '#D92D20'] };
 // Huy hiệu icon cùng màu với cụm chữ (mau1.md: xanh/lá/hồng + màu gốc cam)
-const BADGE = { cam: ['#FFB38F', '#FF5A36'], xanh: ['#BFE0FF', '#1E88FF'], la: ['#BBF7D0', '#16A34A'], hong: ['#FFC6E2', '#EC4899'],
+const BADGE = { ...M1_BADGE, cam: ['#FFB38F', '#FF5A36'], xanh: ['#BFE0FF', '#1E88FF'], la: ['#BBF7D0', '#16A34A'], hong: ['#FFC6E2', '#EC4899'],
   vang: ['#FFF3A6', '#F2A900'], tim: ['#E3C6FF', '#9338FF'], do: ['#FF8A7A', '#C90F0B'] };
 
 // Phông Dancing Script (chữ ký tay) chỉ tải khi bật mẫu 1 (không làm chậm app của khách)
@@ -125,7 +130,7 @@ const shade = (hex, f) => { const n = parseInt(hex.slice(1), 16); return `rgb(${
 // Kích thước cụm (đơn vị khung logic) — dùng cho cả chọn chỗ đặt
 export function mau1Layout(ctx, p, k, maxW) {
   const d3 = p.look === '3d';
-  const font = s => `900 ${s}px ${F_3D}`; // 30/10 Giang chốt một font: Montserrat
+  const font = s => `800 ${s}px ${F_3D}`; // 30/10 Giang chốt một font: Montserrat, chữ thường nhẹ nhàng (800, không khối)
   let big = 70 * k * (p.kind === 'price' ? 1.06 : 1);
   ctx.font = font(big);
   const iw = p.icon ? 76 * k : 0;
@@ -195,7 +200,7 @@ export function drawMau1(ctx, p, x, y, lt, dur, k, maxW) {
   const A = 1 - out;
   if (A <= 0.01) return;
   const S = Math.max(1, ctx.getTransform().a);
-  const col = (L.d3 ? PAL_3D : PAL_ANTON)[p.color] || PAL_3D.vang;
+  const col = M1_ACCENT[p.color] || (L.d3 ? PAL_3D : PAL_ANTON)[p.color] || M1_ACCENT.neon;
   const kx = x + L.iw, base = y + L.thinH + L.asc;
   ctx.save();
   // thu nhỏ nhẹ lúc rút
@@ -216,8 +221,7 @@ export function drawMau1(ctx, p, x, y, lt, dur, k, maxW) {
   const q = lt - 0.1;
   if (q > 0) {
     const text = p.count ? countUp(p.text, clamp01(q / 1.0)) : p.text;
-    const shineQ = q > 0.3 ? ((q - 0.3) % 2.6) / 0.62 : -1;
-    const [c, ox, oy, W, H] = keywordSprite(text, L, col, p.kind === 'price', S, shineQ <= 1 ? shineQ : -1);
+    const [c, ox, oy, W, H] = keywordSprite(text, L, col, false, S, -1);   // 30/10: chữ phẳng, không viền, không vệt sáng
     const u = clamp01(q / 0.2);
     const draw = (dy, alpha, sc = 1) => {
       ctx.globalAlpha = alpha;
@@ -227,16 +231,17 @@ export function drawMau1(ctx, p, x, y, lt, dur, k, maxW) {
       ctx.drawImage(c, 0, 0, W * S, H * S, kx + ox, base + oy + dy, W, H);
       ctx.restore();
     };
-    ctx.shadowColor = `rgba(0,0,0,${L.d3 ? 0.42 : 0.5})`; ctx.shadowBlur = L.big * 0.05; ctx.shadowOffsetY = L.big * 0.055;
+    // bóng đổ đậm vừa, gọn (không quầng)
+    ctx.shadowColor = 'rgba(0,0,0,0.62)'; ctx.shadowBlur = L.big * 0.07; ctx.shadowOffsetY = L.big * 0.06;
     if (u < 1) {
       const dy = -(1 - ease.out(u)) * L.big * 1.1;
       const a0 = clamp01(q / 0.07) * A;
-      ctx.shadowColor = 'transparent';
+      ctx.save(); ctx.shadowColor = 'transparent';
       for (let i = 3; i >= 1; i--) draw(dy - i * L.big * 0.12 * (1 - u), a0 * 0.18 * (4 - i) / 3);   // vệt nhoè dọc
+      ctx.restore();
       draw(dy, a0);
     } else {
       const sc = 1 + 0.045 * Math.exp(-(q - 0.2) * 14) * Math.cos((q - 0.2) * 30);
-      if (!L.d3) { ctx.save(); ctx.shadowColor = col[1]; ctx.shadowBlur = L.big * 0.22; ctx.shadowOffsetY = 0; draw(0, 0.35 * A, sc); ctx.restore(); }
       draw(0, A, sc);
     }
     ctx.shadowColor = 'transparent';

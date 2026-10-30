@@ -103,13 +103,26 @@ export function sfxEvents(tl) {
     }
   }
   // Từ khoá bật lên theo giọng đọc (chữ động): "pop" khi bật, giá thêm tiếng "ding" sáng (khớp tl.keyPops trong render.js)
-  // Mẫu 1 (Hook Kit): mỗi cụm CHỈ 1 tiếng lúc từ khoá chạm (0,1 + 0,2 s sau khi bật), đổi lk_a ↔ lk_b (tiếng Giang gửi 28/10); icon không tiếng
+  // Mẫu 1 (Hook Kit, kit/docs/mau1.md "SFX" — thưa, tự nhiên): mỗi cụm CHỈ 1 tiếng lúc từ khoá chạm (0,1 + 0,2 s sau khi bật),
+  // đổi lk_a ↔ lk_b; icon không tiếng; phụ đề CHỈ gõ phím ở đầu dòng, cách nhau ≥ 2,5 s, nhường 0,6 s quanh tiếng cụm chữ.
+  // 30/10 Giang: nhỏ lại một chút (cụm chữ 0,85 → 0,6; gõ phím 0,8 → 0,5)
   const m1 = tl.scene?.keyLook === 'mau1';
+  const lkAt = [];
   (tl.keyPops || []).forEach((k, i) => {
-    if (m1) { add(k.t + 0.28, i % 2 ? 'lk_b' : 'lk_a', 0.85); return; }
+    if (m1) { add(k.t + 0.28, i % 2 ? 'lk_b' : 'lk_a', 0.6); lkAt.push(k.t + 0.28); return; }
     add(k.t + 0.02, 'pop', k.kind === 'price' ? 0.6 : 0.42);
     if (k.kind === 'price') add(k.t + 0.12, 'ding', 0.4);
   });
+  if (m1) {
+    let lastKey = -9, n = 0;
+    for (const c of tl.captions || []) {
+      if (!c.m1) continue;
+      const t = c.words?.[0]?.t ?? c.t0;
+      if (t - lastKey < 2.5 || lkAt.some(x => Math.abs(x - t) < 0.6)) continue;
+      add(t, 'key' + (n++ % 6 + 1), 0.5);
+      lastKey = t;
+    }
+  }
   // Radar quét bán kính: tiếng "ping" sonar mỗi vòng quét + tiếng ù radar quay vòng.
   // Thời điểm khớp với tia quét trong render.js (bắt đầu ở hướng 12 giờ, 1,25 giây một vòng)
   const ov = ph.find(x => x.type === 'overview'), rp = ph.find(x => x.type === 'radar'), sm = ph.find(x => x.type === 'summary');
@@ -358,9 +371,10 @@ export function scheduleSfx(ctx, events, vol = 0.7) {
       const g = ctx.createGain(); g.gain.value = e.gain;
       src.connect(g).connect(master); src.start(Math.max(0, e.t));
     } else if (/^lk_/.test(e.kind)) SYNTH.pop(ctx, master, e.t, e.gain * 0.6); // chưa tải được tiếng gốc → pop tổng hợp
+    else if (/^key\d$/.test(e.kind) && SYNTH.tick) SYNTH.tick(ctx, master, e.t, e.gain * 0.5);
   }
 }
-// Tiếng thu sẵn (AudioBuffer dùng chung mọi AudioContext): lk_a, lk_b của mẫu 1 — app tải khi bật mẫu 1 (setSfxSample)
+// Tiếng thu sẵn (AudioBuffer dùng chung mọi AudioContext): lk_a, lk_b, key1..key6 của mẫu 1 — app tải khi bật mẫu 1 (setSfxSample)
 const SAMPLES = {};
 export function setSfxSample(name, buf) { if (buf) SAMPLES[name] = buf; }
 export const hasSfxSample = name => !!SAMPLES[name];

@@ -893,7 +893,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
     prev = camAtPhase(ph, ph.t1);
     return ph;
   });
-  const captions = opts.captions && vd ? buildCaptions(phases, opts.captions, vd, fmtKey) : [];
+  const captions = opts.captions && vd ? buildCaptions(phases, opts.captions, vd, fmtKey, scene.keyLook === 'mau1') : [];
   const first = type => phases.find(p => p.type === type);
   const tl = {
     fmt: fmtKey, LW, LH, safe, duration: t, phases, scene, panelH,
@@ -975,18 +975,18 @@ function capWeight(s) {
 // cùng cách chia như phụ đề (chữ số đọc lâu hơn, dấu câu có ngắt). Mỗi cảnh 1 từ khoá (cảnh căn nhà 2), cách nhau ≥ 1,8 s.
 const KEY_POPS = false;
 function charWeight(ch) { return 1 + (/\d/.test(ch) ? 2.5 : 0) + (/[.!?…]/.test(ch) ? 5 : /[,;:]/.test(ch) ? 3 : 0); }
-// Mẫu 1: màu + kiểu chữ theo loại từ khoá (một font Montserrat: khối 3D đổi màu theo lượt; giá đỏ viền trắng số chạy),
+// Mẫu 1: kiểu chữ theo loại từ khoá (30/10 Giang: chữ phẳng Montserrat bóng đổ vừa, KHÔNG khối 3D; mỗi phong cách MỘT màu nhấn — màu theo scene.style),
 // icon theo đúng ý (tiện ích theo nhóm, trục đường, phút, diện tích, sổ…), chữ ký tay = tên nơi đang nói tới (dữ liệu thật)
 const M1_POI_ICON = { truong: 'school', yte: 'hospital', cho: 'cart', hanhchinh: 'bank', congvien: 'park', kcn: 'city', khudothi: 'city', giaothong: 'map', congcong: 'pin', nganhang: 'bank' };
-const M1_ROT_3D_ALL = ['vang', 'xanh', 'hong', 'la', 'tim'];
 const shortName = s => { s = String(s || '').replace(/\s+/g, ' ').trim(); return s.length > 26 ? s.slice(0, 25).replace(/\s+\S*$/, '') + '…' : s; };
 function mau1Style(k, ph, ctx, n) {
   const sc = ctx.scene, poi = ph.type === 'poi' ? ctx.pois[ph.poi] : null, road = ph.type === 'road' ? ctx.roads[ph.road] : null;
   const place = poi ? shortName(poi.name) : road ? shortName(road.label)
     : ['intro', 'house', 'province', 'front'].includes(ph.type) ? shortName(sc.adminArea?.wardName || sc.commune || '') : '';
-  // 30/10 Giang chốt MỘT font: Montserrat — mọi cụm chữ khối 3D, đổi màu theo lượt; giá Montserrat đỏ viền trắng (phẳng, số chạy)
-  let icon = 'pin', color = M1_ROT_3D_ALL[n % M1_ROT_3D_ALL.length], look = '3d';
-  if (k.kind === 'price') { icon = 'tag'; color = 'do'; look = 'flat'; }
+  // 30/10 Giang: MỘT font Montserrat, chữ phẳng bóng đổ vừa, mỗi phong cách một màu nhấn (mau1.js M1_ACCENT); giá vẫn số chạy
+  let icon = 'pin';
+  const color = sc.style || 'neon', look = 'flat';
+  if (k.kind === 'price') icon = 'tag';
   else if (k.kind === 'size' || k.kind === 'area') icon = n % 2 ? 'ruler' : 'area';
   else if (k.kind === 'time') icon = 'clock';
   else if (k.kind === 'dist') icon = poi ? (M1_POI_ICON[poi.cat] || 'pin') : road ? (road.level >= 3 ? 'highway' : 'road') : ph.type === 'boundary' ? 'map' : 'pin';
@@ -1026,7 +1026,118 @@ export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null) {
   }
   return out;
 }
-export function buildCaptions(phases, texts, voice, fmtKey) {
+// Phụ đề mẫu 1 (Hook Kit, kit/docs/mau1.md "Phụ đề"): mỗi dòng ~3 từ đủ nghĩa (≤ 16 ký tự, số + đơn vị không tách,
+// không để "và / với / là…" treo cuối dòng), từng từ bật ra đúng lúc được nói — thời điểm ƯỚC LƯỢNG theo độ dài đọc
+// (giọng Google/FPT/Vbee không trả mốc từng chữ, lệch ~0,2–0,4 s như từ khoá bật lên).
+const M1_DANGLE = new Set(['và', 'với', 'là', 'của', 'ở', 'thì', 'mà', 'cho', 'nên', 'để', 'các', 'những', 'một', 'có', 'được', 'tại',
+  'từ', 'đến', 'tới', 'gần', 'cách', 'chỉ', 'rất', 'khá', 'ngay', 'sát', 'trên', 'dưới', 'trong', 'ngoài', 'về', 'theo', 'như', 'hay', 'hoặc', 'nhưng', 'này', 'đã', 'sẽ', 'đang', 'vừa', 'thuộc']);
+const M1_UNIT = /^(tỷ|tỉ|triệu|trăm|nghìn|ngàn|mét|m|m2|m²|km|ki-lô-mét|phút|giây|tầng|lầu|phòng|căn|%|ha|sào|công)[,.;:!?]*$/i;
+const M1_CAP_MAX = 16;
+const M1_COMPOUND = new Set(['khu công nghiệp', 'khu đô thị', 'khu dân cư', 'nhà ở xã', 'trung tâm', 'sân bay', 'bệnh viện', 'trường học',
+  'quốc lộ', 'tỉnh lộ', 'cao tốc', 'sổ hồng', 'sổ đỏ', 'phòng ngủ', 'phòng khách', 'nhà vệ sinh', 'vệ sinh', 'đường lớn', 'hạ tầng', 'kết nối',
+  'mở rộng', 'siêu thị', 'thương mại', 'trung tâm thương mại', 'tiện ích', 'thổ cư', 'diện tích', 'pháp lý', 'mặt tiền', 'xe hơi', 'ô tô',
+  'đầu tư', 'cho thuê', 'an cư', 'gia đình', 'bán kính', 'công viên', 'bến xe', 'nhà ga', 'cảng biển', 'chợ đầu mối', 'đô thị', 'dân cư',
+  'thành phố', 'quận huyện', 'phường xã', 'hành chính', 'ủy ban', 'uỷ ban', 'giao thông', 'thuận tiện', 'thuận lợi', 'sầm uất', 'tầm tay',
+  'sổ hồng riêng', 'thiết yếu', 'lân cận', 'tiềm năng', 'xe máy', 'thủ tục', 'nguồn cầu', 'giá trị', 'lao động', 'ổn định', 'căn nhà',
+  'hành trình', 'hằng ngày', 'hàng ngày', 'liên vùng', 'chữa bệnh', 'khám chữa bệnh', 'cơ hội', 'nâng cấp', 'thi công', 'mua sắm', 'khu vực',
+  'nhanh chóng', 'an ninh', 'yên tĩnh', 'rộng rãi', 'thoáng mát', 'sinh sống', 'sinh hoạt', 'học tập', 'làm việc', 'buôn bán', 'kinh doanh',
+  'hiện hữu', 'quy hoạch', 'dự án', 'căn hộ', 'đất nền', 'lô đất', 'biệt thự', 'nhà phố', 'chính chủ', 'thương lượng', 'gần như', 'đi bộ',
+  'trường mầm non', 'mầm non', 'tiểu học', 'trung học', 'đại học', 'bách hoá', 'bách hóa', 'ngân hàng', 'nhà thờ', 'chùa chiền', 'hiện đại']);
+function buildCaptionsM1(phases, texts, voice) {
+  const out = [];
+  for (const ph of phases) {
+    const text = ph.vkey && texts[ph.vkey];
+    const dur = ph.vkey && voice[ph.vkey];
+    if (!text || !dur) continue;
+    const s = String(text).normalize('NFC').replace(/\s+/g, ' ').trim();
+    const cw = Array.from(s).map(charWeight);
+    const tot = cw.reduce((a, b) => a + b, 0) || 1;
+    const start = ph.t0 + (ph.type === 'intro' ? 0.5 : 0.3);
+    // từ + thời điểm bắt đầu đọc từ đó
+    const toks = [];
+    let ci = 0, acc = 0;
+    for (const w of s.split(' ')) {
+      toks.push({ w, t: start + dur * acc / tot });
+      for (let j = 0; j < Array.from(w).length + 1 && ci < cw.length; j++) acc += cw[ci++];
+    }
+    // gộp số + đơn vị thành một khối không tách
+    const units = [];
+    for (const tk of toks) {
+      const prev = units[units.length - 1];
+      if (prev && /\d[\d.,]*$/.test(prev.w) && M1_UNIT.test(tk.w)) { prev.w += ' ' + tk.w; prev.n++; continue; }
+      units.push({ w: tk.w, t: tk.t, n: 1, parts: [] });
+    }
+    // ghép từ ghép thông dụng ("khu công nghiệp", "trung tâm"…) và tên riêng ("Thành phố Hồ Chí Minh", "An Dương Vương") thành một khối
+    const bare = w => w.toLowerCase().replace(/[,.;:!?…]+$/, '');
+    for (let i = 0; i < units.length; i++) {
+      for (const n of [3, 2]) {
+        if (i + n > units.length) continue;
+        const seg = units.slice(i, i + n);
+        if (seg.slice(0, -1).some(u => /[,.;:!?…]$/.test(u.w))) continue;
+        if (!M1_COMPOUND.has(seg.map(u => bare(u.w)).join(' '))) continue;
+        units.splice(i, n, { w: seg.map(u => u.w).join(' '), t: seg[0].t, n: 1 });
+        break;
+      }
+    }
+    for (let i = 0; i < units.length - 1; i++) {
+      const a = units[i];
+      if (/[,.;:!?…]$/.test(a.w) || !/^\p{Lu}/u.test(a.w)) continue;
+      let j = i + 1;
+      while (j < units.length && !/[,.;:!?…]$/.test(units[j - 1].w)
+        && (/^\p{Lu}/u.test(units[j].w) || /^[–-]$/.test(units[j].w) || (bare(units[j - 1].w) === 'thành' && bare(units[j].w) === 'phố'))) j++;
+      if (j - i < 2) continue;
+      const seg = units.slice(i, j);
+      // tên dài (> 22 ký tự): chia 2 khúc cân nhau ở ranh từ, ưu tiên ngay trước dấu "–" ("Trường Mầm Non / Mặt Trời Vàng")
+      const parts = [seg];
+      const total = seg.map(u => u.w).join(' ').length;
+      if (total > 22) {
+        let best = -1, bs = 1e9;
+        for (let c = 1; c < seg.length; c++) {
+          const l = seg.slice(0, c).map(u => u.w).join(' ').length;
+          // ưu tiên chia ngay trước "–" hoặc ngay sau từ chung ("Cao tốc / Bến Lức Long Thành"), không chia giữa một tên
+          const sc = Math.abs(total / 2 - l) - (/^[–-]$/.test(seg[c].w) ? 8 : 0) + (/^[–-]$/.test(seg[c - 1].w) ? 50 : 0)
+            - (/\s\p{Ll}/u.test(seg[c - 1].w) ? 8 : 0);
+          if (sc < bs) { bs = sc; best = c; }
+        }
+        parts.splice(0, 1, seg.slice(0, best), seg.slice(best));
+      }
+      const merged = parts.map(pt => ({ w: pt.map(u => u.w).join(' '), t: pt[0].t, n: 1 }));
+      units.splice(i, j - i, ...merged);
+      i += merged.length - 1;
+    }
+    for (const u of units) u.parts = u.w.split(' ');
+    const lines = [];
+    let cur = [];
+    const len = a => a.map(u => u.w).join(' ').length;
+    const flush = () => { if (cur.length) lines.push(cur); cur = []; };
+    for (const u of units) {
+      if (cur.length && (len([...cur, u]) > M1_CAP_MAX || cur.length >= 4)) {
+        // từ nối treo cuối dòng → đẩy sang dòng sau
+        const last = cur[cur.length - 1];
+        const bare = last.w.toLowerCase().replace(/[,.;:!?…]+$/, '');
+        if (cur.length > 1 && M1_DANGLE.has(bare) && !/[,.;:!?…]$/.test(last.w)) { cur.pop(); flush(); cur = [last]; }
+        else flush();
+      }
+      cur.push(u);
+      if (/[.!?;:…]$/.test(u.w) || (/,$/.test(u.w) && len(cur) >= 7)) flush();
+    }
+    flush();
+    // dòng 1 từ ngắn (vd "nhé.") → ghép vào dòng trước nếu vẫn vừa
+    for (let i = 1; i < lines.length; i++) {
+      if (lines[i].length === 1 && len(lines[i]) <= 5 && len([...lines[i - 1], ...lines[i]]) <= M1_CAP_MAX + 3) { lines[i - 1].push(...lines[i]); lines.splice(i, 1); i--; }
+    }
+    const end = Math.min(ph.t1, start + dur + 0.35);
+    lines.forEach((ln, i) => {
+      const t0 = ln[0].t - 0.04;
+      const t1 = i + 1 < lines.length ? lines[i + 1][0].t - 0.04 : end;
+      const words = ln.map(u => ({ w: u.w.replace(/[,.;:]+$/, ''), t: u.t }));
+      out.push({ t0, t1, text: words.map(x => x.w).join(' '), words, m1: true });
+    });
+  }
+  return out;
+}
+export function buildCaptions(phases, texts, voice, fmtKey, m1 = false) {
+  if (m1) return buildCaptionsM1(phases, texts, voice);
   const out = [];
   const max = CAP_CHARS[fmtKey] || 40;
   for (const ph of phases) {
@@ -2143,7 +2254,54 @@ function captionAt(tl, t) {
   return null;
 }
 // Đặt phụ đề phía trên các thẻ đang hiện ở đáy khung (thẻ ranh, bảng tổng kết, thẻ liên hệ, thẻ giá)
+// Phụ đề mẫu 1: chữ trắng Be Vietnam ExtraBold, không nền, không viền, bóng vừa đổ gần chữ hơi mềm, một dòng.
+// Cỡ 0,095 × cạnh ngắn như Hook Kit. Hook Kit đặt ở y 0,43 (trên đầu người dẫn); video map giữa khung là ghim nhà/tiện ích
+// nên dùng chỗ Hook Kit hạ phụ đề khi có cụm chữ lớn (pos_lock y ≈ 0,76) = phía dưới, trên các thẻ ở đáy khung.
+function captionLayoutM1(ctx, tl, cap, occ) {
+  const { LW, LH, safe } = tl;
+  let left = safe.x + 6, right = LW - safe.x - 6;
+  if (occ.rightPanel) right = occ.rightPanel - 12;
+  const maxW = right - left;
+  let size = 0.095 * Math.min(LW, LH);
+  ctx.save();
+  ctx.font = `800 ${size}px ${FONT}`;
+  let tw = ctx.measureText(cap.text).width;
+  if (tw > maxW) { size *= maxW / tw; ctx.font = `800 ${size}px ${FONT}`; tw = ctx.measureText(cap.text).width; }
+  const sp = ctx.measureText(' ').width;
+  const words = cap.words.map(w => ({ ...w, wd: ctx.measureText(w.w).width }));
+  ctx.restore();
+  const h = size * 1.3;
+  const bottom = Math.min(LH - safe.bottom - (tl.fmt === 'v' ? 14 : 8), occ.top - 12, tl.fmt === 'v' ? LH * 0.76 + h / 2 : Infinity);
+  const cx = (left + right) / 2;
+  let x = cx - tw / 2;
+  for (const w of words) { w.x = x; x += w.wd + sp; }
+  return { m1: true, x: cx - tw / 2 - 6, y: bottom - h, w: tw + 12, h, size, words, base: bottom - h * 0.27 };
+}
+function drawCaptionM1(ctx, L, alpha, t) {
+  ctx.save();
+  ctx.font = `800 ${L.size}px ${FONT}`;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#FFFFFF';
+  ctx.shadowColor = 'rgba(0,0,0,0.62)'; ctx.shadowBlur = L.size * 0.1; ctx.shadowOffsetY = L.size * 0.055;
+  for (const w of L.words) {
+    const lt = t - w.t;
+    if (lt < 0) continue;
+    // bật ra: phóng 0,62 → vượt nhẹ → 1, nhích lên (Hook Kit "anim": "type", pop 0,2 s)
+    const q = clamp01(lt / 0.2);
+    const c1 = 1.70158, c3 = c1 + 1;
+    const sc = 0.62 + 0.38 * (1 + c3 * Math.pow(q - 1, 3) + c1 * Math.pow(q - 1, 2));
+    const dy = (1 - easeOut(q)) * L.size * 0.14;
+    ctx.globalAlpha = alpha * clamp01(lt / 0.06);
+    const cx = w.x + w.wd / 2, cy = L.base - L.size * 0.35;
+    ctx.save();
+    ctx.translate(cx, cy + dy); ctx.scale(sc, sc); ctx.translate(-cx, -cy);
+    ctx.fillText(w.w, w.x, L.base);
+    ctx.restore();
+  }
+  ctx.restore();
+}
 function captionLayout(ctx, tl, cap, occ) {
+  if (cap.m1) return captionLayoutM1(ctx, tl, cap, occ);
   const { LW, LH, safe } = tl;
   const size = CAP_SIZE[tl.fmt] || 24;
   let left = safe.x + 10, right = LW - safe.x - 10;
@@ -2161,8 +2319,9 @@ function captionLayout(ctx, tl, cap, occ) {
   const cx = (left + right) / 2;
   return { x: cx - w / 2, y: bottom - h, w, h, lines, size, lh };
 }
-function drawCaption(ctx, L, alpha) {
+function drawCaption(ctx, L, alpha, t) {
   if (!L || alpha <= 0.01) return;
+  if (L.m1) return drawCaptionM1(ctx, L, alpha, t);
   ctx.save();
   ctx.globalAlpha = alpha;
   roundRect(ctx, L.x, L.y, L.w, L.h, 10);
@@ -4131,7 +4290,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   if (brandA > 0.05) occ.top = Math.min(occ.top, brandTop(tl));
   const cap = captionAt(tl, t);
   const capL = cap ? captionLayout(ctx, tl, cap, occ) : null;
-  const capA = cap ? Math.min(clamp01((t - cap.t0) / 0.12), clamp01((cap.t1 - t) / 0.12)) : 0;
+  const capA = cap ? (cap.m1 ? clamp01((cap.t1 - t) / 0.1) : Math.min(clamp01((t - cap.t0) / 0.12), clamp01((cap.t1 - t) / 0.12))) : 0;
 
   // Nhãn "5 phút / 10 phút / 15 phút lái xe" ở mép trên mỗi vùng (vị trí trên màn hình, kẹp trong khung an toàn)
   if (tl.isoPh && scene.iso && scene.iso.areas) {
@@ -4334,7 +4493,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   drawHook(ctx, tl, t);
   drawBars(ctx, tl, t);
   drawLogo(ctx, tl, logo);
-  drawCaption(ctx, capL, capA);
+  drawCaption(ctx, capL, capA, t);
 
   // Nguồn dữ liệu (bắt buộc giữ)
   ctx.save();
