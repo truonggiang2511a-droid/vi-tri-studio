@@ -777,7 +777,9 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
       const W_HUB = 1, W_REC = 1.15, unit = (3.3 * anchors.length + 3.5) / (anchors.length + W_REC);
       const W_FX = { plane: FX_SEC.plane / unit, train: FX_SEC.train / unit };
       const plan = [];
-      anchors.forEach((a, i) => { plan.push({ i, w: W_HUB }); if (a.fxP) plan.push({ i, w: W_FX[a.fxP.kind], fx: a.fxP.kind }); });
+      // 30/10 21:25 Giang: đoạn sân bay hơi lâu → cú đáp tới sân bay ngắn hơn (0,8 nhịp), máy bay cất cánh nhanh hơn (PLANE_TO)
+      const W_AIR = 0.8;
+      anchors.forEach((a, i) => { plan.push({ i, w: a.fxP?.kind === 'plane' ? W_AIR : W_HUB }); if (a.fxP) plan.push({ i, w: W_FX[a.fxP.kind], fx: a.fxP.kind }); });
       const tw = plan.reduce((x, q) => x + q.w, 0) + W_REC;
       const shots = [];
       let acc = 0;
@@ -807,7 +809,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
       shots.push({ s: acc / tw, e: 1, cam: { ...camHub, pitch: 26 }, move: 0.55, recap: true, side: 1 });
       const nFx = plan.filter(q => q.fx).length;
       const fxSec = plan.reduce((x, q) => x + (q.fx ? FX_SEC[q.fx] : 0), 0);
-      raw.push({ type: 'region', d: 3.3 * anchors.length + 3.5 + fxSec, to: shots[shots.length - 1].cam, shots, vkey: 'region', n: anchors.length });
+      raw.push({ type: 'region', d: 3.3 * anchors.length + 3.5 + fxSec - plan.reduce((x, q) => x + (q.fx ? 0 : (W_HUB - q.w) * unit), 0), to: shots[shots.length - 1].cam, shots, vkey: 'region', n: anchors.length });
     }
   }
   const infra = (RG?.infra || []).map(r => {
@@ -2655,7 +2657,7 @@ function trainFollow(X, H, a, LW, LH, safe) {
     return { lat: c.lat, lng: c.lng, zoom: base.zoom + 0.25 * smooth(clamp01(w)), pitch: 50 };
   };
 }
-const PLANE_TO = 4.5;   // giây máy bay cất cánh (lăn bánh → rời đất → lên cao)
+const PLANE_TO = 3.6;   // 30/10 21:25 Giang: nhanh hơn (trước 4,5) — giây máy bay cất cánh (lăn bánh → rời đất → lên cao)
 function prepHubFx(a, H) {
   const X = a.fx;
   if (!X) return null;
