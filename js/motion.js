@@ -195,7 +195,8 @@ function hookLines(H) {
   return {
     l1: (kick[0] || '').toUpperCase(),
     l2: (kick.slice(1).join(' · ') || '').toUpperCase(),
-    label: H.isPrice ? 'Giá bán' : 'Vị trí nổi bật',
+    label: H.isPrice ? (H.rent ? 'Giá thuê' : 'Giá bán') : 'Vị trí nổi bật',
+    rent: !!H.rent,
     big: H.isPrice ? String(H.big).toUpperCase() : String(H.fact || H.big).toUpperCase(),
     subs: [H.isPrice ? H.fact : '', H.det].filter(Boolean),
     isPrice: H.isPrice,
@@ -399,7 +400,7 @@ export const MOTION = {
       const fi = s => `italic 500 ${s}px ${SERIF}`;
       ctx.globalAlpha = A * clamp01((lt - 0.25) / 0.4);
       ctx.font = fi(32 * k); ctx.fillStyle = '#F7F1E6'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(L.isPrice ? 'Giá chỉ' : L.label, cx, y);
+      ctx.fillText(L.isPrice ? (L.rent ? 'Giá thuê' : 'Giá chỉ') : L.label, cx, y);
       y += 74 * k;
       const fb = s => `700 ${s}px ${SERIF}`;
       const sb = fitSize(ctx, L.big, fb, (L.isPrice ? 96 : 50) * k, 0.02, maxW);

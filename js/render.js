@@ -940,7 +940,7 @@ function makeHook(scene, roads, pois) {
   if (!big && !fact) return null;
   return {
     kicker: [scene.label, scene.commune || scene.provinceShort].filter(Boolean).join(' · '),
-    big: big || scene.label || 'VỊ TRÍ ĐẸP', isPrice: !!big,
+    big: big || scene.label || 'VỊ TRÍ ĐẸP', isPrice: !!big, rent: !!scene.rent,
     fact, det: info ? info.det.slice(0, 2).join('  ·  ') : '',
   };
 }
@@ -1020,7 +1020,11 @@ export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null) {
         // mẫu 1 giữ lâu hơn (Hook Kit: tối thiểu ~3 s; bản đồ chuyển cảnh nhanh nên 1,9–2,8 s), được lấn 0,4 s sang cảnh sau
         const dur = Math.min(2.8, Math.max(1.9, ph.t1 + 0.4 - t));
         // đơn vị viết thường cho đồng bộ với thẻ thông tin: "3,2 tỷ", "200 m", "7,9 km", "18 phút"
-        out.push({ t, dur, text: k.text.toLowerCase(), kicker: k.kicker, kind: k.kind, id: out.length, ...mau1Style(k, ph, m1, out.length) });
+        // nhà/mặt tiền cho thuê: "Giá thuê" + chữ ký tay "mỗi tháng" (lời đọc chưa nói "tháng" thì vẫn rõ là giá thuê)
+        const rentP = k.kind === 'price' && m1.scene.rent;
+        const st = mau1Style(k, ph, m1, out.length);
+        if (rentP) st.sign = 'mỗi tháng';
+        out.push({ t, dur, text: k.text.toLowerCase(), kicker: rentP ? 'Giá thuê' : k.kicker, kind: k.kind, id: out.length, ...st });
         last = t + dur - 2.2;
         continue;
       }
@@ -2222,7 +2226,7 @@ function infoFullItems(scene) {
 function infoKind(scene) {
   const t = String(scene.label || '').replace(/^VỊ TRÍ\s*/i, '').trim();
   const front = /LÔ ĐẤT/i.test(t) ? 'lô' : /DỰ ÁN/i.test(t) ? 'dự án' : /VILLA/i.test(t) ? 'villa' : 'nhà';
-  return { title: 'THÔNG TIN ' + (/^(CĂN NHÀ|CĂN VILLA|LÔ ĐẤT|DỰ ÁN)$/i.test(t) ? t.toUpperCase() : 'BẤT ĐỘNG SẢN'), front };
+  return { title: 'THÔNG TIN ' + (/^(CĂN NHÀ|CĂN VILLA|LÔ ĐẤT|DỰ ÁN|NHÀ CHO THUÊ|MẶT TIỀN CHO THUÊ)$/i.test(t) ? t.toUpperCase() : 'BẤT ĐỘNG SẢN'), front };
 }
 // Chia các mục thông tin thành tối đa 2 dòng (xuống dòng theo từng mục, không cắt giữa mục) — đo bằng canvas phụ
 let INFO_MC = null;
@@ -2244,6 +2248,7 @@ function infoBox(tl, where, logo) {
   let d = infoData(tl.scene);
   if (tl.infoFull) { const full = infoFullItems(tl.scene); d = full.length ? { price: '', det: full, full: true, title: infoKind(tl.scene).title } : null; }
   if (!d) return null;
+  d.rent = !!tl.scene.rent;
   const { LW, LH, safe } = tl;
   if (d.full) d.lines = infoFullLines(d.det, (tl.fmt === 'h' ? 384 : LW - safe.x * 2) - 32);
   const h = d.full ? 38 + d.lines.length * 22 : d.price ? (d.det.length ? 92 : 66) : 46;
@@ -2281,7 +2286,7 @@ function drawInfo(ctx, box, alpha) {
   } else if (d.price) {
     ctx.fillStyle = CA();
     ctx.font = `700 11px ${FONT}`;
-    const lx = spacedCaps(ctx, 'GIÁ BÁN', x + 16, y + 24, 1.2);
+    const lx = spacedCaps(ctx, d.rent ? 'GIÁ THUÊ' : 'GIÁ BÁN', x + 16, y + 24, 1.2);
     ctx.font = `${ST.headW >= 700 ? ST.headW : 600} 30px ${HFONT}`;
     ctx.fillText(fitOneLine(ctx, d.price, w - (lx - x) - 24), x + 16, y + 56);
     if (detText) {
@@ -2776,7 +2781,7 @@ function drawHook(ctx, tl, t) {
     if (H.isPrice) {
       ctx.font = `600 13px ${FONT}`;
       ctx.fillStyle = 'rgba(255,255,255,0.85)';
-      fillSpaced(ctx, 'GIÁ CHỈ', LW / 2, cy - size * 0.95 + (1 - a1) * 8, 3);
+      fillSpaced(ctx, H.rent ? 'GIÁ THUÊ' : 'GIÁ CHỈ', LW / 2, cy - size * 0.95 + (1 - a1) * 8, 3);
     }
     ctx.restore();
   }

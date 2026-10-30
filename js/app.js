@@ -365,6 +365,7 @@ function buildScene() {
     motionHookOnly: !motionOn(),
     house: state.house,
     label: (state.label || 'VỊ TRÍ').toUpperCase(),
+    rent: isRentType(),
     sub: state.sub,
     title: state.showTitle === false ? '' : state.title,
     brand: state.brand,
@@ -1456,6 +1457,7 @@ function priceVnd(v) {
   return 0;
 }
 function pricePerM2() {
+  if (isRentType()) return null; // giá thuê theo tháng: chia diện tích không có nghĩa
   const p = priceVnd(state.price), a = areaFromText(state.area);
   if (!p || !(a >= 10 && a <= 100000)) return null;
   const tr = p / a / 1e6;
@@ -2246,7 +2248,8 @@ function renderLists() {
 }
 
 // ---------- Kịch bản lời đọc theo từng cảnh ----------
-const TYPE_WORD = { 'VỊ TRÍ CĂN NHÀ': 'Căn nhà', 'VỊ TRÍ CĂN VILLA': 'Căn villa', 'VỊ TRÍ LÔ ĐẤT': 'Lô đất', 'VỊ TRÍ DỰ ÁN': 'Dự án' };
+const TYPE_WORD = { 'VỊ TRÍ CĂN NHÀ': 'Căn nhà', 'VỊ TRÍ CĂN VILLA': 'Căn villa', 'VỊ TRÍ LÔ ĐẤT': 'Lô đất', 'VỊ TRÍ DỰ ÁN': 'Dự án',
+  'VỊ TRÍ NHÀ CHO THUÊ': 'Nhà cho thuê', 'VỊ TRÍ MẶT TIỀN CHO THUÊ': 'Mặt tiền cho thuê' };
 // Khoảng cách trong kịch bản: viết số kiểu Việt Nam (1,8 km); lúc gửi giọng đọc sẽ đổi thành chữ
 function kmSpeak(km) {
   if (km < 0.95) return Math.max(50, Math.round(km * 1000 / 50) * 50) + ' mét';
@@ -2348,7 +2351,7 @@ function infoSentence(pick, skipPrice = false) {
   if (!isLand && beds) parts.push(/^\d+$/.test(beds) ? beds + ' phòng ngủ' : beds);
   if (rw) parts.push((isLand ? 'đường trước lô ' : 'đường trước nhà ') + (/^\d+([.,]\d+)?$/.test(rw) ? rw + ' mét' : rw.replace(/(\d)\s*m\b/i, '$1 mét')));
   if (legal) parts.push(legal.charAt(0).toLowerCase() + legal.slice(1));
-  if (c(state.price) && !skipPrice) parts.push(pick(['giá chỉ ', 'giá bán '], 5) + c(state.price));
+  if (c(state.price) && !skipPrice) parts.push((isRentType() ? 'giá thuê ' : pick(['giá chỉ ', 'giá bán '], 5)) + c(state.price));
   if (!parts.length) return '';
   const s = parts.join(', ');
   return s.charAt(0).toUpperCase() + s.slice(1) + '.';
@@ -2385,7 +2388,12 @@ function scriptSegments() {
   // Có giá: nói giá + điểm mạnh nhất ngay câu đầu (khớp cảnh mở đầu trên video), người xem biết ngay căn này có đáng xem không
   const price = String(state.price || '').replace(/\s+/g, ' ').trim();
   const near = r0 && r0.nearKm < 3 ? (r0.nearKm < 0.12 ? `, mặt tiền ${nameSpeak(r0.label)}` : `, cách ${nameSpeak(r0.label)} chỉ ${kmSpeak(r0.nearKm)}`) : '';
-  const priceHooks = [
+  const rent = isRentType(), giaChi = rent ? 'giá thuê' : 'giá chỉ';
+  const priceHooks = rent ? [
+    `${tw} giá thuê ${price}${near}. Xem ngay vị trí này nhé!`,
+    `Chỉ ${price} để thuê ${twl.replace(/ cho thuê$/, '')}${near}! Cùng xem xung quanh có gì nhé!`,
+    `${tw} ${price}${near}, vị trí này rất dễ kín người thuê. Xem ngay nhé!`,
+  ] : [
     `${tw} giá chỉ ${price}${near}. Xem ngay vị trí này nhé!`,
     `Chỉ ${price} cho ${twl}${near}! Cùng xem xung quanh có gì nhé!`,
     `${tw} ${price}${near}, giá này còn rất ít. Xem ngay nhé!`,
@@ -2394,11 +2402,11 @@ function scriptSegments() {
   const ward = wardName(), prov = provName();
   const hasProvScene = !!(state.showAdminArea && state.adminArea?.province?.rings?.length && state.adminArea?.ward?.rings?.length);
   if (ward) {
-    const head = price ? (generic ? `${tw} giá chỉ ${price}${near}. ` : `${nameSpeak(title)}, giá chỉ ${price}. `) : (generic ? '' : `${nameSpeak(title)}. `);
+    const head = price ? (generic ? `${tw} ${giaChi} ${price}${near}. ` : `${nameSpeak(title)}, ${giaChi} ${price}. `) : (generic ? '' : `${nameSpeak(title)}. `);
     add('intro', 'Mở đầu · xã/phường', head + pick([`Đây là vị trí ${twl} thuộc ${midSentence(ward)}.`, `Đây là vị trí ${twl}, nằm tại ${midSentence(ward)}.`], 1));
   } else {
     add('intro', 'Mở đầu', price
-      ? (generic ? pick(priceHooks) : `${nameSpeak(title)}, giá chỉ ${price}${near}. Cùng xem vị trí và tiện ích xung quanh nhé!`)
+      ? (generic ? pick(priceHooks) : `${nameSpeak(title)}, ${giaChi} ${price}${near}. Cùng xem vị trí và tiện ích xung quanh nhé!`)
       : generic ? pick(hooks) : `${nameSpeak(title)}. Cùng xem vị trí và tiện ích xung quanh nhé!`);
   }
   if (hasProvScene && prov) add('province', 'Tỉnh / thành phố', pick([`Thuộc ${midSentence(prov)}.`, `Nằm trong địa phận ${midSentence(prov)}.`], 2));
@@ -3664,6 +3672,8 @@ const ROOMS = [['mattien', 'Mặt tiền'], ['khach', 'Phòng khách'], ['bep', 
 const LAND_ROOMS = [['mattien', 'Mặt tiền lô đất', 'Mặt tiền'], ['khach', 'Toàn cảnh lô đất', 'Toàn cảnh'], ['bep', 'Đường trước lô', 'Đường trước'],
   ['ngu', 'Hiện trạng lô đất', 'Hiện trạng'], ['wc', 'Khu xung quanh', 'Xung quanh'], ['khac', 'Khác', 'Khác']];
 const isLandType = () => /LÔ ĐẤT/.test(state.typeLabel || '');
+// 30/10: nhà / mặt tiền CHO THUÊ — giá là giá thuê (mỗi tháng): chữ "Giá thuê" thay "Giá bán", không tính giá mỗi m²
+const isRentType = () => /CHO THUÊ/.test(state.typeLabel || '');
 const roomList = () => (isLandType() ? LAND_ROOMS : ROOMS);
 const realWord = () => (TYPE_WORD[state.typeLabel] || 'Căn nhà').toLowerCase();
 // Đoạn video đầu chỉ mở đầu video khi là mặt tiền (khớp render.js: frontClip)
@@ -3690,12 +3700,17 @@ function guessRoom(name, list) {
 const sortRooms = list => list.map((x, i) => [x, i]).sort((a, b) => (ROOM_IDX[a[0].room] ?? 5) - (ROOM_IDX[b[0].room] ?? 5) || a[1] - b[1]).map(p => p[0]);
 const roomSelect = (cur, i, kind) => `<select class="room-sel" data-room-${kind}="${i}" aria-label="Nhãn ảnh/video">${roomList().map(([k, l, sh]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${sh || l}</option>`).join('')}</select>`;
 // Tiêu đề + hướng dẫn mục ảnh/video đổi theo loại bất động sản
+const set2 = (el, t) => { if (el.textContent !== t) el.textContent = t; };
 function syncRoomUi() {
   const land = isLandType(), w = realWord();
   const order = land ? 'mặt tiền → toàn cảnh → đường trước lô → hiện trạng → xung quanh' : 'mặt tiền → phòng khách → bếp → phòng ngủ → toilet';
   const set = (id, t) => { const el = $(id); if (el && el.textContent !== t) el.textContent = t; };
   set('clipTitle', `Video thực tế ${w}`);
   for (const id of ['floorsInput', 'bedsInput']) { const f = $(id)?.closest('.field'); if (f) f.hidden = land; } // lô đất: không có số tầng/phòng ngủ
+  // Cho thuê: ô giá thành "Giá thuê" (mỗi tháng)
+  const pf = $('priceInput'), pl = pf?.closest('.field')?.querySelector('.field-label');
+  if (pl) set2(pl, isRentType() ? 'Giá thuê / tháng' : 'Giá bán');
+  if (pf) pf.placeholder = isRentType() ? '15 triệu/tháng' : '3,2 tỷ';
   set('photoHint', `Chọn nhãn dưới mỗi ảnh, app tự xếp: ${order}.`);
   set('clipHint', `Mỗi đoạn 5–15 giây, quay chậm. Chọn nhãn, app tự xếp: ${order}.`);
 }
