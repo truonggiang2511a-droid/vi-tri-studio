@@ -1022,6 +1022,8 @@ export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null) {
     const text = ph.vkey && texts[ph.vkey];
     const dur = ph.vkey && voice[ph.vkey];
     if (!text || !dur || ph.type === 'clip' || ph.type === 'photos') continue;
+    // 30/10 14:00 Giang: cảnh bán kính đã có nhãn "BÁN KÍNH 5 KM" trên vòng tròn → mẫu 1 không bật cụm chữ ở cảnh này
+    if (m1 && ph.type === 'overview') continue;
     const s = String(text).normalize('NFC');
     const all = findKeywords(s);
     const cw = Array.from(s).map(charWeight);
@@ -1097,7 +1099,9 @@ export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null) {
     const raw = src ? src.k : (m1.scene.info && m1.scene.info.price ? { text: String(m1.scene.info.price), kicker: 'Giá bán', kind: 'price' } : null);
     if (ou && raw) {
       const t = inOu ? Math.max(ou.t0 + 0.3, inOu.t - 0.5) : ou.t0 + 0.5;
-      const dur = Math.min(3.4, Math.max(2.4, ou.t1 + 1 - t));
+      // 30/10 14:00 Giang: giá cuối đứng tới HẾT video (kể cả ảnh/video thực tế sau cảnh kết), không thoát
+      const end = phases[phases.length - 1].t1;
+      const dur = Math.max(2.4, end - t);
       for (let i = out.length - 1; i >= 0; i--) {   // cụm trước đó không được chồng lên giá
         const q = out[i];
         if (q.t + q.dur > t - 0.15) { q.dur = t - 0.15 - q.t; if (q.dur < 1) out.splice(i, 1); }
@@ -1106,7 +1110,7 @@ export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null) {
       const st = mau1Style({ ...raw, kind: 'price' }, ou, m1, out.length);
       if (rentP) st.sign = 'mỗi tháng';
       const pk = m1Type(m1.scene).priceKick;
-      out.push({ t, dur, text: String(raw.text).toLowerCase(), kicker: rentP ? 'Giá thuê' : (pk || raw.kicker || 'Giá bán'), kind: 'price', final: true, ...st });
+      out.push({ t, dur, text: String(raw.text).toLowerCase(), kicker: rentP ? 'Giá thuê' : (pk || raw.kicker || 'Giá bán'), kind: 'price', final: true, hold: true, ...st });
       out.forEach((q, i) => { q.id = i; });
     }
   }

@@ -204,7 +204,7 @@ export function drawMau1(ctx, p, x, y, lt, dur, k, maxW) {
   const L = mau1Layout(ctx, p, k, maxW);
   // 30/10 13:25 Giang: vào chỉ MỜ DẦN (không rơi, không nảy, không vòng lan/tia); ra = HÚT VÀO thu nhỏ mạnh + mờ dần
   const OUT = 0.4;
-  const out = clamp01((lt - (dur - OUT)) / OUT);
+  const out = p.hold ? 0 : clamp01((lt - (dur - OUT)) / OUT);   // giá cuối video: đứng tới khung cuối
   const A = clamp01(lt / 0.35) * (1 - out);
   if (A <= 0.01) return;
   const S = Math.max(1, ctx.getTransform().a);
