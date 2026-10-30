@@ -151,7 +151,9 @@ export function mau1Layout(ctx, p, k, maxW) {
   const signOver = p.sign ? sign * 0.95 : 0; // gồm cả phần chữ ký tay thò xuống (dấu, nét g/y) để chỗ đặt tính đủ
   const w = iw + Math.max(bw + depth, tw + big * 0.08, sgw + bw * 0.25);
   const h = thinH + asc + desc + depth + signOver + 6 * k;
-  return { d3, font, big, bw, asc, desc, thin, sign, tw, sgw, thinH, depth, iw, w, h };
+  // bề rộng NHÌN THẤY (icon + phần chữ xa nhất bên phải: từ khoá, dòng dẫn, chữ ký tay canh phải) — để canh giữa khung cho đúng mắt
+  const vw = iw + Math.max(bw + depth + big * 0.08, tw + big * 0.08, sgw);
+  return { d3, font, big, bw, asc, desc, thin, sign, tw, sgw, thinH, depth, iw, w, h, vw };
 }
 
 // Vẽ từ khoá vào canvas phụ (độ phân giải thật S), trả về [canvas, x, y, w, h] (đơn vị logic, gốc = góc trái baseline từ khoá)

@@ -2895,7 +2895,8 @@ function drawMau1Pops(ctx, tl, t) {
     // phụ đề ẩn lúc cụm hiện). Chọn 1 lần lúc cụm bật, đứng yên tới khi thoát (không lướt); thẻ tiện ích tự né cụm.
     let pos = tl._m1Pos.get(p.id);
     if (!pos || lt < 0.05 || t < pos.tm - 0.001) {
-      const x = Math.max(Z.x0, Math.min(Z.x1 - L.w, (Z.x0 + Z.x1) / 2 - L.w / 2));
+      // 30/10 12:50 Giang: canh GIỮA khung theo phần nhìn thấy (icon + chữ), không theo vùng an toàn lệch trái vì cột nút TikTok
+      const x = Math.max(Z.x0, Math.min(Z.x1 - L.vw, LW / 2 - L.vw / 2));
       const yTop = Math.max(Z.y0, Math.min(Z.y1 - L.h, safe.top + (fmt === 'v' ? 88 : 72) * k));
       const yBot = Math.max(Z.y0, Math.min(Z.y1 - L.h, m1CapBottom(tl) - L.h));
       const sTop = scoreAt(x, yTop), sBot = scoreAt(x, yBot);
