@@ -13,10 +13,20 @@ const NAME_FONT = '"Montserrat", "Be Vietnam Pro", system-ui, sans-serif';
 export let FONT = BASE_FONT;
 export const MAXZ = 18;
 export const FORMATS = {
-  v: { LW: 540, LH: 960, label: 'Dọc 9:16', safe: { top: 96, bottom: 176, x: 22 } },
+  v: { LW: 540, LH: 960, label: 'Dọc 9:16', safe: { top: 96, bottom: 196, x: 22, r: 84 } },
   h: { LW: 960, LH: 540, label: 'Ngang 16:9', safe: { top: 54, bottom: 58, x: 40 } },
   s: { LW: 540, LH: 540, label: 'Vuông 1:1', safe: { top: 60, bottom: 60, x: 24 } },
 };
+// 30/10 Giang (ảnh vùng che của Reels/TikTok/Facebook): khổ dọc — nửa dưới khung, mép PHẢI là cột nút Thích/Bình luận/
+// Chia sẻ/Lưu + ảnh đại diện (~16% bề ngang, từ ~42% chiều cao trở xuống); đáy là tên tài khoản + mô tả (~20%, safe.bottom).
+// Chữ/thẻ ở nửa dưới phải nằm trong [safe.x, LW − safe.r]; nửa trên vẫn dùng safe.x hai bên.
+const RCOL_Y = 0.42;
+function lowBand(tl) {
+  const { LW, safe } = tl, x0 = safe.x, x1 = LW - (safe.r || safe.x);
+  return { x0, x1, w: x1 - x0, cx: (x0 + x1) / 2 };
+}
+// mép phải an toàn cho một vật có đáy ở y (đơn vị khung logic)
+function rightAt(tl, y) { return tl.LW - (tl.safe.r && y > tl.LH * RCOL_Y ? tl.safe.r : tl.safe.x); }
 // Hệ số nhịp: số càng LỚN video càng NHANH (thời lượng mỗi cảnh chia cho hệ số).
 // 10/2026: trước đây nhãn bị ngược (nhanh = 0.66 lại chậm nhất). Nhanh giờ nhanh hơn mức mặc định cũ một chút.
 export const SPEEDS = { nhanh: 1.25, vua: 0.95, cham: 0.75 }; // 23/10: Giang muốn Nhanh nhanh hơn nữa (gần nhịp bản đầu)
@@ -1428,7 +1438,7 @@ function placeRoadLabels(tl, cam, only = () => true, block = null) {
       const bw = w * cs + h * sn, bh = w * sn + h * cs;
       return { x: c.s.x - bw / 2, y: c.s.y - bh / 2, w: bw, h: bh };
     };
-    const inSafe = (r, m) => r.x >= safe.x - m && r.x + r.w <= LW - safe.x + m && r.y >= safe.top + 40 - m && r.y + r.h <= LH - safe.bottom + m;
+    const inSafe = (r, m) => r.x >= safe.x - m && r.x + r.w <= rightAt(tl, r.y + r.h) + m && r.y >= safe.top + 40 - m && r.y + r.h <= LH - safe.bottom + m;
     let pick = null;
     // Lượt 1: đúng cỡ chữ, trong vùng an toàn, không đè gì. Lượt 2: chữ nhỏ dần. Lượt 3: cho phép đè nhãn khác. Lượt 4: chỉ cần trong khung.
     const passes = [
@@ -1869,7 +1879,7 @@ function labelCard(ctx, cx, bottomY, title, sub, alpha, LW, safe) {
   ctx.font = `500 12.5px ${FONT}`;
   const sw = sub ? Math.min(ctx.measureText(sub).width, 300) : 0;
   const w = Math.max(tw, sw) + 30, h = sub ? 56 : 38;
-  let x = Math.max(safe.x, Math.min(LW - safe.x - w, cx - w / 2));
+  let x = Math.max(safe.x, Math.min(LW - (safe.r && bottomY > LW * 16 / 9 * RCOL_Y ? safe.r : safe.x) - w, cx - w / 2));
   const y = bottomY - h - 8 + (1 - easeOut(alpha)) * 10;
   ctx.globalAlpha = alpha;
   ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 3;
@@ -1921,7 +1931,7 @@ function poiCard(ctx, poi, px, py, alpha, tl, avoid, reserveOnly) {
   const order = keep != null ? [keep, 0, 1, 2, 3].filter((v, i, a) => a.indexOf(v) === i) : [0, 1, 2, 3];
   for (const ci of order) {
     const c = cands[ci];
-    c.x = Math.max(safe.x, Math.min(LW - safe.x - w, c.x));
+    c.x = Math.max(safe.x, Math.min(rightAt(tl, c.y + h) - w, c.x));
     const inY = c.y >= safe.top + 6 && c.y + h <= LH - safe.bottom;
     const hit = avoid.some(a => c.x < a.x + a.w && c.x + w > a.x && c.y < a.y + a.h && c.y + h > a.y);
     if (inY && !hit) { best = c; if (mem) tl._cardSide.set(ck, ci); break; }
@@ -1977,8 +1987,8 @@ function crossingChip(ctx, x, y, short, dist, alpha, tl) {
   ctx.font = `600 12px ${FONT}`;
   const w2 = ctx.measureText(dist).width;
   const w = Math.max(w1, w2) + 24, h = 44;
-  let bx = Math.max(tl.safe.x, Math.min(tl.LW - tl.safe.x - w, x - w / 2));
   const by = y - h - 8 + (1 - easeOut(alpha)) * 8;
+  let bx = Math.max(tl.safe.x, Math.min(rightAt(tl, by + h) - w, x - w / 2));
   roundRect(ctx, bx, by, w, h, 9);
   ctx.fillStyle = ST.card; ctx.fill();
   ctx.lineWidth = 1.5; ctx.strokeStyle = PINK; ctx.stroke();
@@ -1995,8 +2005,9 @@ function boundaryCard(ctx, tl, b, alpha) {
   if (alpha <= 0.01) return;
   const { LW, LH, safe } = tl;
   const horiz = tl.fmt === 'h';
-  const w = horiz ? 400 : LW - safe.x * 2 - 12, h = 104;
-  const x = horiz ? safe.x : (LW - w) / 2;
+  const B = lowBand(tl);
+  const w = horiz ? 400 : B.w - 12, h = 104;
+  const x = horiz ? safe.x : B.cx - w / 2;
   const y = LH - safe.bottom - h - (horiz ? 0 : 14) + (1 - easeOut(alpha)) * 14;
   const road = b.route ? formatKm(b.route.km) : formatKm(b.km, true, '≈ ');
   const mins = b.route && b.route.min ? `~${Math.max(1, Math.round(b.route.min))} phút ô tô` : 'đường chim bay';
@@ -2049,7 +2060,7 @@ function drawSummary(ctx, tl, p) {
     rows.push({ cat: r.cat, name: r.name, dist: formatKm(r.distKm, r.approx, '≈ ') });
   }
   const horiz = tl.fmt === 'h';
-  const w = horiz ? 384 : LW - safe.x * 2;
+  const w = horiz ? 384 : lowBand(tl).w;
   const h = tl.panelH;
   const x = horiz ? LW - safe.x - w : safe.x;
   const y = horiz ? (LH - h) / 2 : LH - safe.bottom - h;
@@ -2209,7 +2220,8 @@ function text3DCentered(ctx, text, size, color, rise = 1, glow = null) {
 
 function drawBrand(ctx, tl, text, phone, alpha) {
   if ((!text && !phone) || alpha <= 0.01) return;
-  const { LW, LH, safe } = tl;
+  const { LH, safe } = tl;
+  const B = lowBand(tl), CX = B.cx;   // nửa dưới: né cột nút bên phải
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -2219,35 +2231,35 @@ function drawBrand(ctx, tl, text, phone, alpha) {
     // Thẻ liên hệ: số điện thoại to, tên thương hiệu nhỏ phía trên
     ctx.font = `800 22px ${FONT}`;
     const ph = 'Gọi xem nhà  ' + phone;
-    const pw = Math.min(LW - safe.x * 2 - 20, ctx.measureText(ph).width + 40), h = 46;
+    const pw = Math.min(B.w - 20, ctx.measureText(ph).width + 40), h = 46;
     const y = bottom - h;
     if (text) {
       ctx.font = `700 13px ${FONT}`;
-      const t = fitOneLine(ctx, text, LW - safe.x * 2 - 40);
+      const t = fitOneLine(ctx, text, B.w - 40);
       const tw = ctx.measureText(t).width + 26;
-      roundRect(ctx, (LW - tw) / 2, y - 34, tw, 26, 13);
+      roundRect(ctx, CX - tw / 2, y - 34, tw, 26, 13);
       ctx.fillStyle = ST.card; ctx.fill();
       ctx.fillStyle = ST.ink;
-      ctx.fillText(t, LW / 2, y - 21);
+      ctx.fillText(t, CX, y - 21);
     }
     const pop = ST.pop ? easeOutBack(clamp01(alpha)) : 1;
     ctx.save();
-    ctx.translate(LW / 2, y + h / 2); ctx.scale(pop, pop); ctx.translate(-LW / 2, -(y + h / 2));
-    roundRect(ctx, (LW - pw) / 2, y, pw, h, ST.outline ? 4 : 23);
+    ctx.translate(CX, y + h / 2); ctx.scale(pop, pop); ctx.translate(-CX, -(y + h / 2));
+    roundRect(ctx, CX - pw / 2, y, pw, h, ST.outline ? 4 : 23);
     if (ST.outline) { ctx.fillStyle = ST.card; ctx.fill(); ctx.lineWidth = 1.6; ctx.strokeStyle = GOLD; ctx.stroke(); ctx.fillStyle = GOLD; }
     else { ctx.fillStyle = GOLD; ctx.fill(); ctx.fillStyle = ST.accInk; }
     ctx.font = ST.outline ? `700 21px ${HFONT}` : `800 22px ${FONT}`;
-    ctx.fillText(fitOneLine(ctx, ph, pw - 24), LW / 2, y + h / 2 + 1);
+    ctx.fillText(fitOneLine(ctx, ph, pw - 24), CX, y + h / 2 + 1);
     ctx.restore();
   } else {
     ctx.font = `800 16px ${FONT}`;
-    const t = fitOneLine(ctx, text, LW - safe.x * 2 - 40);
+    const t = fitOneLine(ctx, text, B.w - 40);
     const w = ctx.measureText(t).width + 34, h = 38;
     const y = bottom - h;
-    roundRect(ctx, (LW - w) / 2, y, w, h, ST.outline ? 4 : 19);
+    roundRect(ctx, CX - w / 2, y, w, h, ST.outline ? 4 : 19);
     if (ST.outline) { ctx.fillStyle = ST.card; ctx.fill(); ctx.lineWidth = 1.6; ctx.strokeStyle = GOLD; ctx.stroke(); ctx.fillStyle = GOLD; }
     else { ctx.fillStyle = GOLD; ctx.fill(); ctx.fillStyle = ST.accInk; }
-    ctx.fillText(t, LW / 2, y + h / 2 + 1);
+    ctx.fillText(t, CX, y + h / 2 + 1);
   }
   ctx.restore();
 }
@@ -2349,7 +2361,8 @@ function infoBox(tl, where, logo) {
   if (!d) return null;
   d.rent = !!tl.scene.rent;
   const { LW, LH, safe } = tl;
-  if (d.full) d.lines = infoFullLines(d.det, (tl.fmt === 'h' ? 384 : LW - safe.x * 2) - 32);
+  const BW = where === 'top' ? LW - safe.x * 2 : lowBand(tl).w;   // thẻ ở đáy: né cột nút bên phải
+  if (d.full) d.lines = infoFullLines(d.det, (tl.fmt === 'h' ? 384 : BW) - 32);
   const h = d.full ? 38 + d.lines.length * 22 : d.price ? (d.det.length ? 92 : 66) : 46;
   if (tl.fmt === 'h') {
     const w = 384;
@@ -2358,7 +2371,7 @@ function infoBox(tl, where, logo) {
       : { x: LW - safe.x - w, y: LH - safe.bottom - h, w, h, d };
   }
   if (where === 'top') return { x: safe.x, y: logo ? logo.y + logo.h + 8 : safe.top + 6, w: LW - safe.x * 2, h, d };
-  return { x: safe.x, y: LH - safe.bottom - h - (tl.fmt === 'v' ? 6 : 0), w: LW - safe.x * 2, h, d };
+  return { x: safe.x, y: LH - safe.bottom - h - (tl.fmt === 'v' ? 6 : 0), w: BW, h, d };
 }
 function drawInfo(ctx, box, alpha) {
   if (!box || alpha <= 0.01) return;
@@ -2416,7 +2429,7 @@ function captionAt(tl, t) {
 const M1_CAP_Y = 0.72;   // 30/10 12:20 Giang: phụ đề mẫu 1 nhích lên một chút (trước 0,76)
 function captionLayoutM1(ctx, tl, cap, occ) {
   const { LW, LH, safe } = tl;
-  let left = safe.x + 6, right = LW - safe.x - 6;
+  let left = safe.x + 6, right = lowBand(tl).x1 - 6;
   if (occ.rightPanel) right = occ.rightPanel - 12;
   const maxW = right - left;
   let size = 0.075 * Math.min(LW, LH);   // 30/10: nhỏ hơn Hook Kit (0,095) vì bản đồ đã nhiều nhãn
@@ -2461,7 +2474,7 @@ function captionLayout(ctx, tl, cap, occ) {
   if (cap.m1) return captionLayoutM1(ctx, tl, cap, occ);
   const { LW, LH, safe } = tl;
   const size = CAP_SIZE[tl.fmt] || 24;
-  let left = safe.x + 10, right = LW - safe.x - 10;
+  let left = safe.x + 10, right = lowBand(tl).x1 - 10;
   if (occ.rightPanel) right = occ.rightPanel - 16;
   const maxW = right - left - 28;
   ctx.save();
@@ -2581,8 +2594,8 @@ function placeCard(tl, key, w, h, px, py, hx, hy, avoid) {
   const evalAt = (ang, rad) => {
     const cx = px + Math.cos(ang) * (rad + w * 0.5 * Math.abs(Math.cos(ang)));
     const cy = py + Math.sin(ang) * (rad + h * 0.5 * Math.abs(Math.sin(ang)));
-    const x = Math.max(safe.x, Math.min(LW - safe.x - w, cx - w / 2));
     const y = Math.max(safe.top + 6, Math.min(LH - safe.bottom - h, cy - h / 2));
+    const x = Math.max(safe.x, Math.min(rightAt(tl, y + h) - w, cx - w / 2));
     const r = { x, y, w, h };
     const score = overlapArea(r, avoid) / (w * h) * 30 + Math.hypot(x + w / 2 - px, y + h / 2 - py) / 90 + (1 - Math.cos(ang - out)) * 0.35;
     return { r, score, ang, rad };
@@ -2838,7 +2851,9 @@ function drawPhotos(ctx, tl, t, logo) {
 function drawHook(ctx, tl, t) {
   const H = tl.hook;
   if (!H || t >= tl.hookEnd + 0.4) return;
-  const { LW, LH, safe } = tl;
+  const { LW, LH } = tl;
+  // thẻ mở đầu nằm giữa khung (lấn xuống nửa dưới): khổ dọc chừa đều hai bên bằng cột nút bên phải → chữ dài tự thu nhỏ/xuống dòng
+  const safe = tl.safe.r ? { ...tl.safe, x: Math.max(tl.safe.x, tl.safe.r) } : tl.safe;
   const t0 = (tl.hookPh || tl.intro).t0;
   const lt = t - t0;
   const A = t < tl.hookEnd - 0.45 ? clamp01(lt / 0.25 + 0.6) : clamp01((tl.hookEnd + 0.4 - t) / 0.85);
@@ -3788,7 +3803,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       // Chữ nằm trên mặt đất: ra màn hình bị thu theo phối cảnh (w). Tính cỡ và vị trí để TOÀN BỘ chữ nằm trong khung,
       // ghim sát mép thì chữ tự dịch vào trong (không canh giữa cứng tại ghim)
       const sp = g2s(P, hg.x, y);
-      const minX = safe.x + 10, maxX = LW - safe.x - 10;
+      const minX = safe.x + 10, maxX = rightAt(tl, sp.y + 20) - 10;
       let size = Math.max(14, Math.min(maxSize, ((maxX - minX) * 0.96 * sp.w) / Math.max(w100, 0.1)));
       const halfS = (w100 * size * 1.08) / 2 / sp.w; // nửa bề rộng trên màn hình (cộng phần bóng đổ)
       const sx = Math.max(minX + halfS, Math.min(maxX - halfS, sp.x));
@@ -4351,7 +4366,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     const far = Math.hypot(ps.x - hs.x, ps.y - hs.y) > 110;
     const cx = far ? (hs.x + ps.x) / 2 : ps.x + (ps.x >= hs.x ? 58 : -58);
     const cy = far ? (hs.y + ps.y) / 2 : ps.y + 4;
-    chip(ctx, Math.max(safe.x + 50, Math.min(LW - safe.x - 50, cx)), cy, `cách ${formatKm(r.nearKm, true, '≈ ')}`, a, roadStyleOf(scene, r).core);
+    chip(ctx, Math.max(safe.x + 50, Math.min(rightAt(tl, cy + 12) - 50, cx)), cy, `cách ${formatKm(r.nearKm, true, '≈ ')}`, a, roadStyleOf(scene, r).core);
   });
 
   // Ghim tiện ích
@@ -4380,13 +4395,13 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       if (hitHouse(own.x, own.y)) {
         const tries = [[hs.x, hs.y + 70], [hs.x, hs.y - 110], [hs.x + ownW / 2 + 60, hs.y - 20], [hs.x - ownW / 2 - 60, hs.y - 20]];
         for (const [x, y] of tries) {
-          if (y > safe.top + 30 && y < cardTop - 46 && x > safe.x + ownW / 2 && x < LW - safe.x - ownW / 2) { own.x = x; own.y = y; break; }
+          if (y > safe.top + 30 && y < cardTop - 46 && x > safe.x + ownW / 2 && x < rightAt(tl, y + ownH / 2) - ownW / 2) { own.x = x; own.y = y; break; }
         }
       }
-      own.x = Math.max(safe.x + ownW / 2, Math.min(LW - safe.x - ownW / 2, own.x));
-      acr.x = Math.max(safe.x + 90, Math.min(LW - safe.x - 90, acr.x));
+      own.x = Math.max(safe.x + ownW / 2, Math.min(rightAt(tl, own.y + ownH / 2) - ownW / 2, own.x));
       const lg = logoBox(tl);
       acr.y = Math.max(lg && acr.x + 90 > lg.x ? lg.y + lg.h + 34 : safe.top + 34, Math.min(cardTop - 40, acr.y));
+      acr.x = Math.max(safe.x + 90, Math.min(rightAt(tl, acr.y + 20) - 90, acr.x));
       tl._acr = acr;
       const ownName = (scene.provinceShort || '').toUpperCase();
       ctx.save();
@@ -4483,7 +4498,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     const ty = m1Type(scene), text = ty.cta, S = m1CtaSize(ctx, text, k);
     const bt = brandTop(tl);   // Infinity khi không có thẻ môi giới
     const bottom = brandA > 0.05 && isFinite(bt) ? bt - 10 : LH - safe.bottom - (tl.fmt === 'v' ? 10 : 6);
-    cta = { text, icon: ty.icon, col: ty.col, k, cx: LW / 2, cy: bottom - S.h / 2, h: S.h, w: S.w, lt: t - ou.t0 - 0.4 };
+    cta = { text, icon: ty.icon, col: ty.col, k, cx: lowBand(tl).cx, cy: bottom - S.h / 2, h: S.h, w: S.w, lt: t - ou.t0 - 0.4 };
     occ.top = Math.min(occ.top, bottom - S.h - 8);
   }
   let cap = captionAt(tl, t);
@@ -4503,7 +4518,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
         let best = null;
         for (const r of ar.rings) for (let i = 0; i < r.length; i += Math.max(1, Math.floor(r.length / 60))) {
           const sp = S(r[i][0], r[i][1]);
-          if (sp.x < safe.x + 40 || sp.x > LW - safe.x - 40 || sp.y < safe.top + 40 || sp.y > LH - safe.bottom - 30) continue;
+          if (sp.x < safe.x + 40 || sp.x > rightAt(tl, sp.y) - 40 || sp.y < safe.top + 40 || sp.y > LH - safe.bottom - 30) continue;
           if (!best || sp.y < best.y) best = sp;
         }
         if (!best) return;
@@ -4512,7 +4527,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
         ctx.globalAlpha = aIso * clamp01((k - 0.6) / 0.4);
         ctx.font = `800 13px ${FONT}`;
         const w = ctx.measureText(text).width + 22, h = 26;
-        let x = Math.max(safe.x + 4, Math.min(LW - safe.x - 4 - w, best.x - w / 2)), y = best.y - h - 6;
+        let x = Math.max(safe.x + 4, Math.min(rightAt(tl, best.y) - 4 - w, best.x - w / 2)), y = best.y - h - 6;
         for (const u of used) if (Math.abs(u.y - y) < h + 4 && x < u.x + u.w && x + w > u.x) y = u.y - h - 6;
         used.push({ x, y, w });
         roundRect(ctx, x, y, w, h, 13);
@@ -4634,7 +4649,8 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
       const dir = poi.labDir || { x: 1, y: -1 };
       const x0 = dir.x > 0 ? s.x + 26 : s.x - 26 - w;
       const y0 = dir.y < 0 ? pinTop - h - 10 : s.y + 12;
-      const r = { x: Math.max(bounds.x0, Math.min(bounds.x1 - w, x0)), y: Math.max(bounds.y0, Math.min(bounds.y1 - h, y0)), w, h };
+      const ry = Math.max(bounds.y0, Math.min(bounds.y1 - h, y0));
+      const r = { x: Math.max(bounds.x0, Math.min(Math.min(bounds.x1, rightAt(tl, ry + h) - 6) - w, x0)), y: ry, w, h };
       const hit = placed.some(o => r.x < o.x + o.w + 5 && r.x + r.w + 5 > o.x && r.y < o.y + o.h + 5 && r.y + r.h + 5 > o.y);
       // Bị che thì mờ dần (không nhảy sang chỗ khác); nhãn đang nói tới luôn hiện
       tl._labA = tl._labA || {};
