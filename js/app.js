@@ -2249,7 +2249,8 @@ function renderLists() {
 }
 
 // ---------- Kịch bản lời đọc theo từng cảnh ----------
-const TYPE_WORD = { 'VỊ TRÍ CĂN NHÀ': 'Căn nhà', 'VỊ TRÍ CĂN VILLA': 'Căn villa', 'VỊ TRÍ LÔ ĐẤT': 'Lô đất', 'VỊ TRÍ DỰ ÁN': 'Dự án',
+// 30/10: nút "Biệt thự · Villa" giữ khoá cũ 'VỊ TRÍ CĂN VILLA' (căn đã lưu không đổi), chữ trong video/kịch bản là "biệt thự"
+const TYPE_WORD = { 'VỊ TRÍ CĂN NHÀ': 'Căn nhà', 'VỊ TRÍ CĂN VILLA': 'Căn biệt thự', 'VỊ TRÍ LÔ ĐẤT': 'Lô đất', 'VỊ TRÍ DỰ ÁN': 'Dự án',
   'VỊ TRÍ NHÀ CHO THUÊ': 'Nhà cho thuê', 'VỊ TRÍ PHÒNG CHO THUÊ': 'Phòng cho thuê', 'VỊ TRÍ MẶT TIỀN CHO THUÊ': 'Mặt tiền cho thuê' };
 // Khoảng cách trong kịch bản: viết số kiểu Việt Nam (1,8 km); lúc gửi giọng đọc sẽ đổi thành chữ
 function kmSpeak(km) {
@@ -4337,7 +4338,9 @@ function init() {
   });
   // Loại BĐS: 4 loại bán + 1 nút "Cho thuê" gộp 3 loại (nhà / phòng / mặt tiền) ở hàng phụ #rentSeg (30/10 Giang: gộp cho gọn)
   const pickType = v => {
-    state.typeLabel = v; state.label = v; $('labelInput').value = v;
+    // nhãn trên ghim: biệt thự (khách vẫn sửa được ở "Nhãn trên ghim", vd. VỊ TRÍ CĂN VILLA)
+    const lab = v === 'VỊ TRÍ CĂN VILLA' ? 'VỊ TRÍ BIỆT THỰ' : v;
+    state.typeLabel = v; state.label = lab; $('labelInput').value = lab;
     if (/CHO THUÊ/.test(v)) state.rentPick = v;
     syncTypeUi(); syncRoomUi(); showPhotos(); showClips(); scheduleRebuild();
   };

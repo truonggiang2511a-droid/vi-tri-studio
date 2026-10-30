@@ -2225,8 +2225,8 @@ function infoFullItems(scene) {
 // Loại BĐS theo nút khách chọn (scene.label = "VỊ TRÍ CĂN NHÀ" | "VỊ TRÍ CĂN VILLA" | "VỊ TRÍ LÔ ĐẤT" | "VỊ TRÍ DỰ ÁN")
 function infoKind(scene) {
   const t = String(scene.label || '').replace(/^VỊ TRÍ\s*/i, '').trim();
-  const front = /LÔ ĐẤT/i.test(t) ? 'lô' : /DỰ ÁN/i.test(t) ? 'dự án' : /VILLA/i.test(t) ? 'villa' : 'nhà';
-  return { title: 'THÔNG TIN ' + (/^(CĂN NHÀ|CĂN VILLA|LÔ ĐẤT|DỰ ÁN|NHÀ CHO THUÊ|PHÒNG CHO THUÊ|MẶT TIỀN CHO THUÊ)$/i.test(t) ? t.toUpperCase() : 'BẤT ĐỘNG SẢN'), front };
+  const front = /LÔ ĐẤT/i.test(t) ? 'lô' : /DỰ ÁN/i.test(t) ? 'dự án' : /BIỆT THỰ/i.test(t) ? 'biệt thự' : /VILLA/i.test(t) ? 'villa' : 'nhà';
+  return { title: 'THÔNG TIN ' + (/^(CĂN NHÀ|CĂN VILLA|BIỆT THỰ|CĂN BIỆT THỰ|LÔ ĐẤT|DỰ ÁN|NHÀ CHO THUÊ|PHÒNG CHO THUÊ|MẶT TIỀN CHO THUÊ)$/i.test(t) ? t.toUpperCase() : 'BẤT ĐỘNG SẢN'), front };
 }
 // Chia các mục thông tin thành tối đa 2 dòng (xuống dòng theo từng mục, không cắt giữa mục) — đo bằng canvas phụ
 let INFO_MC = null;
