@@ -133,15 +133,15 @@ const shade = (hex, f) => { const n = parseInt(hex.slice(1), 16); return `rgb(${
 export function mau1Layout(ctx, p, k, maxW) {
   const d3 = p.look === '3d';
   const font = s => `800 ${s}px ${F_3D}`; // 30/10 Giang chốt một font: Montserrat, chữ thường nhẹ nhàng (800, không khối)
-  let big = 60 * k * (p.kind === 'price' ? 1.06 : 1); // 30/10 11:30: nhỏ lại ~15% (trước 70)
+  let big = 68 * k * (p.kind === 'price' ? 1.06 : 1); // 30/10 12:20 Giang: to hơn chút để nhấn mạnh (11:30 là 60; ban đầu 70)
   ctx.font = font(big);
-  const iw = p.icon ? 66 * k : 0;
+  const iw = p.icon ? 74 * k : 0;
   let bw = ctx.measureText(p.text).width;
   const room = maxW - iw - 16 * k;
   if (bw > room) { big *= room / bw; ctx.font = font(big); bw = ctx.measureText(p.text).width; }
   const m = ctx.measureText(p.text);
   const asc = m.actualBoundingBoxAscent || big * 0.75, desc = m.actualBoundingBoxDescent || big * 0.05;
-  const thin = 19 * k, sign = 28 * k;
+  const thin = 21.5 * k, sign = 31.5 * k;
   ctx.font = `500 ${thin}px ${F_THIN}`;
   const tw = p.kicker ? ctx.measureText(p.kicker).width : 0;
   ctx.font = `600 ${sign}px ${F_SIGN}`;
@@ -209,7 +209,7 @@ export function drawMau1(ctx, p, x, y, lt, dur, k, maxW) {
   // thu nhỏ nhẹ lúc rút
   if (out > 0) { const cx = x + L.w / 2, cy = y + L.h / 2; ctx.translate(cx, cy); ctx.scale(1 - 0.06 * out, 1 - 0.06 * out); ctx.translate(-cx, -cy); }
   // icon tròn bên trái, ngang từ khoá (hiện trước chữ 0,08 s)
-  if (p.icon) drawBadge(ctx, p.icon, x + 29 * k, base - L.asc * 0.45, 26 * k, lt + 0.08, dur + 0.08, p.color, A);
+  if (p.icon) drawBadge(ctx, p.icon, x + 33 * k, base - L.asc * 0.45, 29 * k, lt + 0.08, dur + 0.08, p.color, A);
   // dòng dẫn nhỏ: mờ dần vào + trồi lên
   if (p.kicker) {
     const a = clamp01(lt / 0.2) * A;

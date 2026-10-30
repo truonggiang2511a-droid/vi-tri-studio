@@ -1018,7 +1018,8 @@ export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null) {
       if (t < notBefore || t - last < (m1 ? 2.2 : 1.8) || t > ph.t1 - 0.3) continue;
       if (m1) {
         // mẫu 1 giữ lâu hơn (Hook Kit: tối thiểu ~3 s; bản đồ chuyển cảnh nhanh nên 1,9–2,8 s), được lấn 0,4 s sang cảnh sau
-        const dur = Math.min(2.8, Math.max(1.9, ph.t1 + 0.4 - t));
+        // 30/10 12:20 Giang: hiện một khoảng cố định rồi thoát (2,5 s; chỉ ngắn hơn khi cảnh sắp hết, tối thiểu 2 s)
+        const dur = Math.min(2.5, Math.max(2.0, ph.t1 + 0.4 - t));
         // đơn vị viết thường cho đồng bộ với thẻ thông tin: "3,2 tỷ", "200 m", "7,9 km", "18 phút"
         // nhà/mặt tiền cho thuê: "Giá thuê" + chữ ký tay "mỗi tháng" (lời đọc chưa nói "tháng" thì vẫn rõ là giá thuê)
         const rentP = k.kind === 'price' && m1.scene.rent;
@@ -2073,7 +2074,9 @@ function drawTitle(ctx, tl, text, sub, alpha, topY = 0) {
   const lines = wrapText(ctx, text.toUpperCase(), LW - safe.x * 2 - extra, 2);
   // Có logo góc trên thì tiêu đề xuống dưới logo
   const pop = ST.pop ? easeOutBack(clamp01(alpha)) : 1;
-  let y = Math.max(tl.fmt === 'v' ? safe.top + 8 : safe.top - 6, topY ? topY + size * 0.55 : 0) + (1 - easeOut(alpha)) * -10;
+  // 30/10 12:20 Giang: mẫu 1 → tiêu đề nhích lên một chút, chừa chỗ cụm chữ phía trên (khách thường giữ nguyên)
+  const up = tl.scene.keyLook === 'mau1' && tl.keyPops && tl.keyPops.length ? 12 : 0;
+  let y = Math.max(tl.fmt === 'v' ? safe.top + 8 - up : safe.top - 6 - up, topY ? topY + size * 0.55 : 0) + (1 - easeOut(alpha)) * -10;
   ctx.translate(LW / 2, 0);
   let maxW = 0;
   lines.forEach((l, i) => {
@@ -2323,6 +2326,7 @@ function captionAt(tl, t) {
 // nên dùng chỗ Hook Kit hạ phụ đề khi có cụm chữ lớn (pos_lock y ≈ 0,76) = phía dưới, trên các thẻ ở đáy khung.
 // 30/10 Giang: cụm chữ mẫu 1 hiện thì xuống ĐÚNG chỗ phụ đề trắng, phụ đề ẩn đi; cụm rút thì phụ đề chạy lại bình thường.
 // Trả 0..1 = mức ẩn phụ đề tại t (mờ ra/vào 0,12 s). sfx.js dùng cùng cửa sổ [k.t − 0,1; k.t + dur] để bỏ tiếng gõ phím.
+const M1_CAP_Y = 0.72;   // 30/10 12:20 Giang: phụ đề mẫu 1 nhích lên một chút (trước 0,76) — cụm chữ dưới đứng đúng chỗ này
 function m1CapHide(tl, t) {
   let h = 0;
   for (const k of tl.keyPops || []) {
@@ -2335,7 +2339,7 @@ function m1CapHide(tl, t) {
 function m1CapBottom(tl) {
   const { LW, LH, safe } = tl;
   const h = 0.075 * Math.min(LW, LH) * 1.3;
-  return Math.min(LH - safe.bottom - (tl.fmt === 'v' ? 14 : 8), tl.fmt === 'v' ? LH * 0.76 + h / 2 : Infinity);
+  return Math.min(LH - safe.bottom - (tl.fmt === 'v' ? 14 : 8), tl.fmt === 'v' ? LH * M1_CAP_Y + h / 2 : Infinity);
 }
 function captionLayoutM1(ctx, tl, cap, occ) {
   const { LW, LH, safe } = tl;
@@ -2351,7 +2355,7 @@ function captionLayoutM1(ctx, tl, cap, occ) {
   const words = cap.words.map(w => ({ ...w, wd: ctx.measureText(w.w).width }));
   ctx.restore();
   const h = size * 1.3;
-  const bottom = Math.min(LH - safe.bottom - (tl.fmt === 'v' ? 14 : 8), occ.top - 12, tl.fmt === 'v' ? LH * 0.76 + h / 2 : Infinity);
+  const bottom = Math.min(LH - safe.bottom - (tl.fmt === 'v' ? 14 : 8), occ.top - 12, tl.fmt === 'v' ? LH * M1_CAP_Y + h / 2 : Infinity);
   const cx = (left + right) / 2;
   let x = cx - tw / 2;
   for (const w of words) { w.x = x; x += w.wd + sp; }
@@ -2863,9 +2867,6 @@ function drawHook(ctx, tl, t) {
 // chọn chỗ KHÔNG đè thẻ/ghim/tên đường/phụ đề đang hiện (OCC); chọn 1 lần lúc bật rồi giữ nguyên chỗ cho tới khi rút.
 const POP_YS = [0.33, 0.27, 0.39, 0.22, 0.45, 0.17];
 // Mẫu 1: chọn chỗ trống nhất (né OCC) trong vùng an toàn, giữ chỗ suốt lúc hiện; cụm sau đổi phía so với cụm trước
-const ease01 = x => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
-// 30/10 11:30 Giang: nhích cụm chữ lên cao hơn (trước 0,3 / 0,22 / 0,38…)
-const M1_XS = [0.5, 0.3, 0.7], M1_YS = [0.24, 0.17, 0.31, 0.11, 0.39, 0.48];
 function drawMau1Pops(ctx, tl, t) {
   const { LW, LH, safe, fmt } = tl;
   const k = (Math.min(LW, LH) / 540) * (fmt === 'v' ? 1 : 0.82);
@@ -2889,39 +2890,20 @@ function drawMau1Pops(ctx, tl, t) {
       }
       return sc;
     };
-    const bestSpot = prev => {
-      let best = null;
-      { // chỗ phụ đề trắng (phía dưới): ưu tiên trước — phụ đề tự ẩn trong lúc cụm hiện; bị thẻ/bảng che thì lên các chỗ khác
-        const x = Math.max(Z.x0, Math.min(Z.x1 - L.w, (Z.x0 + Z.x1) / 2 - L.w / 2));
-        const y = Math.max(Z.y0, Math.min(Z.y1 - L.h, m1CapBottom(tl) - L.h));
-        best = { x, y, sc: scoreAt(x, y) - 0.02 };
-        if (best.sc <= 0) return best;
-      }
-      M1_YS.forEach((fy, yi) => M1_XS.forEach((fx, xi) => {
-        const x = Math.max(Z.x0, Math.min(Z.x1 - L.w, Z.x0 + maxW * fx - L.w / 2));
-        const y = Math.max(Z.y0, Math.min(Z.y1 - L.h, Z.y0 + (Z.y1 - Z.y0) * fy - L.h / 2));
-        const sc = scoreAt(x, y) + (yi * 3 + xi) * 0.01 + (prev && Math.abs(prev.x - x) < 30 * k && Math.abs(prev.y - y) < 30 * k ? 0.2 : 0);
-        if (!best || sc < best.sc) best = { x, y, sc };
-      }));
-      return best;
-    };
+    // 30/10 12:20 Giang: cụm KHÔNG đổi chỗ — chỉ 2 chỗ cố định: TRÊN (ngay dưới dải tiêu đề) nếu trống, còn lại DƯỚI (chỗ phụ đề,
+    // phụ đề ẩn lúc cụm hiện). Chọn 1 lần lúc cụm bật, đứng yên tới khi thoát (không lướt); thẻ tiện ích tự né cụm.
     let pos = tl._m1Pos.get(p.id);
     if (!pos || lt < 0.05 || t < pos.tm - 0.001) {
-      const best = bestSpot(tl._m1Last && tl._m1Last.id !== p.id ? tl._m1Last : null);
-      pos = { x: best.x, y: best.y, fx: best.x, fy: best.y, tm: t };
+      const x = Math.max(Z.x0, Math.min(Z.x1 - L.w, (Z.x0 + Z.x1) / 2 - L.w / 2));
+      const yTop = Math.max(Z.y0, Math.min(Z.y1 - L.h, safe.top + (fmt === 'v' ? 88 : 72) * k));
+      const yBot = Math.max(Z.y0, Math.min(Z.y1 - L.h, m1CapBottom(tl) - L.h));
+      const sTop = scoreAt(x, yTop), sBot = scoreAt(x, yBot);
+      const y = sTop <= 0.001 ? yTop : sBot <= 0.001 ? yBot : sTop < sBot ? yTop : yBot;
+      pos = { x, y, tm: t };
       tl._m1Pos.set(p.id, pos);
-      tl._m1Last = { id: p.id, x: best.x, y: best.y };
-    } else if (lt > 0.1 && t - pos.tm > 0.15) {   // kiểm tra sớm: thẻ tiện ích đang hiện dần thì cụm lướt đi ngay
-      // máy lia làm ghim/thẻ/tên đường chạy vào chỗ cụm chữ đang đứng → lướt êm sang chỗ trống hơn
-      const cur = scoreAt(pos.x, pos.y);
-      if (cur > 0.03) {   // thẻ tiện ích hiện sau và chạm cụm (dù chỉ một chút) → lướt sang chỗ trống
-        const best = bestSpot(null);
-        if (best.sc < cur * 0.5) Object.assign(pos, { fx: pos.x, fy: pos.y, x: best.x, y: best.y, tm: t });
-      }
     }
-    const g = ease01(clamp01((t - pos.tm) / 0.35));
-    tl._m1Boxes.push({ x: pos.x, y: pos.y, w: L.w, h: L.h });   // chỗ cụm đứng (đích lướt) — thẻ tiện ích né
-    drawMau1(ctx, p, pos.fx + (pos.x - pos.fx) * g, pos.fy + (pos.y - pos.fy) * g, lt, p.dur, k, maxW);
+    tl._m1Boxes.push({ x: pos.x, y: pos.y, w: L.w, h: L.h });   // chỗ cụm đứng — thẻ tiện ích né
+    drawMau1(ctx, p, pos.x, pos.y, lt, p.dur, k, maxW);
   }
 }
 function drawKeyPops(ctx, tl, t) {
@@ -4350,7 +4332,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     const tStart = tl.hookEnd ? tl.hookEnd - 0.2 : 0.3, tA = fadeWin(t, tStart, ov.t0 + 0.5, 0.6, 0.6);
     const tTop = logo && tl.fmt !== 'h' ? logo.y + logo.h + 8 : 0;
     const mEnv = { LW: tl.LW, LH: tl.LH, safe: tl.safe, fmt: tl.fmt, lt: t - tStart, A: tA, k: (Math.min(tl.LW, tl.LH) / 540) * (tl.fmt === 'v' ? 1 : 0.85),
-      text: String(scene.title || '').toUpperCase(), sub: scene.titleSub, top: Math.max(tl.fmt === 'v' ? tl.safe.top + 8 : tl.safe.top - 6, tTop) };
+      text: String(scene.title || '').toUpperCase(), sub: scene.titleSub, top: Math.max((tl.fmt === 'v' ? tl.safe.top + 8 : tl.safe.top - 6) - (scene.keyLook === 'mau1' && tl.keyPops && tl.keyPops.length ? 12 : 0), tTop) };
     if (!(tA > 0.01 && scene.motion && !scene.motionHookOnly && motionTitle(ctx, scene.motion, mEnv))) drawTitle(ctx, tl, scene.title, scene.titleSub, tA, tTop);
     if (tA > 0.2) occBox(ctx, tl.safe.x, mEnv.top - 6, tl.LW - tl.safe.x, mEnv.top + (scene.titleSub ? 118 : 80) * mEnv.k);
   }
