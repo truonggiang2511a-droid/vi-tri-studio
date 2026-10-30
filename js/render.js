@@ -911,6 +911,8 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   const MAU1 = scene.keyLook === 'mau1';
   tl.keyPops = ((KEY_POPS && scene.motion) || MAU1) && opts.keyTexts && vd
     ? buildKeyPops(phases, opts.keyTexts, vd, (tl.hookEnd || 0) + 0.4, MAU1 ? { pois, roads, scene } : null) : [];
+  // Mẫu 1: lời đọc đã có giá → cụm chữ giá bật lên rồi, thẻ thông tin bỏ dòng giá, ghi đầy đủ thông tin BĐS (30/10 Giang: 2 chỗ giá hơi nhiều)
+  tl.infoFull = MAU1 && tl.keyPops.some(p => p.kind === 'price');
   // Có video thực tế: đoạn đầu làm nền chuyển động cho thẻ giá mở đầu (ưu tiên hơn ảnh tĩnh)
   // Đoạn mặt tiền chiếu toàn khung suốt cảnh mở đầu `front` (thẻ giá nếu có đè lên 2,2 s đầu)
   const fp = first('front');
@@ -2199,12 +2201,28 @@ function infoData(scene) {
   const price = clean(i.price);
   return price || det.length ? { price, det } : null;
 }
+// Thông tin đầy đủ của BĐS (không có giá) cho thẻ thông tin khi bật mẫu 1 — chỉ ghi những gì khách đã nhập
+function infoFullItems(scene) {
+  const i = scene.info || {};
+  const clean = v => String(v ?? '').replace(/\s+/g, ' ').trim();
+  const num = v => /^\d+([.,]\d+)?$/.test(v);
+  const area = clean(i.area), tc = clean(i.thoCu), fl = clean(i.floors), beds = clean(i.beds), legal = clean(i.legal), rw = clean(i.roadWidth);
+  return [
+    area ? (/diện tích/i.test(area) ? area : 'Diện tích ' + area) : '',
+    tc ? (/thổ cư/i.test(tc) ? tc : 'Thổ cư ' + tc) : '',
+    fl ? (num(fl) ? fl + ' tầng' : fl) : '',
+    beds ? (num(beds) ? beds + ' phòng ngủ' : beds) : '',
+    legal,
+    rw ? 'Đường trước nhà ' + (num(rw) ? rw + 'm' : rw) : '',
+  ].filter(Boolean);
+}
 // Vị trí thẻ thông tin: lúc giới thiệu căn nhà nằm dưới cùng (ngang: góc phải dưới), lúc kết nằm trên cùng
 function infoBox(tl, where, logo) {
-  const d = infoData(tl.scene);
+  let d = infoData(tl.scene);
+  if (tl.infoFull) { const full = infoFullItems(tl.scene); d = full.length ? { price: '', det: full, full: true } : null; }
   if (!d) return null;
   const { LW, LH, safe } = tl;
-  const h = d.price ? (d.det.length ? 92 : 66) : 46;
+  const h = d.full ? 82 : d.price ? (d.det.length ? 92 : 66) : 46;
   if (tl.fmt === 'h') {
     const w = 384;
     return where === 'top'
@@ -2227,7 +2245,22 @@ function drawInfo(ctx, box, alpha) {
   ctx.lineWidth = 1.4; ctx.strokeStyle = ST.light ? 'rgba(17,22,27,0.18)' : GOLD; ctx.stroke();
   ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
   const detText = d.det.join('  ·  ');
-  if (d.price) {
+  if (d.full) {
+    // Nhãn nhỏ + tối đa 2 dòng thông tin, xuống dòng theo từng mục (không cắt giữa mục)
+    ctx.fillStyle = CA();
+    ctx.font = `700 11px ${FONT}`;
+    spacedCaps(ctx, 'THÔNG TIN BẤT ĐỘNG SẢN', x + 16, y + 23, 1.2);
+    ctx.fillStyle = ST.ink;
+    ctx.font = `700 15px ${FONT}`;
+    const maxW = w - 32, sep = '  ·  ', lines = [''];
+    for (const it of d.det) {
+      const cur = lines[lines.length - 1], test = cur ? cur + sep + it : it;
+      if (!cur || ctx.measureText(test).width <= maxW) lines[lines.length - 1] = test;
+      else lines.push(it);
+    }
+    if (lines.length > 2) lines.splice(1, lines.length, lines.slice(1).join(sep));
+    lines.forEach((ln, k) => ctx.fillText(fitOneLine(ctx, ln, maxW), x + 16, y + 48 + k * 22));
+  } else if (d.price) {
     ctx.fillStyle = CA();
     ctx.font = `700 11px ${FONT}`;
     const lx = spacedCaps(ctx, 'GIÁ BÁN', x + 16, y + 24, 1.2);
