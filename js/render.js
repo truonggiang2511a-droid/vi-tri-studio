@@ -1824,8 +1824,8 @@ function labelCard(ctx, cx, bottomY, title, sub, alpha, LW, safe) {
   ctx.restore();
 }
 
-function poiCard(ctx, poi, px, py, alpha, tl, avoid) {
-  if (alpha <= 0.01) return;
+function poiCard(ctx, poi, px, py, alpha, tl, avoid, reserveOnly) {
+  if (alpha <= 0.01 && !reserveOnly) return;
   const { LW, LH, safe } = tl;
   ctx.save();
   ctx.font = `800 15.5px ${FONT}`;
@@ -1846,14 +1846,22 @@ function poiCard(ctx, poi, px, py, alpha, tl, avoid) {
     { x: px - 22 - w, y: py - h / 2 - 14 },
   ];
   let best = null;
-  for (const c of cands) {
+  // nhớ phía đã chọn của thẻ này: phía cũ còn trống thì giữ (không nhảy lại khi cụm chữ rút đi)
+  const mem = tl.scene.keyLook === 'mau1' && tl.keyPops && tl.keyPops.length;   // chỉ mẫu 1 — khách thường giữ y như cũ
+  if (mem) tl._cardSide ||= new Map();
+  const ck = poi.id ?? poi.name, keep = mem ? tl._cardSide.get(ck) : null;
+  const order = keep != null ? [keep, 0, 1, 2, 3].filter((v, i, a) => a.indexOf(v) === i) : [0, 1, 2, 3];
+  for (const ci of order) {
+    const c = cands[ci];
     c.x = Math.max(safe.x, Math.min(LW - safe.x - w, c.x));
     const inY = c.y >= safe.top + 6 && c.y + h <= LH - safe.bottom;
     const hit = avoid.some(a => c.x < a.x + a.w && c.x + w > a.x && c.y < a.y + a.h && c.y + h > a.y);
-    if (inY && !hit) { best = c; break; }
+    if (inY && !hit) { best = c; if (mem) tl._cardSide.set(ck, ci); break; }
     if (!best && inY) best = c;
   }
   if (!best) best = { x: cands[0].x, y: Math.max(safe.top + 6, Math.min(LH - safe.bottom - h, cands[0].y)) };
+  // Thẻ CHƯA hiện (đầu cảnh tiện ích): chỉ giữ chỗ trước để cụm chữ mẫu 1 không đứng vào chỗ thẻ sắp hiện
+  if (reserveOnly) { occBox(ctx, best.x, best.y, best.x + w, best.y + h); ctx.restore(); return; }
   const y = best.y + (1 - easeOut(alpha)) * 10;
   ctx.globalAlpha = alpha;
   ctx.shadowColor = 'rgba(0,0,0,0.35)'; ctx.shadowBlur = 12; ctx.shadowOffsetY = 3;
@@ -2313,6 +2321,22 @@ function captionAt(tl, t) {
 // Phụ đề mẫu 1: chữ trắng Be Vietnam ExtraBold, không nền, không viền, bóng vừa đổ gần chữ hơi mềm, một dòng.
 // Cỡ 0,075 × cạnh ngắn (Hook Kit 0,095 cho video người dẫn; bản đồ nhiều nhãn nên nhỏ hơn). Hook Kit đặt ở y 0,43 (trên đầu người dẫn); video map giữa khung là ghim nhà/tiện ích
 // nên dùng chỗ Hook Kit hạ phụ đề khi có cụm chữ lớn (pos_lock y ≈ 0,76) = phía dưới, trên các thẻ ở đáy khung.
+// 30/10 Giang: cụm chữ mẫu 1 hiện thì xuống ĐÚNG chỗ phụ đề trắng, phụ đề ẩn đi; cụm rút thì phụ đề chạy lại bình thường.
+// Trả 0..1 = mức ẩn phụ đề tại t (mờ ra/vào 0,12 s). sfx.js dùng cùng cửa sổ [k.t − 0,1; k.t + dur] để bỏ tiếng gõ phím.
+function m1CapHide(tl, t) {
+  let h = 0;
+  for (const k of tl.keyPops || []) {
+    const a = t - (k.t - 0.1), b = k.t + k.dur - t;
+    if (a > 0 && b > -0.12) h = Math.max(h, Math.min(clamp01(a / 0.12), clamp01((b + 0.12) / 0.12)));
+  }
+  return h;
+}
+// Chỗ phụ đề mẫu 1 (đáy dòng phụ đề), để cụm chữ đứng vào đúng chỗ đó
+function m1CapBottom(tl) {
+  const { LW, LH, safe } = tl;
+  const h = 0.075 * Math.min(LW, LH) * 1.3;
+  return Math.min(LH - safe.bottom - (tl.fmt === 'v' ? 14 : 8), tl.fmt === 'v' ? LH * 0.76 + h / 2 : Infinity);
+}
 function captionLayoutM1(ctx, tl, cap, occ) {
   const { LW, LH, safe } = tl;
   let left = safe.x + 6, right = LW - safe.x - 6;
@@ -2849,6 +2873,7 @@ function drawMau1Pops(ctx, tl, t) {
   const Z = { x0: safe.x + 8, x1: LW - Math.max(safe.x + 8, right), y0: safe.top + 50, y1: LH - safe.bottom - 10 };
   const maxW = Z.x1 - Z.x0;
   tl._m1Pos ||= new Map();
+  tl._m1Boxes = []; tl._m1BoxT = t;
   const m = ctx.getTransform();
   for (const p of tl.keyPops) {
     const lt = t - p.t;
@@ -2866,6 +2891,12 @@ function drawMau1Pops(ctx, tl, t) {
     };
     const bestSpot = prev => {
       let best = null;
+      { // chỗ phụ đề trắng (phía dưới): ưu tiên trước — phụ đề tự ẩn trong lúc cụm hiện; bị thẻ/bảng che thì lên các chỗ khác
+        const x = Math.max(Z.x0, Math.min(Z.x1 - L.w, (Z.x0 + Z.x1) / 2 - L.w / 2));
+        const y = Math.max(Z.y0, Math.min(Z.y1 - L.h, m1CapBottom(tl) - L.h));
+        best = { x, y, sc: scoreAt(x, y) - 0.02 };
+        if (best.sc <= 0) return best;
+      }
       M1_YS.forEach((fy, yi) => M1_XS.forEach((fx, xi) => {
         const x = Math.max(Z.x0, Math.min(Z.x1 - L.w, Z.x0 + maxW * fx - L.w / 2));
         const y = Math.max(Z.y0, Math.min(Z.y1 - L.h, Z.y0 + (Z.y1 - Z.y0) * fy - L.h / 2));
@@ -2889,6 +2920,7 @@ function drawMau1Pops(ctx, tl, t) {
       }
     }
     const g = ease01(clamp01((t - pos.tm) / 0.35));
+    tl._m1Boxes.push({ x: pos.x, y: pos.y, w: L.w, h: L.h });   // chỗ cụm đứng (đích lướt) — thẻ tiện ích né
     drawMau1(ctx, p, pos.fx + (pos.x - pos.fx) * g, pos.fy + (pos.y - pos.fy) * g, lt, p.dur, k, maxW);
   }
 }
@@ -4346,9 +4378,11 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   }
   if (B && bp && t >= bp.t0 + 0.5 * (bp.t1 - bp.t0) && t < bp.t1 + 0.6) occ.top = Math.min(occ.top, LH - safe.bottom - 104 - (tl.fmt === 'h' ? 0 : 14));
   if (brandA > 0.05) occ.top = Math.min(occ.top, brandTop(tl));
-  const cap = captionAt(tl, t);
+  let cap = captionAt(tl, t);
+  const capHide = cap && cap.m1 ? m1CapHide(tl, t) : 0;   // cụm chữ mẫu 1 đang ở chỗ phụ đề → ẩn phụ đề
+  if (capHide >= 0.999) cap = null;
   const capL = cap ? captionLayout(ctx, tl, cap, occ) : null;
-  const capA = cap ? (cap.m1 ? clamp01((cap.t1 - t) / 0.1) : Math.min(clamp01((t - cap.t0) / 0.12), clamp01((cap.t1 - t) / 0.12))) : 0;
+  const capA = cap ? (cap.m1 ? clamp01((cap.t1 - t) / 0.1) * (1 - capHide) : Math.min(clamp01((t - cap.t0) / 0.12), clamp01((cap.t1 - t) / 0.12))) : 0;
 
   // Nhãn "5 phút / 10 phút / 15 phút lái xe" ở mép trên mỗi vùng (vị trí trên màn hình, kẹp trong khung an toàn)
   if (tl.isoPh && scene.iso && scene.iso.areas) {
@@ -4440,10 +4474,13 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
   if (tl.flow === 'lanluot') tl.poiPhases.forEach((ph, i) => {
     const d = ph.t1 - ph.t0;
     const a = fadeWin(t, ph.t0 + 0.6 * d, ph.t1 + 0.2, 0.4, 0.3);
-    if (a <= 0) return;
+    const early = a <= 0.01 && OCC && t >= ph.t0 && t < ph.t0 + 0.6 * d;   // giữ chỗ thẻ sắp hiện (chỉ khi có cụm chữ)
+    if (a <= 0 && !early) return;
     const poi = tl.pois[i];
     const s = S(poi.lat, poi.lng);
-    poiCard(ctx, poi, s.x, s.y, a, tl, avoid);
+    // Cụm chữ mẫu 1 đang hiện (khung trước): thẻ chọn phía khác của ghim (trên/dưới/trái/phải) để không đè nhau
+    const m1 = tl._m1Boxes && Math.abs(t - tl._m1BoxT) < 0.25 ? tl._m1Boxes : null;
+    poiCard(ctx, poi, s.x, s.y, a, tl, m1 ? avoid.concat(m1) : avoid, early);
   });
 
   // Quét vòng tròn / mũi tên: nhãn dán cạnh ghim (tên + khoảng cách), tự tránh đè nhau, đè chữ, đè nhà
