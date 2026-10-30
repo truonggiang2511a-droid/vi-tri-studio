@@ -291,6 +291,8 @@ export function drawM1Feats(ctx, p, t, cx, bottom, k, colKey) {
 // Viên thuốc chuyển sắc cam → đỏ + huy hiệu trắng có icon + chữ đậm trắng + mũi tên chạy ">>>"; trượt lên lúc vào, vài giây
 // "nhún" một nhịp có gợn sóng lan ra, vệt sáng lướt qua. KHÔNG ghi số điện thoại.
 const CTA_DEF = ['#FF7A45', '#E8261A'];
+// 30/10 14:05 Giang: nút CTA cùng màu với phong cách (như chữ điểm nhấn M1_ACCENT), đậm hơn một nấc để chữ trắng đọc rõ
+export const M1_CTA_COL = { neon: ['#22D3EE', '#0B8FB0'], sangtrong: ['#FFD23F', '#D49B00'], tretrung: ['#FF6FB5', '#DB2777'], toigian: ['#FF6B5B', '#D92D20'] };
 export function m1CtaSize(ctx, text, k) {
   const h = 57 * k, px = h * 0.36, ir = h * 0.36;
   ctx.save(); ctx.font = `800 ${px}px ${F_THIN}`; const tw = ctx.measureText(text).width; ctx.restore();
@@ -336,7 +338,7 @@ export function drawM1Cta(ctx, text, cx, cy, lt, dur, k, icon = 'chat', CTA_C = 
   iconStrokesColor(ctx, icon, ir * 1.25, CTA_C[1]); ctx.restore();
   // chữ
   ctx.font = `800 ${px}px ${F_THIN}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = px * 0.1; ctx.shadowOffsetY = px * 0.05;
+  ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = px * 0.12; ctx.shadowOffsetY = px * 0.06;   // nút vàng/xanh sáng: bóng chữ đậm hơn
   ctx.fillStyle = '#FFFFFF'; ctx.fillText(text, x0 + h * 0.16 + 2 * ir + h * 0.22, y + px * 0.04);
   ctx.shadowColor = 'transparent';
   // mũi tên chạy ">>>"

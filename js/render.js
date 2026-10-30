@@ -5,7 +5,7 @@ import { project, unproject, haversineKm, metersPerPixel, formatKm, fitZoom } fr
 import { drawIcon } from './icons.js';
 import { CATEGORIES, iconOf } from './data.js';
 import { motionHook, motionTitle, keyPop, keyPopBox, findKeywords } from './motion.js';
-import { drawMau1, mau1Layout, drawM1Cta, m1CtaSize } from './mau1.js';
+import { drawMau1, mau1Layout, drawM1Cta, m1CtaSize, M1_CTA_COL } from './mau1.js';
 
 export const BASE_FONT = '"Be Vietnam Pro", "Segoe UI", system-ui, sans-serif';
 // Chữ tên xã/phường, tỉnh/thành: Montserrat đậm, to rộng
@@ -4502,7 +4502,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     const ty = m1Type(scene), text = ty.cta, S = m1CtaSize(ctx, text, k);
     const bt = brandTop(tl);   // Infinity khi không có thẻ môi giới
     const bottom = brandA > 0.05 && isFinite(bt) ? bt - 10 : LH - safe.bottom - (tl.fmt === 'v' ? 10 : 6);
-    cta = { text, icon: ty.icon, col: ty.col, k, cx: lowBand(tl).cx, cy: bottom - S.h / 2, h: S.h, w: S.w, lt: t - ou.t0 - 0.4 };
+    cta = { text, icon: ty.icon, col: M1_CTA_COL[scene.style] || ty.col, k, cx: lowBand(tl).cx, cy: bottom - S.h / 2, h: S.h, w: S.w, lt: t - ou.t0 - 0.4 };
     occ.top = Math.min(occ.top, bottom - S.h - 8);
   }
   let cap = captionAt(tl, t);
