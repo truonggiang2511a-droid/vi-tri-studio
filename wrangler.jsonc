@@ -9,7 +9,7 @@
   // Trạm chuyển tiếp gọi AI đặt cố định ở Mỹ (lib/ai-relay.js): tránh Anthropic/Gemini chặn trạm Hồng Kông
   "durable_objects": { "bindings": [{ "name": "AI_RELAY", "class_name": "AiRelay" }, { "name": "VBEE_BOX", "class_name": "VbeeBox" }] },
   "migrations": [{ "tag": "v1-ai-relay", "new_sqlite_classes": ["AiRelay"] }, { "tag": "v2-vbee-box", "new_sqlite_classes": ["VbeeBox"] }],
-  "triggers": { "crons": ["*/30 * * * *", "0 1 * * 1"] },
+  "triggers": { "crons": ["*/30 * * * *", "0 1 * * 1", "0 0 * * *"] },
   "assets": {
     "directory": "./site",
     "binding": "ASSETS",

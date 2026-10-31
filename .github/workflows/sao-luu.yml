@@ -1,0 +1,81 @@
+# Sao lưu dữ liệu Supabase hằng tuần (gói free không có sao lưu tự động).
+# - 3h sáng thứ Hai giờ VN, hoặc bấm tay: Actions › Sao lưu dữ liệu › Run workflow.
+# - Cần 2 secret (Settings › Secrets and variables › Actions):
+#     SUPABASE_DB_URL  = chuỗi "Session pooler" trong Supabase › Connect (có mật khẩu DB). Không dùng "Direct connection"
+#                        (chỉ có IPv6, máy GitHub không vào được).
+#     BACKUP_PASS      = mật khẩu mã hoá bản sao lưu. LƯU KỸ — mất mật khẩu này thì bản sao lưu không mở được.
+# - Repo đang công khai: file đính kèm của Actions ai đăng nhập GitHub cũng tải được → file luôn được mã hoá AES-256
+#   trước khi tải lên, không bao giờ commit vào repo.
+# - Khôi phục: xem CLAUDE.md, nhật ký 31/10 "Sao lưu dữ liệu".
+name: Sao lưu dữ liệu
+
+on:
+  schedule:
+    - cron: '0 20 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sao-luu
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      BACKUP_PASS: ${{ secrets.BACKUP_PASS }}
+    steps:
+      - name: Kiểm tra secret
+        run: |
+          if [ -z "$DB_URL" ] || [ -z "$BACKUP_PASS" ]; then
+            echo "::error::Thiếu secret SUPABASE_DB_URL hoặc BACKUP_PASS (Settings › Secrets and variables › Actions)"
+            exit 1
+          fi
+          if [ "${#BACKUP_PASS}" -lt 16 ]; then
+            echo "::error::BACKUP_PASS quá ngắn (cần ít nhất 16 ký tự)"
+            exit 1
+          fi
+
+      - name: Cài pg_dump 17 (cùng phiên bản máy chủ Supabase)
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17 >/dev/null
+          /usr/lib/postgresql/17/bin/pg_dump --version
+
+      - name: Sao lưu + mã hoá
+        id: dump
+        run: |
+          set -euo pipefail
+          name="vitri-$(TZ=Asia/Ho_Chi_Minh date +%Y%m%d-%H%M)"
+          mkdir -p out
+          # Toàn bộ dữ liệu của app nằm trong schema public (tài khoản, lượt, đơn, trang căn, khách để lại số…).
+          /usr/lib/postgresql/17/bin/pg_dump "$DB_URL" -Fc --no-owner --no-privileges -n public -f "out/$name.dump"
+          size=$(stat -c %s "out/$name.dump")
+          echo "Kích thước: $size byte"
+          if [ "$size" -lt 100000 ]; then echo "::error::Bản sao lưu quá nhỏ ($size byte) — có thể sai chuỗi kết nối"; exit 1; fi
+          # Kiểm tra file đọc lại được và có các bảng chính
+          /usr/lib/postgresql/17/bin/pg_restore -l "out/$name.dump" > out/list.txt
+          for t in vt_users vt_orders vt_usage vt_pages vt_leads vt_payment_events; do
+            grep -q "TABLE DATA public $t " out/list.txt || { echo "::error::Thiếu bảng $t trong bản sao lưu"; exit 1; }
+          done
+          printf '%s' "$BACKUP_PASS" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            --symmetric --cipher-algo AES256 -o "out/$name.dump.gpg" "out/$name.dump"
+          shred -u "out/$name.dump" out/list.txt
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          ls -l out
+
+      - name: Lưu bản sao (giữ 90 ngày)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.dump.outputs.name }}
+          path: out/*.gpg
+          retention-days: 90
+          if-no-files-found: error
