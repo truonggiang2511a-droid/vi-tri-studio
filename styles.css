@@ -268,6 +268,11 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .result video { width: 100%; max-height: 60vh; background: #000; border-radius: var(--r); }
 .result-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .result-actions .btn { flex: 1 1 160px; }
+.cover-box { display: flex; gap: 12px; align-items: center; padding: 10px; border-radius: 12px; border: 1px solid var(--line); }
+.cover-box img { width: 96px; max-height: 170px; object-fit: contain; border-radius: 8px; background: #000; flex: none; }
+.cover-side { display: flex; flex-direction: column; gap: 6px; min-width: 0; line-height: 1.35; }
+.cover-side span { font-size: 13px; color: var(--muted); }
+.cover-side .btn { align-self: flex-start; }
 
 .foot { padding-block: 16px 0; }
 .foot p { margin: 0; font-size: 12px; color: var(--muted); }

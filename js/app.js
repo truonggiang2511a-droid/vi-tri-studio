@@ -4,7 +4,7 @@ import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, p
 import { ICON_PATHS } from './icons.js';
 import {
   FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, HI_THEMES, LOT_STYLES, LOT_COLORS, STYLES, BASES,
-  CLIP_MAX, clipTime, camAt,
+  CLIP_MAX, clipTime, camAt, coverTime,
 } from './render.js';
 import { sfxEvents, setSfxSample, hasSfxSample } from './sfx.js';
 import { loadMau1Fonts } from './mau1.js';
@@ -3212,6 +3212,7 @@ function renderSwatches(id, key, withAuto, themes = LINE_THEMES) {
 let exportCtrl = null;
 let resultUrl = null;
 let resultFile = null;
+let coverUrl = null, coverFile = null;   // ảnh bìa đi kèm video vừa xuất
 function progress(pct, text) {
   $('progBar').style.width = Math.max(0, Math.min(100, pct)).toFixed(1) + '%';
   $('progText').textContent = text;
@@ -3298,6 +3299,12 @@ async function doExport() {
     exportedOnce = true; updateQuick();
     $('resultMeta').textContent = `${width}×${height} · ${Math.round(xtl.duration)} giây · ${(blob.size / 1048576).toFixed(1)} MB · ${ext.toUpperCase()}`;
     $('shareBtn').hidden = !(navigator.canShare && navigator.canShare({ files: [resultFile] }));
+    // Ảnh bìa đi kèm video (thẻ mở đầu của phong cách, cùng cỡ video). Lỗi ảnh bìa không được làm hỏng video đã xuất.
+    progress(99, 'Đang tạo ảnh bìa…');
+    try {
+      const cb = await makeCover(xtl, width, height, scale);
+      setCover(cb ? new File([cb], name.replace(/\.(mp4|webm)$/, '-anh-bia.jpg'), { type: 'image/jpeg' }) : null);
+    } catch (e) { console.warn('Ảnh bìa lỗi', e); setCover(null); }
     progress(100, 'Xong');
     if (account.profile && await saveProject({ silent: true })) toast('Đã dựng xong video. Căn này đã lưu vào mục Căn đã lưu.', 3500);
     else toast('Đã dựng xong video.');
@@ -3315,6 +3322,36 @@ async function doExport() {
     $('exportBox').hidden = true;
     try { await wake?.release(); } catch { /* bỏ qua */ }
   }
+}
+async function makeCover(xtl, width, height, scale) {
+  const tc = coverTime(xtl);
+  await seekClipsExact(xtl, tc);   // nền là video mặt tiền thì tua đúng khung
+  const c = document.createElement('canvas');
+  c.width = width; c.height = height;
+  render(c.getContext('2d', { alpha: false }), xtl, tc, { cache, scale, cover: true });
+  return new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
+}
+function setCover(file) {
+  coverFile = file;
+  if (coverUrl) URL.revokeObjectURL(coverUrl);
+  coverUrl = file ? URL.createObjectURL(file) : null;
+  $('coverBox').hidden = !file;
+  if (file) $('coverImg').src = coverUrl;
+}
+async function saveCover() {
+  if (!coverFile) return;
+  // iPhone/iPad: mở bảng chia sẻ để "Lưu hình ảnh" vào Ảnh (tải trực tiếp chỉ vào mục Tệp)
+  if (/iPhone|iPad|iPod/i.test(navigator.userAgent) && navigator.canShare && navigator.canShare({ files: [coverFile] })) {
+    try { await navigator.share({ files: [coverFile], title: 'Ảnh bìa video' }); return; }
+    catch (e) { if (e.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a');
+  a.href = coverUrl;
+  a.download = coverFile.name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  toast('Đã lưu ảnh bìa. Khi đăng TikTok/Reels/YouTube, chọn ảnh này làm ảnh bìa (Cover).', 4000);
 }
 function saveResult() {
   if (!resultUrl) return;
@@ -4998,6 +5035,7 @@ function init() {
   $('cancelBtn').addEventListener('click', () => exportCtrl?.abort());
   $('saveBtn').addEventListener('click', saveResult);
   $('shareBtn').addEventListener('click', shareResult);
+  $('coverSave').addEventListener('click', saveCover);
 
   initInstall({ toast, onChange: () => {} });
   setAccountLocation(state.house);

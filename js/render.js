@@ -1018,6 +1018,17 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   return tl;
 }
 
+// 31/10 Giang: xuất video phải kèm ảnh bìa. Ảnh bìa = thẻ mở đầu của chính phong cách lúc chữ đã hiện đủ
+// (các gói chữ động xong hiệu ứng trước ~1,6 s; vệt sáng đen–vàng xong ở 1,85 s), không có thẻ thì lấy cảnh căn nhà.
+export function coverTime(tl) {
+  if (tl.hook && tl.hookEnd) {
+    const t0 = (tl.hookPh || tl.intro).t0;
+    return Math.max(t0 + 1.4, Math.min(t0 + 2.3, tl.hookEnd - 0.5));
+  }
+  const h = tl.house || tl.intro;
+  return h ? h.t0 + Math.min(2.5, (h.t1 - h.t0) * 0.6) : Math.min(1, tl.duration);
+}
+
 function makeHook(scene, roads, pois) {
   const info = infoData(scene);
   // Đường khách tự vẽ không dùng cho thẻ mở đầu (tránh khẳng định "Mặt tiền …" từ nét vẽ tay)
@@ -3980,7 +3991,7 @@ function drawHiWall(ctx, P, v, W, t, LW, LH) {
   ctx.restore();
 }
 
-export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
+export function render(ctx, tl, t, { cache, scale = 1, request = false, cover = false }) {
   OCC = tl.keyPops && tl.keyPops.length ? [] : null; OCC_CTX = ctx;
   useStyle(tl.scene.style);
   useHiTheme(tl.scene.hiTheme);
@@ -5062,7 +5073,8 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false }) {
     cta = { text, icon: ty.icon, col: M1_CTA_COL[scene.style] || ty.col, k, cx: lowBand(tl).cx, cy: bottom - S.h / 2, h: S.h, w: S.w, lt: t - ou.t0 - 0.4 };
     occ.top = Math.min(occ.top, bottom - S.h - 8);
   }
-  let cap = captionAt(tl, t);
+  // Ảnh bìa (cover): không vẽ phụ đề lời đọc — ảnh bìa chỉ giữ thẻ mở đầu của phong cách
+  let cap = cover ? null : captionAt(tl, t);
   const capL = cap ? captionLayout(ctx, tl, cap, occ) : null;
   const capA = cap ? (cap.m1 ? clamp01((cap.t1 - t) / 0.1) : Math.min(clamp01((t - cap.t0) / 0.12), clamp01((cap.t1 - t) / 0.12))) : 0;
 
