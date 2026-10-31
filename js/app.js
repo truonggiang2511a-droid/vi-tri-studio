@@ -74,6 +74,7 @@ const state = {
   showAdminArea: true, // cảnh khoanh vùng xã/phường + cả tỉnh/thành (28/10 Giang: MẶC ĐỊNH BẬT lại, khách bỏ tick để tắt)
   showSweep: true,   // tia radar quét ở cảnh bán kính + tổng kết (28/10 Giang: MẶC ĐỊNH BẬT lại; SFX radar vẫn tắt vì chói tai)
   fxV: 2,            // 28/10: phiên bản mặc định 2 hiệu ứng trên (2 = bật)
+  showHubFx: true,   // 31/10 Giang: MỞ CHO MỌI KHÁCH — máy bay cất cánh ở sân bay, tàu metro chạy qua, khoanh sáng tiện ích quan trọng + sông/kênh
   rentPick: '', // loại cho thuê chọn gần nhất (nút "Cho thuê" mở lại đúng loại đó)
   aiTone: '', // phong cách kịch bản AI — để trống, khách phải tự chọn trước khi tạo
   keyLook: '',      // 30/10 'mau1' = chữ điểm nhấn + icon mẫu 1 (Hook Kit) lúc giọng đọc nói giá/mét/phút… — khách tự bật, mặc định tắt
@@ -2022,7 +2023,8 @@ async function loadRegion(force = false) {
   } catch { /* để lần sau */ } finally { if (regionJob === k) { regionJob = ''; renderRegion(); } }
 }
 // 30/10 (Giang): hiệu ứng điểm mốc — sân bay khoanh ranh sáng + máy bay cất cánh, ga metro có đoàn tàu chạy trên tuyến.
-// ĐANG DUYỆT: chỉ tài khoản @vitristudio.com hoặc ?hubfx=1 (nhớ trên máy, ?hubfx=0 tắt). Khách thường: dữ liệu không tải, video y như cũ.
+// 31/10 Giang duyệt → MỞ CHO MỌI KHÁCH, mặc định bật; khách bỏ tick ô #hubFxOn (mục ② → Hiệu ứng thêm) để tắt.
+// ?hubfx=1 / ?hubfx=0 vẫn ép bật/tắt trên 1 máy (để thử).
 function hubFxOn() {
   try {
     const q = new URLSearchParams(location.search).get('hubfx');
@@ -2031,7 +2033,7 @@ function hubFxOn() {
     if (v === '1') return true;
     if (v === '0') return false;
   } catch { /* bỏ qua */ }
-  return /@vitristudio\.com$/i.test(String(account.profile?.login || ''));
+  return state.showHubFx !== false;
 }
 let hubFxJob = '';
 async function ensureHubFx() {
@@ -3499,7 +3501,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'showTitle', 'brand', 'phone', 'price', 'area', 'beds', 'legal', 'highlights', 'buyer',
-  'scriptSeed', 'scriptEdits', 'scriptAi', 'scriptOwn', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'myRoads', 'plan', 'planOn', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'keyLook', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'lotStyle', 'lotColor', 'lotSrc', 'lotDims', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'scriptOwn', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'myRoads', 'plan', 'planOn', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'showHubFx', 'keyLook', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'lotStyle', 'lotColor', 'lotSrc', 'lotDims', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -4690,6 +4692,8 @@ function init() {
   $('adminAreaOn').checked = !!state.showAdminArea;
   $('adminAreaOn').addEventListener('change', e => { state.showAdminArea = e.target.checked; save(); renderScript(); scheduleRebuild(); });
   $('sweepOn').addEventListener('change', e => { state.showSweep = e.target.checked; save(); scheduleRebuild(); });
+  $('hubFxOn').checked = state.showHubFx !== false;
+  $('hubFxOn').addEventListener('change', e => { state.showHubFx = e.target.checked; save(); if (e.target.checked) ensureHubFx(); scheduleRebuild(); });
   $('mau1On').addEventListener('change', e => {
     state.keyLook = e.target.checked ? 'mau1' : ''; save(); media.mixKey = ''; scheduleRebuild(); prepMau1();
     if (e.target.checked && !voiceDurations()) toast('Chữ điểm nhấn hiện theo giọng đọc — tạo giọng ở mục ③ để thấy.', 3500);

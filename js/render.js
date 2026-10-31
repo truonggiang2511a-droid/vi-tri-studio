@@ -1954,10 +1954,10 @@ function drawFlagPin(ctx, x, y, s) {
   ctx.restore();
 }
 
-function drawHousePin(ctx, x, y, dropT, t, s = 1) {
+function drawHousePin(ctx, x, y, dropT, t, s = 1, rings = true) {
   occBox(ctx, x - 34 * s, y - 80 * s, x + 34 * s, y + 10 * s);
   const pulse = (t % 1.8) / 1.8;
-  for (const off of [0, 0.5]) {
+  if (rings) for (const off of [0, 0.5]) {
     const q = (pulse + off) % 1;
     ctx.beginPath();
     ctx.ellipse(x, y, (8 + q * 40) * s, (8 + q * 40) * 0.42 * s, 0, 0, Math.PI * 2);
@@ -2750,14 +2750,14 @@ function fxShotSec(tl, i, t) {
 }
 // Máy bay CHỈ có trong cú cất cánh của chính sân bay đó (30/10 19:24 Giang: bỏ máy bay ở góc rộng cuối cảnh, đỡ màu mè);
 // sang cú sau thì tắt nhanh nếu còn sót trong khung
-function planeVis(tl, i, t) {
+function planeVis(tl, i, t, fade = 0.15) {
   const ph = tl.regionPh;
   const f = (t - ph.t0) / (ph.t1 - ph.t0);
   let j = ph.shots.findIndex(sh => f < sh.e);
   if (j < 0) j = ph.shots.length - 1;
   const sh = ph.shots[j], w = clamp01((f - sh.s) / Math.max(1e-6, sh.e - sh.s));
   if (sh.fxOf === i) return 1;
-  return ph.shots[j - 1] && ph.shots[j - 1].fxOf === i ? 1 - smooth(clamp01(w / 0.15)) : 0;
+  return ph.shots[j - 1] && ph.shots[j - 1].fxOf === i ? 1 - smooth(clamp01(w / fade)) : 0;
 }
 // Tiến độ cú máy hiệu ứng của điểm mốc i (−1 khi chưa tới)
 function fxShotW(tl, i, t) {
@@ -2961,6 +2961,8 @@ function drawTrain(ctx, S, P, v, X, w, a) {
     faces.push(car);
   }
   faces.sort((p, q) => p.depth - q.depth);
+  let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+  for (const car of faces) for (const q of [...car.b, ...car.r]) { bx0 = Math.min(bx0, q.x); by0 = Math.min(by0, q.y); bx1 = Math.max(bx1, q.x); by1 = Math.max(by1, q.y); }
   ctx.save();
   ctx.globalAlpha = a;
   ctx.lineJoin = 'round';
@@ -3010,6 +3012,7 @@ function drawTrain(ctx, S, P, v, X, w, a) {
     }
   }
   ctx.restore();
+  return faces.length ? { x0: bx0 - 6, y0: by0 - 6, x1: bx1 + 6, y1: by1 + 6 } : null;
 }
 // Ranh sân bay "nổi" lên: viền sáng nâng khỏi mặt đất + màn sáng mờ nối xuống (như tuyến ★), vẽ trên màn hình
 function drawAirportRise(ctx, S, P, X, a) {
@@ -5146,7 +5149,12 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false, cover = 
             const sec = fxShotSec(tl, i, t);
             if (sec >= 0 && sec / PLANE_TO < 2.2) drawPlane(ctx, S, P, v, X, sec / PLANE_TO, on * clamp01(sec / 0.3 + 0.3) * planeVis(tl, i, t), t);
           } else if (w >= 0) {
-            drawTrain(ctx, S, P, v, X, w, on * clamp01(w / 0.08));
+            // 31/10 (Giang): tàu CHỈ có trong cú máy của chính ga đó — sang cú lùi rộng thì tắt dần (trước để nguyên ở ga,
+            // toa phóng đại to hơn bản đồ cấp vùng → đè lên ghim căn nhà). Tàu chạm ghim nhà thì vẽ lại ghim lên trên.
+            const tb = drawTrain(ctx, S, P, v, X, w, on * clamp01(w / 0.08) * planeVis(tl, i, t, 0.3));
+            const pin = tl._pin;
+            if (tb && pin && tb.x1 > pin.x - 34 * pin.s && tb.x0 < pin.x + 34 * pin.s && tb.y1 > pin.y - 80 * pin.s && tb.y0 < pin.y + 10 * pin.s)
+              drawHousePin(ctx, pin.x, pin.y, 1, t, pin.s, false);
             // nét chấm nhà → điểm gần nhất trên tuyến metro + "Tuyến metro cách nhà … m" (khoảng cách thật tới đường ray)
             const ca = on * clamp01((w - 0.1) / 0.15) * clamp01((1.25 - w) / 0.2);
             if (ca > 0.01 && X.near && X.near.km < 1.5) {
