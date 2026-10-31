@@ -577,6 +577,8 @@ async function openAccount() {
   $('acctDlg').showModal();
 }
 // ---------- Giới thiệu bạn bè ----------
+// 31/10: thưởng khi bạn được mời mua gói đầu tiên (trigger vt_orders_ref_paid, vt_config.ref_paid_bonus) — đổi số ở DB thì đổi cả hằng này
+const REF_PAID_BONUS = 5;
 function refLink() {
   const code = S.ref?.code || S.profile?.ref_code;
   return code ? `${location.origin}/gioi-thieu?ref=${code}` : '';
@@ -589,7 +591,7 @@ function renderRef() {
   box.hidden = !link || !bonus;
   if (!link) return;
   $('refLink').value = link;
-  $('refDesc').textContent = `Gửi link cho bạn bè môi giới: bạn đăng ký qua link được tặng thêm ${bonus} lượt. Khi bạn xuất video đầu tiên, anh/chị được cộng ${bonus} lượt.`;
+  $('refDesc').textContent = `Gửi link cho bạn bè môi giới: bạn đăng ký qua link được tặng thêm ${bonus} lượt. Bạn xuất video đầu tiên: anh/chị được ${bonus} lượt. Bạn mua gói đầu tiên: anh/chị được thêm ${REF_PAID_BONUS} video.`;
   const inv = S.ref?.invited || 0, done = S.ref?.rewarded || 0;
   $('refStats').textContent = inv ? `Đã mời ${inv} người · ${done} người đã xuất video (anh/chị đã nhận ${done * bonus} lượt)` : 'Chưa mời ai.';
   $('refShare').hidden = !navigator.share;
