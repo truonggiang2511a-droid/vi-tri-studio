@@ -3314,10 +3314,10 @@ async function doExport() {
     try {
       const cb = await makeCover(xtl, width, height, scale);
       setCover(cb ? new File([cb], name.replace(/\.(mp4|webm)$/, '-anh-bia.jpg'), { type: 'image/jpeg' }) : null);
-    } catch (e) { console.warn('Ảnh bìa lỗi', e); setCover(null); }
+    } catch (e) { console.warn('Ảnh bìa lỗi', e); lastIssue = 'Tạo ảnh bìa lỗi: ' + (e.message || e); setCover(null); }
     progress(100, 'Xong');
-    if (account.profile && await saveProject({ silent: true })) toast('Đã dựng xong video. Căn này đã lưu vào mục Căn đã lưu.', 3500);
-    else toast('Đã dựng xong video.');
+    if (account.profile && await saveProject({ silent: true })) toast(`Đã dựng xong video${coverFile ? ' và ảnh bìa' : ''}. Căn này đã lưu vào mục Căn đã lưu.`, 4000);
+    else toast(coverFile ? 'Đã dựng xong video và ảnh bìa (nút "Lưu ảnh bìa" ngay dưới video).' : 'Đã dựng xong video.', 4000);
     $('resultBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (e) {
     const keep = gate?.charged || gate?.mode === 'unlimited' ? ` Lượt đã trừ vẫn giữ: căn này còn ${gate.redo?.exports_left ?? 0} lần xuất lại không trừ lượt.` : '';
@@ -3346,6 +3346,7 @@ function setCover(file) {
   if (coverUrl) URL.revokeObjectURL(coverUrl);
   coverUrl = file ? URL.createObjectURL(file) : null;
   $('coverBox').hidden = !file;
+  $('coverSaveTop').hidden = !file;
   if (file) $('coverImg').src = coverUrl;
 }
 async function saveCover() {
@@ -5063,6 +5064,7 @@ function init() {
   $('saveBtn').addEventListener('click', saveResult);
   $('shareBtn').addEventListener('click', shareResult);
   $('coverSave').addEventListener('click', saveCover);
+  $('coverSaveTop').addEventListener('click', saveCover);
 
   initInstall({ toast, onChange: () => {} });
   setAccountLocation(state.house);
