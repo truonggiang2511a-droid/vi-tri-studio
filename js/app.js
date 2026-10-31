@@ -78,6 +78,7 @@ const state = {
   rentPick: '', // loại cho thuê chọn gần nhất (nút "Cho thuê" mở lại đúng loại đó)
   aiTone: '', // phong cách kịch bản AI — để trống, khách phải tự chọn trước khi tạo
   keyLook: '',      // 30/10 'mau1' = chữ điểm nhấn + icon mẫu 1 (Hook Kit) lúc giọng đọc nói giá/mét/phút… — khách tự bật, mặc định tắt
+  m1V: 2,           // 31/10 15:40 Giang: mẫu 1 CHỈ hiện khi khách tự tick; dữ liệu cũ (kể cả căn thừa hưởng từ video mẫu) tắt 1 lần
   scriptMode: 'ai', // 'ai' = AI viết (mặc định, nổi bật) | 'mau' = kịch bản mẫu | 'tu' = tự viết/dán
   scriptOwn: false, // lời đang có do khách tự gõ/sửa → hỏi trước khi AI/mẫu thay
   voSig: '', // lựa chọn (cách viết + phong cách) của lần tạo giọng gần nhất
@@ -133,6 +134,13 @@ function save() {
   }
 }
 // Dữ liệu lưu trước 10/2026: nhãn nhịp bị ngược → đổi Chậm↔Nhanh để video giữ đúng tốc độ khách đã thấy
+// 31/10 15:40 (Giang): giá + chữ điểm nhấn mẫu 1 chỉ là TUỲ CHỌN — khách tick mới hiện, còn lại thẻ giá như cũ.
+// Từ 30/10 15:52 video mẫu bật sẵn mẫu 1 và khách sang căn của mình thừa hưởng luôn → tắt 1 lần cho mọi dữ liệu cũ
+// (không phân biệt được ai tự tick; khách cần thì tick lại ở mục ② Phong cách → Hiệu ứng thêm).
+function fixLook(o) {
+  if (o && o.m1V !== 2) { o.keyLook = ''; o.m1V = 2; }
+  return o;
+}
 function fixSpeed(o) {
   if (!o || o.speedV === 2) return o;
   if (o.speed === 'cham') o.speed = 'nhanh'; else if (o.speed === 'nhanh') o.speed = 'cham';
@@ -143,7 +151,7 @@ function load() {
   try {
     const raw = localStorage.getItem(STORE);
     if (raw) {
-      const o = fixSpeed(JSON.parse(raw));
+      const o = fixLook(fixSpeed(JSON.parse(raw)));
       // 23/10/2026: mặc định chữ trục đường đổi từ Vàng kim sang Trắng bóng
       if (o.labelV !== 2) { if (!o.roadLabelFace || o.roadLabelFace === 'vangkim') o.roadLabelFace = 'trang'; o.labelV = 2; }
       if (o.labelV !== 3) { o.roadLabelFace = 'line'; o.labelV = 3; } // 23/10 tối: mặc định về kiểu gốc theo màu line
@@ -1813,7 +1821,7 @@ function writeSampleStore(d, base = {}) {
   for (const k of SAMPLE_KEYS) if (k in d) o[k] = d[k];
   Object.assign(o, { sample: true, coordSet: true, cloudId: null, projName: '', musicLib: 'hung-hon', musicV: 2, labelV: 3, speedV: 2,
     showAdminArea: true, showSweep: true, fxV: 2, // video mẫu: khoanh xã/phường → tỉnh/thành + tia radar (giọng câu "Thuộc …" đã có trong file)
-    keyLook: 'mau1', // 30/10 15:52 Giang: video mẫu có chữ điểm nhấn + icon + nút "Nhắn tin" cuối (mẫu 1); khách sang căn của mình vẫn giữ (ô tick bỏ được)
+    keyLook: '', m1V: 2, // 31/10 15:40 Giang: video mẫu trở lại thẻ giá như cũ — mẫu 1 chỉ khi khách tự tick (trước: 30/10 15:52 bật sẵn)
     lot: [], sampleVoice: d.voice || null, aiVoiceOn: true, subsOn: true });
   if (!d.voice) Object.assign(o, { scriptEdits: {}, scriptAi: false, voSig: '' });
   localStorage.setItem(STORE, JSON.stringify(o));
@@ -3501,7 +3509,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'showTitle', 'brand', 'phone', 'price', 'area', 'beds', 'legal', 'highlights', 'buyer',
-  'scriptSeed', 'scriptEdits', 'scriptAi', 'scriptOwn', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'myRoads', 'plan', 'planOn', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'showHubFx', 'keyLook', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'lotStyle', 'lotColor', 'lotSrc', 'lotDims', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'scriptOwn', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'myRoads', 'plan', 'planOn', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'showHubFx', 'keyLook', 'm1V', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'lotStyle', 'lotColor', 'lotSrc', 'lotDims', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -3574,7 +3582,7 @@ async function openProject(id) {
   try {
     const r = await rpc('vt_project_get', { p_token: account.token, p_id: id });
     const d = r.data || {};
-    Object.assign(state, { pois: [], roads: [], selected: [], selectedRoads: [], routes: {}, admin: null, scriptEdits: {}, roadFills: {}, sample: false }, fixSpeed(d));
+    Object.assign(state, { pois: [], roads: [], selected: [], selectedRoads: [], routes: {}, admin: null, scriptEdits: {}, roadFills: {}, sample: false }, fixLook(fixSpeed(d)));
     if (state.roadLabelFace === 'vangkim') state.roadLabelFace = 'vang';
     state.cloudId = r.id;
     state.projName = r.name;
