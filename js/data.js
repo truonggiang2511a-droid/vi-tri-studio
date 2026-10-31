@@ -6,6 +6,7 @@ import { VectorTile } from '@mapbox/vector-tile';
 import Pbf from 'pbf';
 import { haversineKm, project, unproject } from './geo.js';
 import { HUBS } from './hubs.js';
+import { METRO_BUILD } from './metro-build.js';
 
 const TILEJSON = 'https://tiles.openfreemap.org/planet';
 const FALLBACK_TILES = 'https://tiles.openfreemap.org/planet/20261011_080001_pt/{z}/{x}/{y}.pbf';
@@ -1285,6 +1286,29 @@ function infraLabel(names, ref) {
   if (list[0] && rank(list[0]) === 2 && ref) return `${list[0]} (${ref})`;
   return list[0] || (ref ? 'Tuyến ' + ref : '');
 }
+// Tuyến metro ĐANG THI CÔNG gần nhà (danh sách tay js/metro-build.js — ô bản đồ không có metro đang xây).
+// Lấy tuyến có ga đang thi công trong 3 km; khoảng cách = tới GA gần nhất (người mua quan tâm ga, không phải đường hầm).
+export function metroBuildNear(center, maxKm = 3) {
+  const F = localFrame(center);
+  const out = [];
+  for (const L of METRO_BUILD) {
+    let best = null;
+    for (const [name, lat, lng, flag] of L.stations) {
+      if (flag === 'run') continue;
+      const q = F.xy([lat, lng]), d = Math.hypot(q[0], q[1]);
+      if (!best || d < best.d) best = { d, name, lat, lng };
+    }
+    if (!best || best.d > maxKm) continue;
+    out.push({
+      id: 'mb:' + L.id, label: L.label, ref: '', level: 3, nearKm: Math.round(best.d * 100) / 100,
+      P: { lat: best.lat, lng: best.lng }, ways: [L.stations.map(s => [s[1], s[2]])],
+      metro: { line: L.line, station: 'Ga ' + best.name.replace(/^Ga\s+/i, ''),
+        stations: L.stations.map(s => ({ name: s[0], lat: s[1], lng: s[2], run: s[3] === 'run' })) },
+    });
+  }
+  return out.sort((a, b) => a.nearKm - b.nearKm);
+}
+
 export async function loadInfra(center, signal) {
   const tpl = await tileTemplate(signal);
   const F = localFrame(center);
@@ -1361,7 +1385,8 @@ export async function loadInfra(center, signal) {
   // Luôn có cao tốc/vành đai đang xây gần nhất (giá trị tiềm năng lớn nhất), còn lại: gần + cấp cao trước; tối đa 3 tuyến
   out.sort((a, b) => a.nearKm / (1 + a.level) - b.nearKm / (1 + b.level));
   const top = out.filter(r => r.level === 3).sort((a, b) => a.nearKm - b.nearKm)[0];
-  return (top ? [top, ...out.filter(r => r !== top)] : out).slice(0, 3);
+  const mb = metroBuildNear(center);   // metro đang thi công luôn đứng trước (điểm cộng lớn nhất cho người mua)
+  return [...mb, ...(top ? [top, ...out.filter(r => r !== top)] : out)].slice(0, 3);
 }
 
 // Đơn giản hoá một đường [[lat, lng], …] (dùng cho đường đi dài tới điểm mốc vùng, cho nhẹ bộ nhớ)

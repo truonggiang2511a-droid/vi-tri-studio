@@ -3248,13 +3248,25 @@ function hubCard(ctx, tl, a, px, py, alpha, avoid, key, hx, hy) {
   ctx.restore();
   avoid.push(best);
 }
+// Quãng (km, tính từ điểm gần nhà) dọc line đã chuẩn bị (prepReveal) tới điểm gần ga nhất — để ga hiện khi line chạy tới
+function stationDist(L, st) {
+  if (!L._st) L._st = new Map();
+  const k = st.lat + ',' + st.lng;
+  if (!L._st.has(k)) {
+    let bi = 0, bd = Infinity;
+    for (let j = 0; j < L.coords.length; j++) { const p = L.coords[j], d = (p[0] - st.lat) ** 2 + (p[1] - st.lng) ** 2; if (d < bd) { bd = d; bi = j; } }
+    L._st.set(k, L.dist[bi] || 0);
+  }
+  return L._st.get(k);
+}
 // Thẻ tuyến đang thi công: "ĐANG THI CÔNG" + tên tuyến + "cách nhà … km"
 function infraCard(ctx, tl, r, px, py, alpha, avoid, key, hx, hy) {
   ctx.save();
   ctx.font = `800 14.5px ${FONT}`;
-  const lines = wrapText(ctx, r.label, 236, 2);
-  const nameW = Math.max(...lines.map(l => ctx.measureText(l).width));
-  const kick = 'ĐANG THI CÔNG';
+  let lines = wrapText(ctx, r.label, 236, 2);
+  if (r.metro) { ctx.font = `700 12.5px ${FONT}`; lines = [r.metro.station, ...wrapText(ctx, r.label, 236, 2)]; ctx.font = `800 14.5px ${FONT}`; }
+  const nameW = Math.max(...lines.map((l, i) => { if (r.metro && i) { ctx.font = `700 12.5px ${FONT}`; const w = ctx.measureText(l).width; ctx.font = `800 14.5px ${FONT}`; return w; } return ctx.measureText(l).width; }));
+  const kick = r.metro ? 'METRO ĐANG THI CÔNG' : 'ĐANG THI CÔNG';
   ctx.font = `800 10.5px ${FONT}`;
   const kickW = ctx.measureText(kick).width + kick.length * 1.2 + 22;
   const dist = `cách nhà ${formatKm(r.nearKm)}`;
@@ -3270,13 +3282,16 @@ function infraCard(ctx, tl, r, px, py, alpha, avoid, key, hx, hy) {
   ctx.fillStyle = ST.card; ctx.fill();
   ctx.shadowColor = 'transparent';
   ctx.lineWidth = 1.4; ctx.strokeStyle = INFRA_COL; ctx.stroke();
-  drawIcon(ctx, 'cone', best.x + 21, y + 17, 14, ST.light ? '#E07B00' : INFRA_COL);
+  drawIcon(ctx, r.metro ? 'train' : 'cone', best.x + 21, y + 17, 14, ST.light ? '#E07B00' : INFRA_COL);
   ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
   ctx.font = `800 10.5px ${FONT}`;
   ctx.fillStyle = ST.light ? '#C26A00' : INFRA_COL;
   spacedCaps(ctx, kick, best.x + 33, y + 21, 1.2);
   ctx.fillStyle = ST.ink; ctx.font = `800 14.5px ${FONT}`;
-  lines.forEach((l, i) => ctx.fillText(l, best.x + 13, y + 40 + i * 18));
+  lines.forEach((l, i) => {
+    if (r.metro && i) { ctx.font = `700 12.5px ${FONT}`; ctx.fillStyle = ST.light ? ST.ink : 'rgba(255,255,255,0.82)'; }
+    ctx.fillText(l, best.x + 13, y + 40 + i * 18);
+  });
   const cy = y + 40 + (lines.length - 1) * 18 + 10;
   roundRect(ctx, best.x + 13, cy, chipW, 21, 6);
   ctx.fillStyle = INFRA_COL; ctx.fill();
@@ -4361,6 +4376,22 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false, cover = 
       }
       g.restore();
       if (t < ph.t1 && infraRR(tl, i, t) < r.rrMax) for (const hd of heads) headGlow(g, hd, INFRA_COL, 15);
+      // Metro đang thi công: chấm ga dọc tuyến (hiện khi line chạy tới), ga gần nhà to hơn
+      if (r.metro) {
+        const rr = infraRR(tl, i, t), L0 = r.lines[0];
+        g.save();
+        for (const st of r.metro.stations) {
+          const sd = L0 ? stationDist(L0, st) : 0;
+          if (sd > rr + 0.02) continue;
+          const pg = gLL(v, st.lat, st.lng), near = st.lat === r.P.lat && st.lng === r.P.lng;
+          g.globalAlpha = aI * (st.run ? 0.6 : 1);
+          g.beginPath(); g.arc(pg.x, pg.y, near ? 7.5 : 4.6, 0, Math.PI * 2);
+          g.fillStyle = st.run ? '#cfd6dd' : '#ffffff'; g.fill();
+          g.lineWidth = near ? 3 : 2.2; g.strokeStyle = '#17110a'; g.stroke();
+          if (near) { g.globalAlpha = aI * 0.55 * (0.5 + 0.5 * Math.sin(t * 5)); g.beginPath(); g.arc(pg.x, pg.y, 13, 0, Math.PI * 2); g.lineWidth = 2; g.strokeStyle = INFRA_COL; g.stroke(); }
+        }
+        g.restore();
+      }
       // Nét chấm trắng từ nhà tới điểm gần nhất của tuyến (chỉ trong cảnh hạ tầng)
       const ca = Math.min(fadeWin(t, ph.t0 + 0.2 * (ph.t1 - ph.t0), ph.t1 + 0.1, 0.4, 0.35), clamp01(k * 3));
       if (ca > 0.01) {
@@ -5322,9 +5353,10 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false, cover = 
       ctx.save();
       ctx.globalAlpha = aI * 0.85; ctx.font = `600 10.5px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillStyle = '#fff'; ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 4;
-      ctx.fillText('Theo dữ liệu bản đồ OpenStreetMap · tham khảo', LW / 2, bannerY + 24);
+      const hasMetro = tl.infra.some(r => r.metro);
+      ctx.fillText(hasMetro ? 'Vị trí ga theo OpenStreetMap · hướng tuyến gần đúng · tham khảo' : 'Theo dữ liệu bản đồ OpenStreetMap · tham khảo', LW / 2, bannerY + 24);
       ctx.restore();
-      used.push({ x: LW / 2 - 130, y: bannerY - 14, w: 260, h: 48 });
+      used.push({ x: LW / 2 - (hasMetro ? 165 : 130), y: bannerY - 14, w: hasMetro ? 330 : 260, h: 48 });
       for (const r of tl.infra) { const q = S(r.P.lat, r.P.lng); used.push({ x: q.x - 12, y: q.y - 12, w: 24, h: 24 }); }
       tl.infra.forEach((r, i) => {
         const k = infraReveal(tl, i, t);

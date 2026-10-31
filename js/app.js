@@ -1,6 +1,6 @@
 // Điều khiển giao diện: nhập toạ độ → quét → chọn → xem trước → xuất video.
 import { parseCoords, haversineKm, formatKm } from './geo.js';
-import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, placesNear, guessCategory, stitchWays, bridgeWays, localFrame, pickHubs, loadInfra, simplifyLine, loadHubFx, loadZones, loadWater } from './data.js';
+import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, placesNear, guessCategory, stitchWays, bridgeWays, localFrame, pickHubs, loadInfra, metroBuildNear, simplifyLine, loadHubFx, loadZones, loadWater } from './data.js';
 import { ICON_PATHS } from './icons.js';
 import {
   FORMATS, TileCache, setImageryToken, onTileSource, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, HI_THEMES, LOT_STYLES, LOT_COLORS, STYLES, BASES,
@@ -2023,7 +2023,7 @@ async function loadRegion(force = false) {
       return { id: x.id, type: x.type, name: x.name, lat: x.lat, lng: x.lng, km: Math.round(km * 10) / 10,
         min: Math.max(1, Math.round(min)), approx: !r, coords: r ? simplifyLine(r.coords, 0.015) : null };
     });
-    state.region = { anchors, infra: infra || [] };
+    state.region = { anchors, infra: infra || [], mb: 1 };
     state.regionFor = k;
     state.regionOff = anchors.filter(a => a.min > 70).map(a => a.id);
     renderRegion();
@@ -2092,6 +2092,12 @@ function waterScene() {
 function regionScene() {
   const R = state.region;
   if (!R) return null;
+  // 31/10: căn quét trước khi có danh sách metro đang thi công → thêm 1 lần. Căn đã có giọng thì KHÔNG đổi
+  // (thêm cảnh/tuyến sẽ lệch lời đã đọc) — khách quét lại căn là có.
+  if (!R.mb && state.house) {
+    if (!state.voSig && !state.sample) R.infra = [...metroBuildNear(state.house), ...(R.infra || []).filter(x => !x.metro)].slice(0, 3);
+    R.mb = 1;
+  }
   const off = new Set(state.regionOff || []);
   const fxOn = hubFxOn();
   const anchors = state.showRegion !== false ? (R.anchors || []).filter(a => !off.has(a.id)).map(a => (fxOn || !a.fx ? a : { ...a, fx: undefined })) : [];
@@ -2118,7 +2124,7 @@ function renderRegion() {
     <div class="road-list region-list">${A.map(a => chip(a.id, `${HUB_ICON[a.type] || '📍'} ${esc(a.name)}`, `${a.approx ? '≈ ' : ''}${a.min} phút`, !off.has(a.id))).join('')}</div>` : '') +
     (I.length ? `
     <label class="check-row"><input autocomplete="off" type="checkbox" id="infraOn" ${state.showInfra !== false ? 'checked' : ''}><span><strong>Hạ tầng đang thi công</strong> gần nhà</span></label>
-    <div class="road-list region-list">${I.map(r => chip(r.id, `🚧 ${esc(r.label)}`, formatKm(r.nearKm, true), !off.has(r.id))).join('')}</div>
+    <div class="road-list region-list">${I.map(r => chip(r.id, r.metro ? `🚇 ${esc(r.label)} · ${esc(r.metro.station)}` : `🚧 ${esc(r.label)}`, formatKm(r.nearKm, true), !off.has(r.id))).join('')}</div>
     <p class="hint small">Theo OpenStreetMap — tuyến nào đã xong hoặc sai thì bỏ tick.</p>` : '') +
     (!A.length && !I.length ? '<p class="hint">Không có điểm mốc lớn hay tuyến đang thi công gần căn này.</p>' : '');
 }
@@ -2511,7 +2517,10 @@ function scriptSegments() {
   }
   if (RG && RG.infra.length) {
     const [a, b] = RG.infra;
-    add('infra', 'Hạ tầng đang thi công', pick([
+    if (a.metro) add('infra', 'Metro đang thi công', pick([
+      `Đặc biệt, tuyến ${infraSpeak(a.label)} đang thi công, ${hubSpeak(a.metro.station)} chỉ cách nhà khoảng ${kmSpeak(a.nearKm)}${b ? `, cùng ${infraSpeak(b.label)}` : ''}.`,
+      `Điểm cộng lớn: tuyến ${infraSpeak(a.label)} đang được xây dựng, ${hubSpeak(a.metro.station)} cách khoảng ${kmSpeak(a.nearKm)}${b ? `, thêm ${infraSpeak(b.label)}` : ''}.`], 5));
+    else add('infra', 'Hạ tầng đang thi công', pick([
       `Đặc biệt, ${infraSpeak(a.label)} đang thi công, cách nhà khoảng ${kmSpeak(a.nearKm)}${b ? `, cùng ${infraSpeak(b.label)}` : ''}, kết nối khu vực sẽ còn mạnh hơn.`,
       `Điểm cộng lớn: ${infraSpeak(a.label)} đang được xây dựng, chỉ cách khoảng ${kmSpeak(a.nearKm)}${b ? `, thêm ${infraSpeak(b.label)}` : ''}.`], 5));
   }
@@ -2754,7 +2763,7 @@ async function aiRewrite() {
       ranh_gioi: state.useBoundary && state.admin?.boundary ? { tinh: state.admin.boundary.short, chim_bay_km: +state.admin.boundary.km.toFixed(2), duong_di_km: state.routes.__ranh ? +state.routes.__ranh.km.toFixed(2) : null, phut_o_to: state.routes.__ranh?.min ? Math.round(state.routes.__ranh.min) : null } : null,
       tien_ich: selectedPois().map(p => ({ ten: p.name, nhom: CATEGORIES[p.cat].label, cach_km: +(p.route ? p.route.km : p.km).toFixed(2) })),
       ket_noi_vung: (regionScene()?.anchors || []).map(a => ({ ten: a.name, duong_di_km: a.km, phut_o_to: a.min })),
-      ha_tang_dang_thi_cong: (regionScene()?.infra || []).map(r => ({ ten: r.label, cach_km: r.nearKm })),
+      ha_tang_dang_thi_cong: (regionScene()?.infra || []).map(r => (r.metro ? { ten: 'Tuyến ' + r.label, loai: 'metro đang thi công', ga_gan_nhat: r.metro.station, ga_cach_km: r.nearKm } : { ten: r.label, cach_km: r.nearKm })),
     };
     // KHÔNG gửi câu mẫu (AI sẽ chép lại y chang) — chỉ gửi hình đang hiện + dữ liệu của từng cảnh
     const SCENE = { intro: 'Mở đầu: trung cảnh ghim bất động sản, xã/phường sáng lên', province: 'Cả tỉnh/thành phố hiện lên', house: 'Cận cảnh bất động sản, máy lượn quanh',
@@ -2771,7 +2780,7 @@ async function aiRewrite() {
         return [sg.key, { canh: 'Tiện ích', ten: p.name, nhom: CATEGORIES[p.cat]?.label || '', cach: kmSpeak(km), phut_xe_may: Math.max(1, Math.round(p.route?.min || km * 60 / 22)) }];
       }
       if (kind === 'region') return [sg.key, { canh: SCENE.region, diem_moc: (regionScene()?.anchors || []).slice(0, 4).map(a => ({ ten: a.name, phut_o_to: a.min, duong_di: kmSpeak(a.km) })) }];
-      if (kind === 'infra') return [sg.key, { canh: SCENE.infra, tuyen: (regionScene()?.infra || []).slice(0, 2).map(r => ({ ten: r.label, cach: kmSpeak(r.nearKm) })) }];
+      if (kind === 'infra') return [sg.key, { canh: SCENE.infra, tuyen: (regionScene()?.infra || []).slice(0, 2).map(r => (r.metro ? { ten: 'Tuyến ' + r.label, loai: 'metro đang thi công', ga_gan_nhat: r.metro.station, ga_cach: kmSpeak(r.nearKm) } : { ten: r.label, cach: kmSpeak(r.nearKm) })) }];
       return [sg.key, { canh: SCENE[kind] || sg.label }];
     }));
     if (ai.gated && !account.profile && !(await requireLogin('Đăng nhập để AI viết kịch bản.'))) { $('ttsMsg').textContent = ''; return; }
