@@ -117,7 +117,7 @@ export const HUBS = [
   ['station', 'Ga Biên Hòa', 10.9508, 106.8263],
   ['station', 'Ga Thanh Hóa', 19.8128, 105.7678],
   ['station', 'Ga Hải Phòng', 20.8560, 106.6875],
-  // ---- Ga metro (TP.HCM tuyến số 1) ----
+  // ---- Ga metro TP.HCM tuyến số 1 (Bến Thành – Suối Tiên) ----
   ['metro', 'Ga metro Bến Thành', 10.7713, 106.6980],
   ['metro', 'Ga metro Nhà hát Thành phố', 10.7764, 106.7029],
   ['metro', 'Ga metro Ba Son', 10.7818, 106.7082],
@@ -132,4 +132,27 @@ export const HUBS = [
   ['metro', 'Ga metro Khu Công nghệ cao', 10.8590, 106.7888],
   ['metro', 'Ga metro Đại học Quốc gia', 10.8663, 106.8012],
   ['metro', 'Ga metro Bến xe Suối Tiên', 10.8795, 106.8141],
+  // ---- Ga metro Hà Nội (31/10/2026: chỉ các ga ĐANG CHẠY; toạ độ lấy từ OpenStreetMap qua ô OpenFreeMap z14) ----
+  // Tuyến 2A Cát Linh – Hà Đông (trên cao, 12 ga)
+  ['metro', 'Ga metro Cát Linh', 21.02838, 105.82728],
+  ['metro', 'Ga metro La Thành', 21.02015, 105.82535],
+  ['metro', 'Ga metro Thái Hà', 21.01455, 105.81947],
+  ['metro', 'Ga metro Láng', 21.00640, 105.81609],
+  ['metro', 'Ga metro Thượng Đình', 20.99768, 105.81225],
+  ['metro', 'Ga metro Vành Đai 3', 20.99230, 105.80442],
+  ['metro', 'Ga metro Phùng Khoang', 20.98429, 105.79306],
+  ['metro', 'Ga metro Văn Quán', 20.97773, 105.78480],
+  ['metro', 'Ga metro Hà Đông', 20.97022, 105.77496],
+  ['metro', 'Ga metro La Khê', 20.96383, 105.76681],
+  ['metro', 'Ga metro Văn Khê', 20.95564, 105.75620],
+  ['metro', 'Ga metro Yên Nghĩa', 20.94978, 105.74842],
+  // Tuyến 3 Nhổn – ga Hà Nội, đoạn trên cao Nhổn – Cầu Giấy (8 ga). 4 ga ngầm Kim Mã → ga Hà Nội CHƯA chạy (dự kiến 2027) → chưa thêm
+  ['metro', 'Ga metro Nhổn', 21.05259, 105.73523],
+  ['metro', 'Ga metro Minh Khai', 21.04798, 105.74481],
+  ['metro', 'Ga metro Phú Diễn', 21.04392, 105.75527],
+  ['metro', 'Ga metro Cầu Diễn', 21.04122, 105.76269],
+  ['metro', 'Ga metro Lê Đức Thọ', 21.03805, 105.77299],
+  ['metro', 'Ga metro Đại học Quốc gia Hà Nội', 21.03666, 105.78269],
+  ['metro', 'Ga metro Chùa Hà', 21.03492, 105.79437],
+  ['metro', 'Ga metro Cầu Giấy', 21.02922, 105.80336],
 ];

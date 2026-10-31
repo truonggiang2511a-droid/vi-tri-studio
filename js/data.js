@@ -1250,7 +1250,8 @@ export async function routeTo(from, to, signal) {
 // Chọn tối đa 6 điểm mốc theo khoảng cách chim bay; thời gian/đường đi thật do app gọi routeTo sau.
 export function pickHubs(center, max = 5) {
   const all = HUBS.map(([type, name, lat, lng, tier]) => ({ type, name, lat, lng, tier: tier || 0, d: haversineKm(center, { lat, lng }) }))
-    .filter(h => h.d >= 0.6).sort((a, b) => a.d - b.d);
+    // ga metro sát nhà (≥ 150 m) vẫn lấy — đó là điểm đáng khoe nhất; điểm mốc khác dưới 600 m thì bỏ (trùng chỗ căn nhà)
+    .filter(h => h.d >= (h.type === 'metro' ? 0.15 : 0.6)).sort((a, b) => a.d - b.d);
   // Thứ tự ưu tiên khi quá 5 điểm: trung tâm lớn → sân bay gần nhất → ga metro (≤ 4 km) → cảng → sân bay thứ 2 (≤ 60 km)
   // → trung tâm gần khác (tỉnh ≤ 30 km, đô thị cũ ≤ 12 km) → ga tàu (≤ 25 km)
   const out = [];
