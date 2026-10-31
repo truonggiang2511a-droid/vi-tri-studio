@@ -1035,7 +1035,8 @@ function makeHook(scene, roads, pois) {
   const byNear = roads.filter(r => !r.manual).sort((a, b) => a.nearKm - b.nearKm);
   const major = byNear.find(r => r.level >= 2 && r.nearKm <= 3) || byNear[0];
   let fact = '';
-  if (major && major.nearKm <= 5) fact = major.nearKm < 0.12 ? `Mặt tiền ${major.label}` : `Cách ${major.label} ${formatKm(major.nearKm)}`;
+  // căn hộ: toà nhà sát đường không phải "mặt tiền" của căn hộ
+  if (major && major.nearKm <= 5) fact = major.nearKm < 0.12 ? (/CĂN HỘ/i.test(scene.label || '') ? `Ngay ${major.label}` : `Mặt tiền ${major.label}`) : `Cách ${major.label} ${formatKm(major.nearKm)}`;
   else if (pois.length) {
     const p = pois.slice().sort((a, b) => a.distKm - b.distKm)[0];
     fact = `Gần ${p.name} · ${formatKm(p.distKm, p.approx, '≈ ')}`;
@@ -2441,18 +2442,21 @@ const M1_TYPES = {
   bietthu: { cta: 'ĐẶT LỊCH XEM BIỆT THỰ', icon: 'key', col: ['#F5C451', '#C2841A'], feats: ['size', 'area', 'floors', 'beds', 'furn', 'legal'] },
   thuenha: { cta: 'NHẮN TIN THUÊ NHÀ NGAY', icon: 'key', col: ['#A78BFA', '#7C3AED'], feats: ['size', 'area', 'floors', 'beds', 'furn'], priceKick: 'Giá thuê' },
   thuephong: { cta: 'NHẮN TIN THUÊ PHÒNG NGAY', icon: 'key', col: ['#A78BFA', '#7C3AED'], feats: ['size', 'area', 'furn'], priceKick: 'Giá thuê' },
+  // 31/10: căn hộ — không nhấn số tầng (lời đọc "toà 30 tầng" dễ bị hiểu nhầm là căn 30 tầng)
+  canho: { cta: 'NHẮN TIN XEM CĂN HỘ NGAY', icon: 'city', col: ['#2DD4BF', '#0D9488'], feats: ['size', 'area', 'beds', 'furn', 'legal'] },
+  thuecanho: { cta: 'NHẮN TIN THUÊ CĂN HỘ NGAY', icon: 'key', col: ['#A78BFA', '#7C3AED'], feats: ['size', 'area', 'beds', 'furn'], priceKick: 'Giá thuê' },
   thuemb: { cta: 'NHẮN TIN THUÊ MẶT BẰNG', icon: 'shop', col: ['#A78BFA', '#7C3AED'], feats: ['size', 'area', 'floors'], priceKick: 'Giá thuê' },
 };
 function m1Type(scene) {
   const t = String(scene.label || '');
-  const k = /PHÒNG CHO THUÊ/i.test(t) ? 'thuephong' : /MẶT TIỀN CHO THUÊ/i.test(t) ? 'thuemb' : /CHO THUÊ/i.test(t) || scene.rent ? 'thuenha'
-    : /LÔ ĐẤT|ĐẤT NỀN/i.test(t) ? 'dat' : /DỰ ÁN/i.test(t) ? 'duan' : /BIỆT THỰ/i.test(t) ? 'bietthu' : /VILLA/i.test(t) ? 'villa' : 'nha';
+  const k = /PHÒNG CHO THUÊ/i.test(t) ? 'thuephong' : /MẶT TIỀN CHO THUÊ/i.test(t) ? 'thuemb' : /CĂN HỘ CHO THUÊ/i.test(t) ? 'thuecanho' : /CHO THUÊ/i.test(t) || scene.rent ? 'thuenha'
+    : /CĂN HỘ/i.test(t) ? 'canho' : /LÔ ĐẤT|ĐẤT NỀN/i.test(t) ? 'dat' : /DỰ ÁN/i.test(t) ? 'duan' : /BIỆT THỰ/i.test(t) ? 'bietthu' : /VILLA/i.test(t) ? 'villa' : 'nha';
   return M1_TYPES[k];
 }
 function infoKind(scene) {
   const t = String(scene.label || '').replace(/^VỊ TRÍ\s*/i, '').trim();
-  const front = /LÔ ĐẤT/i.test(t) ? 'lô' : /DỰ ÁN/i.test(t) ? 'dự án' : /BIỆT THỰ/i.test(t) ? 'biệt thự' : /VILLA/i.test(t) ? 'villa' : 'nhà';
-  return { title: 'THÔNG TIN ' + (/^(CĂN NHÀ|CĂN VILLA|BIỆT THỰ|CĂN BIỆT THỰ|LÔ ĐẤT|DỰ ÁN|NHÀ CHO THUÊ|PHÒNG CHO THUÊ|MẶT TIỀN CHO THUÊ)$/i.test(t) ? t.toUpperCase() : 'BẤT ĐỘNG SẢN'), front };
+  const front = /CĂN HỘ/i.test(t) ? 'toà nhà' : /LÔ ĐẤT/i.test(t) ? 'lô' : /DỰ ÁN/i.test(t) ? 'dự án' : /BIỆT THỰ/i.test(t) ? 'biệt thự' : /VILLA/i.test(t) ? 'villa' : 'nhà';
+  return { title: 'THÔNG TIN ' + (/^(CĂN NHÀ|CĂN VILLA|BIỆT THỰ|CĂN BIỆT THỰ|LÔ ĐẤT|DỰ ÁN|CĂN HỘ|CĂN HỘ CHO THUÊ|NHÀ CHO THUÊ|PHÒNG CHO THUÊ|MẶT TIỀN CHO THUÊ)$/i.test(t) ? t.toUpperCase() : 'BẤT ĐỘNG SẢN'), front };
 }
 // Chia các mục thông tin thành tối đa 2 dòng (xuống dòng theo từng mục, không cắt giữa mục) — đo bằng canvas phụ
 let INFO_MC = null;

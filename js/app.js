@@ -378,8 +378,8 @@ function buildScene() {
     photos: media.photos.map(p => p.img),
     photoLabels: media.photos.map(p => roomLabel(p.room)),
     clips: media.clips.map(c => ({ el: c.el, dur: c.dur, room: c.room || '', label: roomLabel(c.room) })),
-    info: { price: state.price, area: state.area, thoCu: isRentType() ? '' : state.thoCu, beds: isLandType() || isRoomType() ? '' : state.beds,
-      legal: isRentType() ? '' : state.legal, floors: isLandType() || isRoomType() ? '' : state.floors, roadWidth: state.roadWidth },
+    info: { price: state.price, area: state.area, thoCu: isRentType() || isAptType() ? '' : state.thoCu, beds: isLandType() || isRoomType() ? '' : state.beds,
+      legal: isRentType() ? '' : state.legal, floors: isLandType() || isRoomType() ? '' : aptFloor(state.floors), roadWidth: isAptType() ? '' : state.roadWidth },
     radiusKm: state.radiusKm,
     speed: state.speed,
     pois: selectedPois(),
@@ -2313,7 +2313,7 @@ function renderLists() {
 
 // ---------- Kịch bản lời đọc theo từng cảnh ----------
 // 30/10: nút "Biệt thự · Villa" giữ khoá cũ 'VỊ TRÍ CĂN VILLA' (căn đã lưu không đổi), chữ trong video/kịch bản là "biệt thự"
-const TYPE_WORD = { 'VỊ TRÍ CĂN NHÀ': 'Căn nhà', 'VỊ TRÍ CĂN VILLA': 'Căn biệt thự', 'VỊ TRÍ LÔ ĐẤT': 'Lô đất', 'VỊ TRÍ DỰ ÁN': 'Dự án',
+const TYPE_WORD = { 'VỊ TRÍ CĂN NHÀ': 'Căn nhà', 'VỊ TRÍ CĂN HỘ': 'Căn hộ', 'VỊ TRÍ CĂN HỘ CHO THUÊ': 'Căn hộ cho thuê', 'VỊ TRÍ CĂN VILLA': 'Căn biệt thự', 'VỊ TRÍ LÔ ĐẤT': 'Lô đất', 'VỊ TRÍ DỰ ÁN': 'Dự án',
   'VỊ TRÍ NHÀ CHO THUÊ': 'Nhà cho thuê', 'VỊ TRÍ PHÒNG CHO THUÊ': 'Phòng cho thuê', 'VỊ TRÍ MẶT TIỀN CHO THUÊ': 'Mặt tiền cho thuê' };
 // Khoảng cách trong kịch bản: viết số kiểu Việt Nam (1,8 km); lúc gửi giọng đọc sẽ đổi thành chữ
 function kmSpeak(km) {
@@ -2408,11 +2408,12 @@ const POI_LINES = {
 function infoSentence(pick, skipPrice = false) {
   const c = v => String(v || '').replace(/\s+/g, ' ').trim();
   const isLand = /LÔ ĐẤT/.test(state.typeLabel || ''), rent = isRentType(), noRooms = isLand || isRoomType();
-  const beds = noRooms ? '' : c(state.beds), legal = rent ? '' : c(state.legal), floors = noRooms ? '' : c(state.floors), thoCu = rent ? '' : c(state.thoCu), rw = c(state.roadWidth);
+  const apt = isAptType();
+  const beds = noRooms ? '' : c(state.beds), legal = rent ? '' : c(state.legal), floors = noRooms ? '' : c(state.floors), thoCu = rent || apt ? '' : c(state.thoCu), rw = apt ? '' : c(state.roadWidth);
   const parts = [];
   if (c(state.area)) parts.push('diện tích ' + c(state.area));
   if (thoCu) parts.push(/thổ cư/i.test(thoCu) ? thoCu : thoCu + ' thổ cư');
-  if (!isLand && floors) parts.push(/^\d+$/.test(floors) ? floors + ' tầng' : floors);
+  if (!isLand && floors) parts.push(apt ? (/^\d+$/.test(floors) ? 'căn ở tầng ' + floors : floors) : /^\d+$/.test(floors) ? floors + ' tầng' : floors);
   if (!isLand && beds) parts.push(/^\d+$/.test(beds) ? beds + ' phòng ngủ' : beds);
   if (rw) parts.push((isLand ? 'đường trước lô ' : 'đường trước nhà ') + (/^\d+([.,]\d+)?$/.test(rw) ? rw + ' mét' : rw.replace(/(\d)\s*m\b/i, '$1 mét')));
   if (legal) parts.push(legal.charAt(0).toLowerCase() + legal.slice(1));
@@ -2433,7 +2434,9 @@ function scriptSegments() {
   const pick = (pool, i = 0) => pool[(seed + i) % pool.length];
   const fill = (tpl, o) => tpl.replace(/\{(\w)\}/g, (_, k) => o[k] ?? '');
   const segs = [];
-  const add = (key, label, def) => segs.push({ key, label, def, text: state.scriptEdits[key] ?? def });
+  // Căn hộ: câu mẫu "cách nhà / từ nhà / quanh nhà" → "căn hộ" (chỉ câu mẫu của app, lời khách tự viết giữ nguyên)
+  const aptFix = t => (isAptType() ? String(t).replace(/(^|\s)(Từ|từ|cách|quanh|gần) nhà(?=[\s,.!?]|$)/g, '$1$2 căn hộ') : t);
+  const add = (key, label, def) => { def = aptFix(def); segs.push({ key, label, def, text: state.scriptEdits[key] ?? def }); };
   const pois = selectedPois();
   const roads = selectedRoads().slice().sort((a, b) => a.nearKm - b.nearKm);
   // Đường dùng cho câu mở đầu: ưu tiên quốc lộ/cao tốc trong 3 km, không có thì lấy đường gần nhất
@@ -2452,7 +2455,7 @@ function scriptSegments() {
   ];
   // Có giá: nói giá + điểm mạnh nhất ngay câu đầu (khớp cảnh mở đầu trên video), người xem biết ngay căn này có đáng xem không
   const price = String(state.price || '').replace(/\s+/g, ' ').trim();
-  const near = r0 && r0.nearKm < 3 ? (r0.nearKm < 0.12 ? `, mặt tiền ${nameSpeak(r0.label)}` : `, cách ${nameSpeak(r0.label)} chỉ ${kmSpeak(r0.nearKm)}`) : '';
+  const near = r0 && r0.nearKm < 3 ? (r0.nearKm < 0.12 ? (isAptType() ? `, ngay ${nameSpeak(r0.label)}` : `, mặt tiền ${nameSpeak(r0.label)}`) : `, cách ${nameSpeak(r0.label)} chỉ ${kmSpeak(r0.nearKm)}`) : '';
   const rent = isRentType(), giaChi = rent ? 'chỉ' : 'giá chỉ'; // "Phòng cho thuê chỉ 3,5 triệu/tháng" (tránh lặp "cho thuê giá thuê")
   const priceHooks = rent ? [
     `${tw} chỉ ${price}${near}. Xem ngay vị trí này nhé!`,
@@ -2536,13 +2539,15 @@ function scriptSegments() {
   }
   if (pois.length || b) add('summary', 'Tổng kết', pick(isRentType()
     ? [`Tất cả chỉ trong bán kính ${R} km, ${/MẶT TIỀN/.test(state.typeLabel) ? 'thuận tiện cho kinh doanh' : 'ở tiện, đi làm đi học đều gần'}.`, `Mọi tiện ích thiết yếu đều nằm trong bán kính ${R} km.`]
-    : [`Tất cả chỉ trong bán kính ${R} km quanh nhà, sống tiện, đi lại dễ.`, `Mọi tiện ích thiết yếu đều nằm trong bán kính ${R} km.`], 3));
+    : [`Tất cả chỉ trong bán kính ${R} km quanh ${isAptType() ? 'căn hộ' : 'nhà'}, sống tiện, đi lại dễ.`, `Mọi tiện ích thiết yếu đều nằm trong bán kính ${R} km.`], 3));
 
   // Kết: tạo cảm giác khan hiếm + kêu gọi xem nhà (đọc số điện thoại nếu khách nhập)
   const rentT = isRentType(), shop = /MẶT TIỀN CHO THUÊ/.test(state.typeLabel || '');
   const scarce = rentT
     ? pick(shop ? ['Mặt tiền vị trí này thường có người thuê rất nhanh.', 'Vị trí kinh doanh thế này không dễ tìm đâu.', 'Ai đến xem trước sẽ được ưu tiên trước nhé.']
+      : isAptType() ? ['Căn hộ vị trí này thường kín người thuê rất nhanh.', 'Căn hộ giá thuê này ở khu vực này không dễ tìm đâu.', 'Ai đến xem căn hộ trước sẽ được ưu tiên trước nhé.']
       : ['Vị trí như thế này thường kín người thuê rất nhanh.', 'Giá thuê này ở khu vực này không dễ tìm đâu.', 'Ai đến xem trước sẽ được ưu tiên trước nhé.'], 4)
+    : isAptType() ? pick(['Căn hộ vị trí như thế này không có nhiều.', 'Căn hộ vị trí đẹp thế này không dễ tìm đâu.', 'Cơ hội sở hữu căn hộ vị trí này không còn nhiều.'], 4)
     : pick(['Vị trí như thế này không có nhiều.', 'Vị trí đẹp thế này không dễ tìm đâu.', 'Cơ hội sở hữu vị trí này không còn nhiều.'], 4);
   const phone = phoneDisplay(state.phone);
   const brand = (state.brand || '').trim() ? nameSpeak(state.brand.trim()) : '';
@@ -2728,8 +2733,9 @@ async function aiRewrite() {
     const facts = {
       loai_bds: TYPE_WORD[state.typeLabel] || 'Căn nhà', tieu_de: state.title, dong_phu: state.sub, thuong_hieu: state.brand,
       so_dien_thoai_lien_he: phoneDisplay(state.phone) || null,
-      thong_tin_nha: { gia: state.price || null, dien_tich: state.area || null, tho_cu: state.thoCu || null, so_tang: (!isLandType() && state.floors) || null,
-        phong_ngu: (!isLandType() && state.beds) || null, phap_ly: state.legal || null, duong_truoc_nha: state.roadWidth || null, gia_moi_m2: pricePerM2(), dien_tich_m2: areaFromText(state.area) || null },
+      thong_tin_nha: { gia: state.price || null, dien_tich: state.area || null, tho_cu: (!isAptType() && state.thoCu) || null, so_tang: (!isLandType() && !isAptType() && state.floors) || null,
+        can_ho_o_tang: (isAptType() && state.floors) || null,
+        phong_ngu: (!isLandType() && state.beds) || null, phap_ly: state.legal || null, duong_truoc_nha: (!isAptType() && state.roadWidth) || null, gia_moi_m2: pricePerM2(), dien_tich_m2: areaFromText(state.area) || null },
       diem_noi_bat: highlightLines(), khach_muc_tieu: state.buyer || null,
       ban_kinh_km: state.radiusKm, tinh_thanh: provName(), xa_phuong: wardName(),
       duong_lon: selectedRoads().map(r => ({ ten: r.label, ten_duong: r.alt || '', cach_km: +r.nearKm.toFixed(2) })),
@@ -2741,7 +2747,7 @@ async function aiRewrite() {
     // KHÔNG gửi câu mẫu (AI sẽ chép lại y chang) — chỉ gửi hình đang hiện + dữ liệu của từng cảnh
     const SCENE = { intro: 'Mở đầu: trung cảnh ghim bất động sản, xã/phường sáng lên', province: 'Cả tỉnh/thành phố hiện lên', house: 'Cận cảnh bất động sản, máy lượn quanh',
       reel: `Bản đồ đã xong, chuyển sang video thực tế ${realWord()}: 1 câu mời người xem cùng xem video (và hình ảnh) thực tế`, overview: 'Toàn cảnh vòng bán kính quanh nhà', region: 'Kết nối vùng: đường đi + số phút lái xe tới trung tâm, sân bay, cảng, ga', infra: 'Hạ tầng đang thi công gần nhà (nét đứt)', iso: 'Vùng lái xe 5, 10, 15 phút quanh nhà sáng lên lần lượt', boundary: 'Ranh giới sang tỉnh/thành bên cạnh', summary: 'Tổng kết tất cả tiện ích', photos: 'Ảnh thực tế của bất động sản', outro: `Kết video, kêu gọi liên hệ đi ${viewWord()} (đúng chữ "${viewWord()}", không nói "xem nhà" nếu không phải nhà)` };
-    if (hasFrontClip()) SCENE.intro = `Mở đầu: video thực tế mặt tiền ${realWord()} chiếu toàn khung (chưa vào bản đồ). Câu móc + giới thiệu ${realWord()}`;
+    if (hasFrontClip()) SCENE.intro = `Mở đầu: video thực tế ${isAptType() ? 'toà nhà / sảnh của' : 'mặt tiền'} ${realWord()} chiếu toàn khung (chưa vào bản đồ). Câu móc + giới thiệu ${realWord()}`;
     if (media.photos.length) SCENE.photos = media.clips.length > (hasFrontClip() ? 1 : 0) ? `Thêm ảnh thực tế của ${realWord()}` : 'Bản đồ đã xong, chuyển sang ảnh thực tế: 1 câu mời người xem cùng xem hình ảnh thực tế';
     const roadById = Object.fromEntries(selectedRoads().map(r => [r.id, r]));
     const poiById = Object.fromEntries(selectedPois().map(p => [p.id, p]));
@@ -3784,21 +3790,29 @@ const ROOMS = [['mattien', 'Mặt tiền'], ['khach', 'Phòng khách'], ['bep', 
 // [khoá, chữ hiện trên video, chữ ngắn trong ô chọn 74 px]
 const LAND_ROOMS = [['mattien', 'Mặt tiền lô đất', 'Mặt tiền'], ['khach', 'Toàn cảnh lô đất', 'Toàn cảnh'], ['bep', 'Đường trước lô', 'Đường trước'],
   ['ngu', 'Hiện trạng lô đất', 'Hiện trạng'], ['wc', 'Khu xung quanh', 'Xung quanh'], ['khac', 'Khác', 'Khác']];
+// Căn hộ: 'mattien' (mở đầu video) = toà nhà / sảnh
+const APT_ROOMS = [['mattien', 'Toà nhà · sảnh', 'Toà nhà'], ['khach', 'Phòng khách', 'Phòng khách'], ['bep', 'Bếp', 'Bếp'],
+  ['ngu', 'Phòng ngủ', 'Phòng ngủ'], ['wc', 'Toilet', 'Toilet'], ['khac', 'Khác', 'Khác']];
 const isLandType = () => /LÔ ĐẤT/.test(state.typeLabel || '');
 // 30/10: nhà / mặt tiền CHO THUÊ — giá là giá thuê (mỗi tháng): chữ "Giá thuê" thay "Giá bán", không tính giá mỗi m²
 const isRentType = () => /CHO THUÊ/.test(state.typeLabel || '');
 const isRoomType = () => /PHÒNG CHO THUÊ/.test(state.typeLabel || '');
+// 31/10 Giang: Căn hộ (bán) + Căn hộ cho thuê — không thổ cư, không đường trước nhà; ô "Số tầng" thành "Căn ở tầng"
+const isAptType = () => /CĂN HỘ/.test(state.typeLabel || '');
+// Căn hộ: "12" → "Tầng 12" (thẻ thông tin không được hiện "12 tầng"); loại khác giữ nguyên
+const aptFloor = v => { const s = String(v || '').trim(); return isAptType() && /^\d+$/.test(s) ? 'Tầng ' + s : s; };
 // 30/10 (Giang): câu kết "đi xem …" phải đúng loại BĐS (biệt thự mà đọc "xem nhà" là sai)
 function viewWord() {
   const t = state.typeLabel || '';
   if (/LÔ ĐẤT/.test(t)) return 'xem lô đất';
   if (/VILLA|BIỆT THỰ/.test(t)) return /VILLA/.test(state.label || '') && !/BIỆT THỰ/.test(state.label || '') ? 'xem villa' : 'xem biệt thự';
+  if (/CĂN HỘ/.test(t)) return 'xem căn hộ';
   if (/DỰ ÁN/.test(t)) return 'xem dự án';
   if (/PHÒNG CHO THUÊ/.test(t)) return 'xem phòng';
   if (/MẶT TIỀN CHO THUÊ/.test(t)) return 'xem mặt bằng';
   return 'xem nhà';
 }
-const roomList = () => (isLandType() ? LAND_ROOMS : ROOMS);
+const roomList = () => (isLandType() ? LAND_ROOMS : isAptType() ? APT_ROOMS : ROOMS);
 const realWord = () => (TYPE_WORD[state.typeLabel] || 'Căn nhà').toLowerCase();
 // Đoạn video đầu chỉ mở đầu video khi là mặt tiền (khớp render.js: frontClip)
 const hasFrontClip = () => !!(media.clips[0] && (!media.clips[0].room || media.clips[0].room === 'mattien'));
@@ -3807,6 +3821,7 @@ function roomLabel(r) { return r && r !== 'khac' ? (roomList().find(x => x[0] ==
 function guessRoom(name, list) {
   const n = String(name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
   if (/mat.?tien|facade|front|ngoai/.test(n)) return 'mattien';
+  if (isAptType() && /sanh|toa.?nha|lobby|building|chung.?cu/.test(n)) return 'mattien';
   if (isLandType()) {
     if (/toan.?canh|flycam|drone|tren.?cao/.test(n)) return 'khach';
     if (/duong|hem|road|street/.test(n)) return 'bep';
@@ -3841,16 +3856,24 @@ function syncTypeUi() {
   const hl = $('highlightsInput');
   if (hl) hl.placeholder = rent
     ? (/MẶT TIỀN/.test(state.typeLabel) ? 'Mỗi dòng 1 ý, VD:\nNgang 5m, trống suốt\nHợp mở cửa hàng, văn phòng\nCọc 2 tháng, ký hợp đồng 1 năm'
+      : isAptType() ? 'Mỗi dòng 1 ý, VD:\nFull nội thất, xách vali vào ở\nHồ bơi, gym, bảo vệ 24/7 trong toà nhà\nCọc 1 tháng, hợp đồng 6–12 tháng'
       : 'Mỗi dòng 1 ý, VD:\nFull nội thất, có máy lạnh\nWC riêng, giờ giấc tự do\nCó chỗ để xe, camera an ninh')
+    : isAptType() ? 'Mỗi dòng 1 ý, VD:\nCăn góc 2 mặt thoáng, ban công hướng Đông Nam\nFull nội thất, nhận nhà ở ngay\nSổ hồng lâu dài, hồ bơi + gym nội khu'
     : 'Mỗi dòng 1 ý, VD:\nNhà mới xây 2025\nHẻm thông 6m, xe hơi vào tận nhà\nChủ cần bán gấp, giảm 200 triệu';
 }
 function syncRoomUi() {
   const land = isLandType(), w = realWord();
-  const order = land ? 'mặt tiền → toàn cảnh → đường trước lô → hiện trạng → xung quanh' : 'mặt tiền → phòng khách → bếp → phòng ngủ → toilet';
+  const order = land ? 'mặt tiền → toàn cảnh → đường trước lô → hiện trạng → xung quanh' : isAptType() ? 'toà nhà → phòng khách → bếp → phòng ngủ → toilet' : 'mặt tiền → phòng khách → bếp → phòng ngủ → toilet';
   const set = (id, t) => { const el = $(id); if (el && el.textContent !== t) el.textContent = t; };
   set('clipTitle', `Video thực tế ${w}`);
   for (const id of ['floorsInput', 'bedsInput']) { const f = $(id)?.closest('.field'); if (f) f.hidden = land || isRoomType(); } // lô đất, phòng cho thuê: không có số tầng/phòng ngủ
   for (const id of ['thoCuInput', 'legalInput']) { const f = $(id)?.closest('.field'); if (f) f.hidden = isRentType(); } // cho thuê: thổ cư, pháp lý không cần
+  // Căn hộ: không có thổ cư, đường trước nhà; "Số tầng" → "Căn ở tầng"
+  if (isAptType()) { const f = $('thoCuInput')?.closest('.field'); if (f) f.hidden = true; }
+  { const f = $('roadWidthInput')?.closest('.field'); if (f) f.hidden = isAptType(); }
+  const ff = $('floorsInput'), fl = ff?.closest('.field')?.querySelector('.field-label');
+  if (fl) set2(fl, isAptType() ? 'Căn ở tầng' : 'Số tầng');
+  if (ff) ff.placeholder = isAptType() ? 'VD: 12' : 'VD: 1 trệt 2 lầu';
   // Cho thuê: ô giá thành "Giá thuê" (mỗi tháng)
   const pf = $('priceInput'), pl = pf?.closest('.field')?.querySelector('.field-label');
   if (pl) set2(pl, isRentType() ? 'Giá thuê / tháng' : 'Giá bán');
