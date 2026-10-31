@@ -1987,6 +1987,18 @@ function drawHousePin(ctx, x, y, dropT, t, s = 1, rings = true) {
   ctx.restore();
 }
 
+// Ô chiếm của nhãn ghim căn nhà ("VỊ TRÍ …" + dòng xã/phường) — cùng công thức với labelCard (không tính hiệu ứng trượt vào)
+function labelCardBox(ctx, cx, bottomY, title, sub, LW, safe) {
+  ctx.save();
+  ctx.font = `800 18px ${FONT}`;
+  const tw = ctx.measureText(title).width;
+  ctx.font = `500 12.5px ${FONT}`;
+  const sw = sub ? Math.min(ctx.measureText(sub).width, 300) : 0;
+  ctx.restore();
+  const w = Math.max(tw, sw) + 30, h = sub ? 56 : 38;
+  const x = Math.max(safe.x, Math.min(LW - (safe.r && bottomY > LW * 16 / 9 * RCOL_Y ? safe.r : safe.x) - w, cx - w / 2));
+  return { x, y: bottomY - h - 8, w, h: h + 8 };
+}
 function labelCard(ctx, cx, bottomY, title, sub, alpha, LW, safe) {
   if (alpha <= 0.01) return;
   ctx.save();
@@ -3498,7 +3510,38 @@ function m1PlacePop(tl, p, L, k, Z) {
     const px0 = pn.x - 34 * pn.s, px1 = pn.x + 34 * pn.s, py0 = pn.y - 80 * pn.s, py1 = pn.y + 12 * pn.s;
     if (px1 > x && px0 < x + L.vw && py1 > y && py0 < y + L.h && py1 + 8 * k + L.h < tl.LH * 0.5) y = py1 + 8 * k;
   }
+  // 31/10 (Giang gửi ảnh khổ vuông/ngang: giá cuối video đè ghim căn nhà): cụm đứng YÊN suốt lúc hiện nhưng máy quay vẫn lia
+  // → tính trước đường đi của ghim nhà trong cả cửa sổ hiện của cụm; chỗ giữa mà có lúc chạm ghim thì thử lệch trái / lệch phải
+  // (cùng độ cao), lấy chỗ ít lần chạm nhất. Không chạm thì vẫn ở giữa như cũ.
+  const path = pinPath(tl, p.t, p.dur);
+  if (path.length) {
+    const xs = [x, Z.x0, Math.max(Z.x0, Z.x1 - L.vw)];
+    const pad = 6 * k;
+    const hits = cx => path.filter(q => q.x + 34 * q.s + pad > cx && q.x - 34 * q.s - pad < cx + L.vw
+      && q.y + 12 * q.s + pad > y && q.y - 80 * q.s - pad < y + L.h).length;
+    let best = x, bh = hits(x);
+    for (const cx of xs.slice(1)) { if (bh === 0) break; const h = hits(cx); if (h < bh) { bh = h; best = cx; } }
+    return { x: best, y };
+  }
   return { x, y };
+}
+// Vị trí ghim căn nhà trên màn hình (đơn vị khung logic) mỗi 0,2 s trong [t0, t0 + dur] — theo đúng máy quay của video
+function pinPath(tl, t0, dur) {
+  const H = tl.scene && tl.scene.house;
+  if (!H) return [];
+  tl._pinPath ||= new Map();
+  const key = t0.toFixed(2) + '|' + dur.toFixed(2);
+  if (tl._pinPath.has(key)) return tl._pinPath.get(key);
+  const out = [];
+  for (let t = t0; t <= t0 + dur + 1e-6; t += 0.2) {
+    const cam = camAt(tl, Math.min(t, tl.duration));
+    const P = proj(cam.pitch, tl.LW, tl.LH), v = viewOf(cam);
+    const hg = gLL(v, H.lat, H.lng), hs = g2s(P, hg.x, hg.y);
+    if (!(hs.w > 0.05)) continue;
+    out.push({ x: hs.x, y: hs.y, s: Math.max(0.82, Math.min(1.2, 1 / hs.w)) });
+  }
+  tl._pinPath.set(key, out);
+  return out;
 }
 // 30/10 13:40 Giang: chữ KHÔNG được đè nhau — các cụm đang hiện (đơn vị khung logic, có chừa lề) để tên trục đường,
 // nhãn tiện ích, thẻ điểm mốc nằm dưới cụm thì nhường (mờ đi / đặt chỗ khác); gọi TRƯỚC khi vẽ các chữ đó
@@ -5046,7 +5089,20 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false, cover = 
       t0: tStart, t1: scene.title ? ov.t0 + 0.5 + 0.6 : -1 };
     if (tA > 0.2) occBox(ctx, tl.safe.x, mEnv.top - 6, tl.LW - tl.safe.x, mEnv.top + (scene.titleSub ? 118 : 80) * mEnv.k);
   }
-  const houseCardA = Math.max(fadeWin(t, ho.t0 + 0.5, ov.t0 + 0.4, 0.45, 0.4), fadeWin(t, ou.t0 + 0.5, T + 10, 0.45, 0.4));
+  let houseCardA = Math.max(fadeWin(t, ho.t0 + 0.5, ov.t0 + 0.4, 0.45, 0.4), fadeWin(t, ou.t0 + 0.5, T + 10, 0.45, 0.4));
+  // 31/10 (Giang gửi ảnh khổ vuông/ngang: giá "5 tỷ" cuối video đè lên nhãn "VỊ TRÍ BIỆT THỰ"): cụm chữ mẫu 1 đứng cố định,
+  // máy quay lia làm nhãn ghim trôi vào → nhãn ghim NHƯỜNG: chạm cụm chữ đang hiện hoặc thẻ thông tin ở trên cùng (cảnh kết)
+  // thì mờ đi 0,25 s, hết chạm thì hiện lại. Không chạm gì → giống hệt bản cũ.
+  if (houseCardA > 0.01) {
+    const lb = labelCardBox(ctx, hs.x, hs.y - 60 * depthScale(hs.w), scene.label, scene.sub, LW, safe);
+    const hit = r => r && lb.x < r.x + r.w && lb.x + lb.w > r.x && lb.y < r.y + r.h && lb.y + lb.h > r.y;
+    let block = m1ActiveBoxes(ctx, tl, t).some(hit);
+    if (!block && t >= ou.t0 + 0.3) block = hit(infoBox(tl, 'top', logo));
+    const lv = tl._lcVis && Math.abs(t - tl._lcVis.t) < 0.5 ? tl._lcVis : { v: block ? 0 : 1, t };
+    const v = Math.max(0, Math.min(1, lv.v + (block ? -1 : 1) * Math.abs(t - lv.t) / 0.25));
+    tl._lcVis = { v, t };
+    houseCardA *= smooth(v);
+  }
   labelCard(ctx, hs.x, hs.y - 60 * depthScale(hs.w), scene.label, scene.sub, houseCardA, LW, safe);
 
   // Thẻ giá & thông tin căn nhà: lúc giới thiệu căn nhà và lúc kết
