@@ -3219,6 +3219,7 @@ let exportCtrl = null;
 let resultUrl = null;
 let resultFile = null;
 let coverUrl = null, coverFile = null;   // ảnh bìa đi kèm video vừa xuất
+const TRIAL_MARK = true;   // 31/10: tắt dòng chữ trên video dùng thử = đổi thành false
 function progress(pct, text) {
   $('progBar').style.width = Math.max(0, Math.min(100, pct)).toFixed(1) + '%';
   $('progText').textContent = text;
@@ -3261,7 +3262,10 @@ async function doExport() {
   let wake = null;
   try { wake = await navigator.wakeLock?.request('screen'); } catch { /* không bắt buộc */ }
   try {
-    const xtl = buildTimeline(buildScene(), state.fmt, timelineOpts());
+    const xsc = buildScene();
+    // Dòng "Làm bằng vitristudio.com" chỉ cho khách CHƯA từng trả tiền (máy chủ trả paid === false); thiếu trường → không gắn
+    xsc.trialMark = TRIAL_MARK && account.profile?.paid === false && !account.profile?.unlimited;
+    const xtl = buildTimeline(xsc, state.fmt, timelineOpts());
     const q = state.quality === '720' ? 720 : 1080;
     const F = FORMATS[state.fmt];
     const width = state.fmt === 'h' ? Math.round(q * 16 / 9) : q;

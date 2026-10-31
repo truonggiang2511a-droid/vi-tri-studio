@@ -5394,6 +5394,21 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false, cover = 
   ctx.font = `500 8.5px ${FONT}`;
   ctx.fillText(ATTRIBUTION, LW / 2, LH - 6);
   ctx.restore();
+  // 31/10 Giang: video của khách CHƯA từng trả tiền có dòng nhỏ "Làm bằng vitristudio.com" (mua gói thì mất),
+  // ngay trên dòng nguồn dữ liệu — dưới mọi thẻ/phụ đề (các thẻ đều ở trên vùng an toàn đáy). Ảnh bìa không gắn.
+  if (scene.trialMark && !cover) drawTrialMark(ctx, LW, LH);
+}
+function drawTrialMark(ctx, LW, LH) {
+  const txt = 'Làm bằng vitristudio.com';
+  ctx.save();
+  ctx.font = `700 11px ${FONT}`;
+  const w = ctx.measureText(txt).width + 22, h = 19, x = (LW - w) / 2, y = LH - 46;
+  ctx.shadowColor = 'transparent';
+  roundRect(ctx, x, y, w, h, h / 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(txt, LW / 2, y + h / 2 + 0.5);
+  ctx.restore();
 }
 
 // Khung tĩnh để dời ghim: nhìn thẳng từ trên xuống, có hướng dẫn
