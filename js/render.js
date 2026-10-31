@@ -177,8 +177,55 @@ export function setCanvasFactory(fn) { makeCanvas = fn; }
 // Có khoá ArcGIS Location Platform (biến ARCGIS_KEY trên Cloudflare) thì lấy ảnh qua tài khoản thương mại,
 // khoá lỗi hoặc hết hạn thì tự quay về máy chủ ảnh công khai để video không bị trống.
 let IMG_TOKEN = '';
-let keyedOk = 0, keyedFail = 0;
-export function setImageryToken(t) { IMG_TOKEN = String(t || '').trim(); keyedOk = keyedFail = 0; }
+let IMG_KEY = '';           // khoá gốc (IMG_TOKEN có thể bị bỏ khi khoá lỗi liên tục; phiên bản đồ vẫn cần khoá gốc)
+let keyedOk = 0, keyedFail = 0, keyedStreak = 0;
+// Ô ảnh vệ tinh chờ biết có khoá hay không (tối đa 3 s) rồi mới tải — trước đây ô đầu tiên đi nguồn công khai khi /api/config chưa về
+let keyKnown = false, keyWait = null;
+const keyGate = new Promise(res => { keyWait = res; setTimeout(res, 3000); });
+export function setImageryToken(t) { IMG_TOKEN = IMG_KEY = String(t || '').trim(); keyedOk = keyedFail = keyedStreak = 0; keyKnown = true; keyWait?.(); }
+// Báo nguồn ô ảnh ra ngoài (app ghi phễu 1 lần/phiên): 'khoa_loi' | 'phien' | 'congkhai'
+let tileReport = null;
+export function onTileSource(fn) { tileReport = fn; }
+
+// 31/10: lớp dự phòng thứ 2 — PHIÊN BẢN ĐỒ (basemap session) của ArcGIS Location Platform.
+// Khoá báo lỗi (vd. hết 2 triệu ô miễn phí/tháng) → xin 1 phiên 12 giờ: ô ảnh KHÔNG giới hạn, 1.000 phiên miễn phí/tháng
+// (đếm riêng với 2 triệu ô). Mỗi máy dùng lại phiên của mình suốt 12 giờ (nhớ trong localStorage), không xin phiên mới.
+// Phiên cũng lỗi/hết lượt → về máy chủ ảnh công khai như trước. Không bao giờ gọi khi khoá còn chạy.
+const SESS_URL = 'https://basemapstyles-api.arcgis.com/arcgis/rest/services/styles/v2/sessions/start';
+const SESS_LS = 'vitri.arcSess';
+let sess = null, sessJob = null, sessDead = false, sessOk = 0, sessFail = 0;
+function sessLoad() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SESS_LS) || 'null');
+    if (s && s.token && s.end - Date.now() > 5 * 60e3) return s;
+  } catch { /* bộ nhớ bị chặn */ }
+  return null;
+}
+function getSession() {
+  if (sess && sess.end - Date.now() > 60e3) return Promise.resolve(sess.token);
+  if (sessDead || !IMG_KEY) return Promise.resolve(null);
+  const s0 = sessLoad();
+  if (s0) { sess = s0; return Promise.resolve(s0.token); }
+  sessJob ||= (async () => {
+    try {
+      const p = new URLSearchParams({ styleFamily: 'arcgis', durationSeconds: '43200', token: IMG_KEY });
+      const r = await fetch(SESS_URL + '?' + p, { signal: AbortSignal.timeout(8000) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.sessionToken) throw new Error('phien');
+      sess = { token: j.sessionToken, end: Number(j.endTime) || Date.now() + 11.5 * 3600e3 };
+      try { localStorage.setItem(SESS_LS, JSON.stringify(sess)); } catch { /* bỏ qua */ }
+      return sess.token;
+    } catch {
+      sessDead = true;
+      return null;
+    } finally { sessJob = null; }
+  })();
+  return sessJob;
+}
+function dropSession() {
+  sess = null; sessDead = true;
+  try { localStorage.removeItem(SESS_LS); } catch { /* bỏ qua */ }
+}
 const PUBLIC_TILE = (z, x, y) =>
   `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
 const ESRI = svc => (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/${svc}/MapServer/tile/${z}/${y}/${x}`;
@@ -266,15 +313,25 @@ export class TileCache {
       this.load(job).finally(() => { this.active--; this.pump(); });
     }
   }
-  load(job) {
+  async load(job) {
     const { z, x, y, e, src } = job;
+    // Ảnh vệ tinh đi lần lượt: khoá → phiên bản đồ → máy chủ công khai (e.mode nhớ bước của từng ô)
+    if (src === 'img' && !keyKnown) await keyGate;
+    let mode = src !== 'img' ? 'other' : e.mode || (IMG_TOKEN ? 'key' : sessDead ? 'pub' : 'sess');
+    let stok = null;
+    if (mode === 'sess') {
+      stok = await getSession();
+      if (!stok) mode = 'pub';
+    }
     return new Promise(done => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.decoding = 'async';
-      const keyed = src === 'img' && !!IMG_TOKEN && !e.publicOnly;
+      const keyed = mode === 'key';
       img.onload = () => {
-        if (keyed) keyedOk++;
+        if (keyed) { keyedOk++; keyedStreak = 0; }
+        if (mode === 'sess') { sessOk++; tileReport?.('phien'); }
+        if (mode === 'pub' && src === 'img') tileReport?.('congkhai');
         // Ô ảnh vệ tinh z ≥ 19 nơi chưa có ảnh: dùng ô cha (z thấp hơn) — chờ ô cha tải xong mới báo xong
         if (src === 'img' && z >= 19 && isPlaceholder(img)) {
           e.failed = true; e.missing = true;
@@ -286,15 +343,32 @@ export class TileCache {
       };
       img.onerror = () => {
         if (keyed) {
-          e.publicOnly = true;
-          if (++keyedFail >= 6 && !keyedOk) IMG_TOKEN = '';
+          // Khoá lỗi: ô này thử phiên bản đồ ngay (không tính lượt thử). Lỗi liên tục (hết hạn mức/khoá hỏng) → bỏ khoá cả phiên làm việc.
+          keyedFail++; keyedStreak++;
+          if ((keyedFail >= 6 && !keyedOk) || keyedStreak >= 12) IMG_TOKEN = '';
+          tileReport?.('khoa_loi');
+          e.mode = sessDead ? 'pub' : 'sess';
+          this.queue.push(job); this.pump();
+          done();
+          return;
+        }
+        if (mode === 'sess') {
+          sessFail++;
+          if (sessFail >= 6 && !sessOk) dropSession();
+          e.mode = 'pub';
+          this.queue.push(job); this.pump();
+          done();
+          return;
         }
         e.tries++;
         if (e.tries < 3) setTimeout(() => { this.queue.push(job); this.pump(); }, 400 * e.tries);
         else { e.failed = true; e.resolve(false); }
         done();
       };
-      img.src = src !== 'img' ? SRC_URL[src](z, x, y) : keyed ? KEYED_TILE(z, x, y) : PUBLIC_TILE(z, x, y);
+      img.src = mode === 'other' ? SRC_URL[src](z, x, y)
+        : mode === 'key' ? KEYED_TILE(z, x, y)
+        : mode === 'sess' ? KEYED_TILE(z, x, y).replace(/token=[^&]*/, 'token=' + encodeURIComponent(stok))
+        : PUBLIC_TILE(z, x, y);
     });
   }
 }

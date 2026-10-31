@@ -3,7 +3,7 @@ import { parseCoords, haversineKm, formatKm } from './geo.js';
 import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, placesNear, guessCategory, stitchWays, bridgeWays, localFrame, pickHubs, loadInfra, simplifyLine, loadHubFx, loadZones, loadWater } from './data.js';
 import { ICON_PATHS } from './icons.js';
 import {
-  FORMATS, TileCache, setImageryToken, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, HI_THEMES, LOT_STYLES, LOT_COLORS, STYLES, BASES,
+  FORMATS, TileCache, setImageryToken, onTileSource, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, HI_THEMES, LOT_STYLES, LOT_COLORS, STYLES, BASES,
   CLIP_MAX, clipTime, camAt, coverTime,
 } from './render.js';
 import { sfxEvents, setSfxSample, hasSfxSample } from './sfx.js';
@@ -478,7 +478,9 @@ const canvas = $('preview');
 const ctx = canvas.getContext('2d');
 const cache = new TileCache(() => (dirty = true));
 // Khoá ảnh vệ tinh thương mại (nếu đã đặt ARCGIS_KEY trên máy chủ)
-loadConfig().then(c => c?.arcgis && setImageryToken(c.arcgis));
+loadConfig().then(c => setImageryToken(c?.arcgis || ''));
+// Ô ảnh vệ tinh phải dùng nguồn dự phòng (khoá lỗi / hết 2 triệu ô) → ghi phễu 1 lần mỗi phiên: f_o_khoa_loi, f_o_phien, f_o_congkhai
+onTileSource(k => funnel('o_' + k));
 let tl = null;
 let t = 0;
 let playing = false;
