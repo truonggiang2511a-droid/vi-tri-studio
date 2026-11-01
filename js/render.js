@@ -214,6 +214,7 @@ function getSession() {
       if (!r.ok || !j.sessionToken) throw new Error('phien');
       sess = { token: j.sessionToken, end: Number(j.endTime) || Date.now() + 11.5 * 3600e3 };
       try { localStorage.setItem(SESS_LS, JSON.stringify(sess)); } catch { /* bỏ qua */ }
+      tileReport?.('phien_tao'); // đếm phiên tạo mới (1.000 miễn phí/tháng) → báo cáo 7h sáng
       return sess.token;
     } catch {
       sessDead = true;
