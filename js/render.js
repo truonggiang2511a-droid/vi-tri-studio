@@ -336,12 +336,36 @@ export class TileCache {
       stok = await getSession();
       if (!stok) mode = e.pro && IMG_TOKEN && !e.keyTried ? 'key' : 'pub';
     }
+    const url = mode === 'other' ? SRC_URL[src](z, x, y)
+      : mode === 'key' ? KEYED_TILE(z, x, y)
+      : mode === 'sess' ? KEYED_TILE(z, x, y).replace(/token=[^&]*/, 'token=' + encodeURIComponent(stok))
+      : PUBLIC_TILE(z, x, y);
+    // Khoá/phiên: hỏi bằng fetch để biết mã lỗi. Nơi chưa có ảnh ở mức zoom này ibasemaps trả 404
+    // (máy chủ công khai thì trả ô xám 200) — đó là "không có ảnh", KHÔNG phải khoá/phiên hỏng:
+    // lấy ô cha, không đếm lỗi, không chuyển sang nguồn công khai.
+    let blobUrl = null, httpBad = false;
+    if (mode === 'key' || mode === 'sess') {
+      try {
+        const r = await fetch(url, { mode: 'cors', credentials: 'omit' });
+        if (r.status === 404) {
+          e.failed = true; e.missing = true;
+          // Không await ô cha trong lúc giữ chỗ tải (12 chỗ cùng chờ ô cha nằm trong hàng đợi = kẹt)
+          if (z > 10) this.request(z - 1, x >> 1, y >> 1, true).then(() => e.resolve(false));
+          else e.resolve(false);
+          return;
+        }
+        if (r.ok) blobUrl = URL.createObjectURL(await r.blob());
+        else httpBad = true;
+      } catch { httpBad = true; }
+    }
     return new Promise(done => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.decoding = 'async';
       const keyed = mode === 'key';
+      const free = () => { if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; } };
       img.onload = () => {
+        free();
         if (keyed) { keyedOk++; keyedStreak = 0; }
         if (mode === 'sess') { sessOk++; tileReport?.(e.pro ? 'phien_xuat' : 'phien'); }
         if (mode === 'pub' && src === 'img') tileReport?.('congkhai');
@@ -355,6 +379,7 @@ export class TileCache {
         e.img = img; e.ok = true; e.resolve(true); this.onLoad?.(); done();
       };
       img.onerror = () => {
+        free();
         if (keyed) {
           // Khoá lỗi: ô này thử phiên bản đồ ngay (không tính lượt thử). Lỗi liên tục (hết hạn mức/khoá hỏng) → bỏ khoá cả phiên làm việc.
           keyedFail++; keyedStreak++;
@@ -382,10 +407,8 @@ export class TileCache {
         else { e.failed = true; e.resolve(false); }
         done();
       };
-      img.src = mode === 'other' ? SRC_URL[src](z, x, y)
-        : mode === 'key' ? KEYED_TILE(z, x, y)
-        : mode === 'sess' ? KEYED_TILE(z, x, y).replace(/token=[^&]*/, 'token=' + encodeURIComponent(stok))
-        : PUBLIC_TILE(z, x, y);
+      if (httpBad) { img.onerror(); return; }
+      img.src = blobUrl || url;
     });
   }
 }
