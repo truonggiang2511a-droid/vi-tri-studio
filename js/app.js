@@ -71,10 +71,11 @@ const state = {
   adminArea: null,   // ranh xã/phường + tỉnh {ward, province} (KHÁC state.area = diện tích khách nhập)
   areaWard: '', areaProv: '', roadWidth: '',
   showStreets: true, // vẽ đường quanh nhà kiểu đường nhựa
-  showAdminArea: true, // cảnh khoanh vùng xã/phường + cả tỉnh/thành (28/10 Giang: MẶC ĐỊNH BẬT lại, khách bỏ tick để tắt)
-  showSweep: true,   // tia radar quét ở cảnh bán kính + tổng kết (28/10 Giang: MẶC ĐỊNH BẬT lại; SFX radar vẫn tắt vì chói tai)
-  fxV: 2,            // 28/10: phiên bản mặc định 2 hiệu ứng trên (2 = bật)
-  showHubFx: true,   // 31/10 Giang: MỞ CHO MỌI KHÁCH — máy bay cất cánh ở sân bay, tàu metro chạy qua, khoanh sáng tiện ích quan trọng + sông/kênh
+  // 1/11 19:55 Giang: 3 hiệu ứng dưới là TUỲ CHỌN, MẶC ĐỊNH TẮT — khách tick ở mục ② → "Hiệu ứng thêm" mới có (cả video mẫu)
+  showAdminArea: false, // cảnh khoanh vùng xã/phường + lùi ra cả tỉnh/thành
+  showSweep: false,  // tia radar quét ở cảnh bán kính + tổng kết (SFX radar vẫn tắt vì chói tai)
+  fxV: 3,            // phiên bản mặc định hiệu ứng (3 = tắt sẵn; xem fixLook)
+  showHubFx: false,  // máy bay cất cánh ở sân bay, tàu metro chạy qua, khoanh sáng tiện ích quan trọng + sông/kênh
   rentPick: '', // loại cho thuê chọn gần nhất (nút "Cho thuê" mở lại đúng loại đó)
   aiTone: '', // phong cách kịch bản AI — để trống, khách phải tự chọn trước khi tạo
   keyLook: '',      // 30/10 'mau1' = chữ điểm nhấn + icon mẫu 1 (Hook Kit) lúc giọng đọc nói giá/mét/phút… — khách tự bật, mặc định tắt
@@ -139,6 +140,9 @@ function save() {
 // (không phân biệt được ai tự tick; khách cần thì tick lại ở mục ② Phong cách → Hiệu ứng thêm).
 function fixLook(o) {
   if (o && o.m1V !== 2) { o.keyLook = ''; o.m1V = 2; }
+  // 1/11 19:55 Giang: khoanh xã/phường → tỉnh/thành, tia radar, máy bay/metro/khoanh tiện ích thành tuỳ chọn tắt sẵn —
+  // tắt 1 lần cho mọi dự án cũ (bật sẵn từ 28/10, 31/10). Căn đã có giọng vẫn đủ giọng: bỏ cảnh tỉnh chỉ bớt 1 câu.
+  if (o && o.fxV !== 3) { o.showAdminArea = false; o.showSweep = false; o.showHubFx = false; o.fxPending = false; o.fxV = 3; }
   return o;
 }
 function fixSpeed(o) {
@@ -158,9 +162,6 @@ function load() {
       if (o.roadLabelFace === 'vangkim') o.roadLabelFace = 'vang'; // bỏ kiểu Vàng kim (23/10): còn Trắng / Vàng
       // 24/10: trước đây mặc định không có nhạc (đa số khách chưa từng chọn) → bật nhạc hùng hồn một lần; khách đổi lại được
       if (o.musicV !== 2) { if (!o.musicLib) o.musicLib = 'hung-hon'; o.musicV = 2; }
-      // 28/10: bật lại khoanh xã/phường → tỉnh/thành + tia radar (24/10 tối đặt mặc định tắt) một lần.
-      // Căn đang có giọng đọc thì KHÔNG đổi ngay (thêm cảnh tỉnh sẽ thiếu giọng 1 câu) — bật khi khách sang căn mới.
-      if (o.fxV !== 2) { o.fxV = 2; if (!o.voSig) { o.showAdminArea = true; o.showSweep = true; } else o.fxPending = true; }
       Object.assign(state, o);
     }
   } catch { /* bỏ qua */ }
@@ -1682,10 +1683,6 @@ function applyCoords(text, { silent = false } = {}) {
 }
 
 function resetHouseScoped() {
-  if (state.fxPending) { // xem load(): căn cũ có giọng thì bật hiệu ứng mặc định mới khi sang căn mới
-    state.fxPending = false; state.showAdminArea = true; state.showSweep = true;
-    { const a = $('adminAreaOn'), b = $('sweepOn'); if (a) a.checked = true; if (b) b.checked = true; }
-  }
   Object.assign(state, { areaWard: '', areaProv: '', areaFor: '', roadWidth: '', sub: '', lotText: '', lotArea: '',
     scriptEdits: {}, scriptAi: false, scriptOwn: false, voSig: '', adminArea: null, admin: null, roadStars: [], roadFills: {}, iso: null, isoFor: '', region: null, regionFor: '', regionOff: [] });
   media.voiceSegs.clear();
@@ -1822,7 +1819,7 @@ function writeSampleStore(d, base = {}) {
   const o = { ...base };
   for (const k of SAMPLE_KEYS) if (k in d) o[k] = d[k];
   Object.assign(o, { sample: true, coordSet: true, cloudId: null, projName: '', musicLib: 'hung-hon', musicV: 2, labelV: 3, speedV: 2,
-    showAdminArea: true, showSweep: true, fxV: 2, // video mẫu: khoanh xã/phường → tỉnh/thành + tia radar (giọng câu "Thuộc …" đã có trong file)
+    showAdminArea: false, showSweep: false, showHubFx: false, fxV: 3, // 1/11 19:55: video mẫu tự nhiên như bản đầu, hiệu ứng thêm khách tự tick
     keyLook: '', m1V: 2, // 31/10 15:40 Giang: video mẫu trở lại thẻ giá như cũ — mẫu 1 chỉ khi khách tự tick (trước: 30/10 15:52 bật sẵn)
     lot: [], sampleVoice: d.voice || null, aiVoiceOn: true, subsOn: true });
   if (!d.voice) Object.assign(o, { scriptEdits: {}, scriptAi: false, voSig: '' });
@@ -2033,7 +2030,7 @@ async function loadRegion(force = false) {
   } catch { /* để lần sau */ } finally { if (regionJob === k) { regionJob = ''; renderRegion(); } }
 }
 // 30/10 (Giang): hiệu ứng điểm mốc — sân bay khoanh ranh sáng + máy bay cất cánh, ga metro có đoàn tàu chạy trên tuyến.
-// 31/10 Giang duyệt → MỞ CHO MỌI KHÁCH, mặc định bật; khách bỏ tick ô #hubFxOn (mục ② → Hiệu ứng thêm) để tắt.
+// 31/10 mở cho mọi khách; 1/11 19:55 Giang: mặc định TẮT, khách tick ô #hubFxOn (mục ② → Hiệu ứng thêm) mới có.
 // ?hubfx=1 / ?hubfx=0 vẫn ép bật/tắt trên 1 máy (để thử).
 function hubFxOn() {
   try {
@@ -2043,7 +2040,7 @@ function hubFxOn() {
     if (v === '1') return true;
     if (v === '0') return false;
   } catch { /* bỏ qua */ }
-  return state.showHubFx !== false;
+  return state.showHubFx === true;
 }
 let hubFxJob = '';
 async function ensureHubFx() {
@@ -3535,7 +3532,7 @@ async function stepNext() {
 
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'showTitle', 'brand', 'phone', 'price', 'area', 'beds', 'legal', 'highlights', 'buyer',
-  'scriptSeed', 'scriptEdits', 'scriptAi', 'scriptOwn', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'myRoads', 'plan', 'planOn', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'showHubFx', 'keyLook', 'm1V', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'lotStyle', 'lotColor', 'lotSrc', 'lotDims', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
+  'scriptSeed', 'scriptEdits', 'scriptAi', 'scriptOwn', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'myRoads', 'plan', 'planOn', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'showHubFx', 'fxV', 'keyLook', 'm1V', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'lotStyle', 'lotColor', 'lotSrc', 'lotDims', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
   'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
@@ -4726,7 +4723,7 @@ function init() {
   $('adminAreaOn').checked = !!state.showAdminArea;
   $('adminAreaOn').addEventListener('change', e => { state.showAdminArea = e.target.checked; save(); renderScript(); scheduleRebuild(); });
   $('sweepOn').addEventListener('change', e => { state.showSweep = e.target.checked; save(); scheduleRebuild(); });
-  $('hubFxOn').checked = state.showHubFx !== false;
+  $('hubFxOn').checked = state.showHubFx === true;
   $('hubFxOn').addEventListener('change', e => { state.showHubFx = e.target.checked; save(); if (e.target.checked) ensureHubFx(); scheduleRebuild(); });
   $('mau1On').addEventListener('change', e => {
     state.keyLook = e.target.checked ? 'mau1' : ''; save(); media.mixKey = ''; scheduleRebuild(); prepMau1();
