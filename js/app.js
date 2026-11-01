@@ -10,7 +10,7 @@ import { sfxEvents, setSfxSample, hasSfxSample } from './sfx.js';
 import { loadMau1Fonts } from './mau1.js';
 import { stretchBuffer } from './stretch.js';
 import { parseCoordText, checkPolygon, convertLot, MERIDIANS, fmtMeridian } from './vn2000.js';
-import { decodeAudioFile, mixAudio, preloadTiles, exportMp4, exportRealtime, canEncodeMp4, unlockAudioContext } from './export.js';
+import { decodeAudioFile, mixAudio, preloadTiles, loadTilesAt, exportMp4, exportRealtime, canEncodeMp4, unlockAudioContext } from './export.js';
 import { MOTION } from './motion.js';
 import { processPlan, FULL_QUAD, planNeedsAlpha } from './planimg.js';
 import { onAccountChange, initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount } from './account.js';
@@ -3292,12 +3292,16 @@ async function doExport() {
     const width = state.fmt === 'h' ? Math.round(q * 16 / 9) : q;
     const height = Math.round(width * F.LH / F.LW);
     const scale = width / F.LW;
-    progress(1, 'Đang tải ảnh vệ tinh…');
+    progress(1, 'Đang chuẩn bị ảnh vệ tinh…');
     // Ô ảnh lúc xuất đi phiên bản đồ (không tính vào 2 triệu ô ArcGIS); xin phiên lỗi thì vẫn dùng khoá như cũ
     preferSession(true);
     await warmSession().catch(() => false);
-    await preloadTiles(xtl, scale, cache, (d, n) => progress(2 + 26 * d / Math.max(1, n), `Đang tải ảnh vệ tinh ${d}/${n}`), signal);
+    // 1/11: KHÔNG nạp trước toàn bộ ô ảnh nữa (máy ít RAM văng ở 60–90%) — exportMp4 tải ô ngay trước khi cần và nhả
+    // ô đã dùng xong. Nhả luôn ô của phần xem trước để lúc dựng có nhiều RAM nhất (xem lại sau khi xuất tự tải lại).
+    cache.drop(new Set());
+    const preloadAll = () => preloadTiles(xtl, scale, cache, (d, n) => progress(30, `Đang tải ảnh vệ tinh ${d}/${n} — giữ màn hình mở, đừng chuyển app…`), signal);
     if (signal.aborted) throw new DOMException('Đã huỷ', 'AbortError');
+    progress(2, 'Đang tải phông chữ…');
     await fontsReady();
     let audio = null;
     const A = audioPlan(xtl);
@@ -3308,20 +3312,25 @@ async function doExport() {
     let blob;
     const onProgress = (stage, d, n) => {
       if (stage === 'frames') progress(30 + 66 * d / n, `Đang dựng video ${Math.round(100 * d / n)}%`);
-      else if (stage === 'audio') progress(97, 'Đang ghép âm thanh…');
+      else if (stage === 'tiles') progress(30 + 66 * d / n, `Đang tải ảnh vệ tinh… (${Math.round(100 * d / n)}%)`);
+      else if (stage === 'audio') progress(29, 'Đang mã hoá âm thanh…');
+      else if (stage === 'mux') progress(97, 'Đang hoàn tất file video…');
     };
     if (canEncodeMp4()) {
       try {
         blob = await exportMp4({ tl: xtl, width, height, fps: 30, cache, audioBuffer: audio, onProgress, signal, prepFrame: tt => seekClipsExact(xtl, tt) });
       } catch (e) {
         if (e.code !== 'NO_AUDIO_ENCODER' && e.code !== 'NO_MUXER') throw e;
+        await preloadAll();
         progress(30, 'Đang quay theo thời gian thực để giữ nhạc và giọng đọc — giữ màn hình mở, đừng chuyển app…');
         blob = await exportRealtime({ tl: xtl, width, height, fps: 30, cache, audioBuffer: audio, audioCtx: exportAudioCtx, onProgress, signal, onTick: tt => syncClips(xtl, tt, true) });
       }
     } else {
+      await preloadAll();
       progress(30, 'Máy này không hỗ trợ dựng nhanh, đang quay theo thời gian thực — giữ màn hình mở, đừng chuyển app…');
       blob = await exportRealtime({ tl: xtl, width, height, fps: 30, cache, audioBuffer: audio, audioCtx: exportAudioCtx, onProgress, signal, onTick: tt => syncClips(xtl, tt, true) });
     }
+    audio = null;
     const ext = blob.type.includes('webm') ? 'webm' : 'mp4';
     if (ext === 'webm') toast('Trình duyệt này chỉ xuất được WebM (iPhone có thể không phát được). Nên xuất bằng Chrome trên Android/máy tính hoặc Safari trên iPhone.', 7000);
     const name = `video-vi-tri-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')}.${ext}`;
@@ -3362,6 +3371,7 @@ async function doExport() {
 async function makeCover(xtl, width, height, scale) {
   const tc = coverTime(xtl);
   await seekClipsExact(xtl, tc);   // nền là video mặt tiền thì tua đúng khung
+  await loadTilesAt(xtl, scale, cache, tc); // ô ảnh của khung này có thể đã được nhả trong lúc xuất
   const c = document.createElement('canvas');
   c.width = width; c.height = height;
   render(c.getContext('2d', { alpha: false }), xtl, tc, { cache, scale, cover: true });

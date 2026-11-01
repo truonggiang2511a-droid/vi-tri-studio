@@ -11,7 +11,7 @@ async function loadXuat() {
   }
   return xuatMod;
 }
-import { render, collectTiles } from './render.js';
+import { render, collectTiles, tilesAt } from './render.js';
 import { scheduleSfx } from './sfx.js';
 
 const SR = 48000;
@@ -70,6 +70,72 @@ export async function mixAudio({ music, voice, voiceSegs = [], sfx = null, durat
   return out;
 }
 
+// 1/11 (khách báo: nhiều PC/điện thoại xuất tới 60–80%, gần xong thì trang văng ra): bản cũ nạp TRƯỚC toàn bộ ô ảnh của
+// cả video (~4.400 ô ở 1080p; trình duyệt giữ ảnh đã giải mã ~256 KB/ô, iPhone gần như không nhả) và giữ cả file MP4
+// trong RAM rồi chép thêm 2–3 lần lúc ghép. Nay ô ảnh tải ngay trước khi cần (đi trước TILE_AHEAD giây), ô hết dùng trong
+// cửa sổ thì nhả; cần lại thì trình duyệt lấy từ bộ nhớ đệm (ô ảnh có cache 24 h, cùng địa chỉ → không tải lại từ Esri).
+// Tải trước 1,2 s video (≈ 4–7 s thực trên điện thoại — đủ để mạng kịp). Đo video mẫu 1080p: cửa sổ 3,4 s giữ trung bình
+// 447 ô (tối đa 1.270), cửa sổ 1,4 s ~260 ô; ô lúc xuất là ImageBitmap đã giải mã (~256 KB) nên cửa sổ ngắn = ít RAM.
+const TILE_AHEAD = 1.2;    // giây tải trước
+const TILE_STEP = 0.2;     // bước lấy mẫu thời gian khi tải trước / chọn ô giữ lại
+const TILE_WAIT = 25000;   // mạng treo: chờ tối đa chừng này cho một khung rồi vẽ bằng ô cha như bản cũ
+export function tileFeeder(tl, scale, cache) {
+  const keyOf = k => cache.key(k[0], k[1], k[2]);
+  const parentOf = k => [k[0] - 1, k[1] >> 1, k[2] >> 1];
+  let preT = 0, dropT = -Infinity;
+  const keepSet = t => {
+    const keep = new Set();
+    const t1 = Math.min(tl.duration, t + TILE_AHEAD + TILE_STEP);
+    for (let s = Math.max(0, t - TILE_STEP); s <= t1 + 1e-6; s += TILE_STEP) {
+      for (const k of tilesAt(tl, scale, s)) {
+        const key = keyOf(k);
+        keep.add(key);
+        // Ô z19 "chưa có ảnh" / ô tải lỗi: drawTiles vẽ bằng ô cha → giữ cả ô cha
+        const e = cache.entry(key);
+        if (e && e.failed && k[0] > 0) keep.add(keyOf(parentOf(k)));
+      }
+    }
+    return keep;
+  };
+  return {
+    // Gọi ngay trước khi vẽ khung ở thời điểm t. Trả promise khi còn ô phải chờ, null khi đã đủ ô.
+    before(t) {
+      while (preT <= Math.min(tl.duration, t + TILE_AHEAD) + 1e-6) {
+        for (const k of tilesAt(tl, scale, preT)) cache.request(k[0], k[1], k[2]);
+        preT += TILE_STEP;
+      }
+      if (t - dropT >= 0.5) { dropT = t; cache.drop(keepSet(t)); }
+      const wait = [];
+      const need = k => {
+        const e = cache.entry(keyOf(k));
+        if (e && e.ok) return;
+        if (e && e.failed) { if (k[0] > 0) need(parentOf(k)); return; }
+        wait.push(cache.request(k[0], k[1], k[2], true));
+      };
+      for (const k of tilesAt(tl, scale, t)) need(k);
+      if (!wait.length) return null;
+      let tm = null;
+      return Promise.race([Promise.all(wait), new Promise(r => { tm = setTimeout(r, TILE_WAIT); })])
+        .finally(() => clearTimeout(tm));
+    },
+  };
+}
+
+// Tải đủ ô ảnh cho MỘT khung (ảnh bìa sau khi xuất — các ô đó có thể đã được nhả)
+export async function loadTilesAt(tl, scale, cache, t, ms = 8000) {
+  const wait = [];
+  const need = k => {
+    const e = cache.entry(cache.key(k[0], k[1], k[2]));
+    if (e && e.ok) return;
+    if (e && e.failed) { if (k[0] > 0) need([k[0] - 1, k[1] >> 1, k[2] >> 1]); return; }
+    wait.push(cache.request(k[0], k[1], k[2], true));
+  };
+  for (const k of tilesAt(tl, scale, t)) need(k);
+  let tm = null;
+  if (wait.length) await Promise.race([Promise.all(wait), new Promise(r => { tm = setTimeout(r, ms); })]).finally(() => clearTimeout(tm));
+}
+
+// Dự phòng quay thời gian thực: không chờ được giữa các khung nên vẫn nạp trước toàn bộ ô ảnh
 export async function preloadTiles(tl, scale, cache, onProgress, signal) {
   const list = collectTiles(tl, scale);
   let done = 0;
@@ -147,7 +213,53 @@ export function canEncodeMp4() {
   return typeof VideoEncoder !== 'undefined' && typeof VideoFrame !== 'undefined';
 }
 
-export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffer, onProgress, signal, prepFrame = null }) {
+// Nhận dữ liệu MP4 từ Mediabunny (StreamTarget) và dồn thành các Blob ~8 MB — file video KHÔNG nằm lại trong bộ nhớ của
+// trang (Chrome/Safari giữ dữ liệu Blob ở tiến trình khác, nhiều thì Chrome ghi ra đĩa). Lúc hoàn tất, Mediabunny ghi moov
+// vào chỗ đã chừa ở ĐẦU file (fastStart 'reserve') → đọc lại đúng mẩu Blob đó, sửa rồi thay.
+function blobSink() {
+  const parts = [];   // { pos, size, blob }
+  let pend = [], pendPos = 0, pendSize = 0, end = 0;
+  const FLUSH = 8 * 1048576;
+  const flush = () => {
+    if (!pendSize) return;
+    parts.push({ pos: pendPos, size: pendSize, blob: new Blob(pend) });
+    pend = []; pendSize = 0;
+  };
+  const append = data => {
+    if (!data.byteLength) return;
+    if (!pendSize) pendPos = end;
+    pend.push(data); pendSize += data.byteLength; end += data.byteLength;
+    if (pendSize >= FLUSH) flush();
+  };
+  const patch = async (pos, data) => {
+    flush();
+    for (const p of parts) {
+      const a = Math.max(pos, p.pos), b = Math.min(pos + data.byteLength, p.pos + p.size);
+      if (a >= b) continue;
+      const u8 = new Uint8Array(await p.blob.arrayBuffer());
+      u8.set(data.subarray(a - pos, b - pos), a - p.pos);
+      p.blob = new Blob([u8]);
+    }
+  };
+  const writable = new WritableStream({
+    async write({ data, position }) {
+      if (position > end) append(new Uint8Array(position - end));
+      if (position === end) { append(data); return; }
+      const over = position + data.byteLength - end;
+      if (over > 0) {
+        await patch(position, data.subarray(0, data.byteLength - over));
+        append(data.subarray(data.byteLength - over));
+      } else await patch(position, data);
+    },
+  });
+  return {
+    writable,
+    get size() { return end; },
+    blob(type) { flush(); return new Blob(parts.map(p => p.blob), { type }); },
+  };
+}
+
+export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffer, onProgress, signal, prepFrame = null, tiles = true }) {
   const scale = width / tl.LW;
   const pv = await pickVideoCodec(width, height, fps);
   if (!pv) throw new Error('Máy này không mã hoá được video ở độ phân giải ' + width + 'x' + height + '. Thử chất lượng 720p.');
@@ -155,15 +267,47 @@ export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffe
   try { MB = await loadXuat(); }
   catch { throw Object.assign(new Error('Không tải được bộ xuất video, kiểm tra mạng rồi thử lại.'), { code: 'NO_MUXER' }); }
 
-  const output = new MB.Output({ format: new MB.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new MB.BufferTarget() });
+  const frames = Math.round(tl.duration * fps);
+  // 1/11: trước đây BufferTarget + fastStart 'in-memory' — giữ mọi gói video trong RAM tới cuối rồi chép sang ArrayBuffer
+  // (gấp đôi dần), cắt ra bản sao, rồi chép tiếp sang Blob: video 2,5 phút ~14 Mbps (~260 MB) cần ~1–1,3 GB lúc ghép →
+  // máy ít RAM văng ở 96–99%. Nay ghi dần ra Blob, moov vẫn ở đầu file (fastStart 'reserve' = chừa chỗ trước).
+  const sink = blobSink();
+  let moovAudio = false;
+  const output = new MB.Output({
+    format: new MB.Mp4OutputFormat({ fastStart: 'reserve', onMoov: d => { moovAudio = hasAudioTrack(d); } }),
+    target: new MB.StreamTarget(sink.writable),
+  });
   const vsrc = new MB.EncodedVideoPacketSource(pv.kind);
-  output.addVideoTrack(vsrc, { frameRate: fps });
+  output.addVideoTrack(vsrc, { frameRate: fps, maximumPacketCount: frames + 120 });
   let asrc = null;
   if (audioBuffer) {
     asrc = new MB.AudioBufferSource({ codec: 'aac', bitrate: 160000 });
-    output.addAudioTrack(asrc);
+    // Gói AAC = 1024 mẫu; chừa dư 25% + phần đệm đầu của bộ mã hoá
+    output.addAudioTrack(asrc, { maximumPacketCount: Math.ceil(audioBuffer.length / 1024 * 1.25) + 512 });
   }
   await output.start();
+
+  // Âm thanh mã hoá TRƯỚC (vài MB): với fastStart 'reserve', Mediabunny chỉ bắt đầu ghi ra file khi mọi luồng đã có dữ liệu —
+  // để âm thanh sau cùng như trước thì toàn bộ video sẽ bị giữ trong RAM chờ âm thanh.
+  if (asrc) {
+    onProgress?.('audio', 0, 1);
+    try {
+      const total = Math.min(audioBuffer.length, Math.round(tl.duration * SR));
+      let buf = audioBuffer;
+      // Bản trộn dài hơn video ≤ 0,05 s thì dùng luôn (khỏi chép thêm ~60 MB cho video 2,5 phút)
+      if (audioBuffer.length - total > SR / 20 || audioBuffer.numberOfChannels !== 2) {
+        buf = new AudioBuffer({ numberOfChannels: 2, length: total, sampleRate: audioBuffer.sampleRate });
+        const L = audioBuffer.getChannelData(0), R = audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : L;
+        buf.copyToChannel(L.subarray(0, total), 0);
+        buf.copyToChannel(R.subarray(0, total), 1);
+      }
+      await asrc.add(buf);
+      asrc.close();
+    } catch (e) {
+      try { await output.cancel(); } catch { /* bỏ qua */ }
+      throw e;
+    }
+  }
 
   // Gói video phải đưa vào theo đúng thứ tự: xếp hàng bằng một chuỗi promise
   let chain = Promise.resolve();
@@ -182,12 +326,22 @@ export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffe
 
   const gr = gradedRenderer(width, height);
   const canvas = gr.canvas;
-  const frames = Math.round(tl.duration * fps);
+  const feed = tiles ? tileFeeder(tl, scale, cache) : null;
+  const bmPrev = cache.bitmap;
+  if (feed) cache.bitmap = true;   // ô tải trong lúc xuất là ImageBitmap → nhả là trả RAM ngay (render.js TileCache)
   const us = 1e6 / fps;
   try {
     for (let i = 0; i < frames; i++) {
       if (signal?.aborted) throw new DOMException('Đã huỷ', 'AbortError');
       if (encErr) throw encErr;
+      // Ô ảnh vệ tinh của khung này (tải đúng lúc; mạng chậm thì báo khách đang tải ảnh)
+      const tw = feed && feed.before(i / fps);
+      if (tw) {
+        const slow = setTimeout(() => onProgress?.('tiles', i + 1, frames), 700);
+        await tw;
+        clearTimeout(slow);
+        if (signal?.aborted) throw new DOMException('Đã huỷ', 'AbortError');
+      }
       // Video thực tế: tua đúng khung hình trong file trước khi vẽ (chỉ ở các cảnh có video)
       const pf = prepFrame && prepFrame(i / fps);
       if (pf) await pf;
@@ -207,39 +361,25 @@ export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffe
       }
     }
     await venc.flush();
+    venc.close();
+    await chain;
+    if (encErr) throw encErr;
+    vsrc.close();
+    onProgress?.('mux', 1, 1);
+    await output.finalize();
   } catch (e) {
     try { venc.close(); } catch { /* đã đóng */ }
     try { await output.cancel(); } catch { /* bỏ qua */ }
     throw e;
+  } finally {
+    cache.bitmap = bmPrev;
   }
-  venc.close();
-  await chain;
-  if (encErr) throw encErr;
-  vsrc.close();
-
-  if (asrc) {
-    onProgress?.('audio', 0, 1);
-    // Cắt đúng bằng thời lượng video rồi mã hoá AAC (WebAssembly)
-    const total = Math.min(audioBuffer.length, Math.round(tl.duration * SR));
-    let buf = audioBuffer;
-    if (total < audioBuffer.length || audioBuffer.numberOfChannels !== 2) {
-      buf = new AudioBuffer({ numberOfChannels: 2, length: total, sampleRate: audioBuffer.sampleRate });
-      const L = audioBuffer.getChannelData(0), R = audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : L;
-      buf.copyToChannel(L.subarray(0, total), 0);
-      buf.copyToChannel(R.subarray(0, total), 1);
-    }
-    await asrc.add(buf);
-    asrc.close();
-  }
-
-  await output.finalize();
   onProgress?.('done', 1, 1);
-  const out = output.target.buffer;
   // Tự kiểm tra: có tiếng mà file không có luồng âm thanh thì báo lỗi thay vì đưa file câm cho khách
-  if (audioBuffer && !hasAudioTrack(new Uint8Array(out))) {
+  if (audioBuffer && !moovAudio) {
     throw Object.assign(new Error('File xuất bị thiếu âm thanh'), { code: 'NO_AUDIO_ENCODER' });
   }
-  return new Blob([out], { type: 'video/mp4' });
+  return sink.blob('video/mp4');
 }
 
 // Tìm hộp 'mp4a' (âm thanh AAC) trong file MP4

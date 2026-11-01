@@ -299,11 +299,33 @@ export class TileCache {
     this.active = 0;
     this.max = 12;
     this.onLoad = onLoad;
+    // Lúc xuất video (export.js bật): tải ô bằng fetch + ImageBitmap để nhả ô thì close() trả RAM ngay. Thẻ <img> đã nhả
+    // vẫn bị trình duyệt giữ ~28 KB/ô (đo 1/11, ép thiếu RAM cũng không nhả) → 4.400 ô của video 2,5 phút ≈ 125 MB.
+    this.bitmap = false;
   }
   key(z, x, y) { return BASE.src + '/' + z + '/' + x + '/' + y; }
   ready(z, x, y) {
     const e = this.map.get(this.key(z, x, y));
     return e && e.ok ? e.img : null;
+  }
+  entry(k) { return this.map.get(k); }
+  // 1/11: nhả ô ảnh không còn cần (lúc xuất video) để máy ít RAM không bị văng. Chỉ nhả ô ĐÃ TẢI XONG có ảnh và không
+  // nằm trong `keep`; ô đang tải, ô lỗi/thiếu (không giữ ảnh) để nguyên. Cần lại thì tải lại (trình duyệt đã nhớ 24 h).
+  drop(keep) {
+    let n = 0;
+    for (const [k, e] of this.map) {
+      if (!e.ok || !e.img || keep.has(k)) continue;
+      const img = e.img;
+      if (typeof img.close === 'function') img.close();   // ImageBitmap
+      else {
+        img.onload = img.onerror = null;
+        try { img.removeAttribute('src'); } catch { /* bỏ qua */ }
+      }
+      e.img = null;
+      this.map.delete(k);
+      n++;
+    }
+    return n;
   }
   request(z, x, y, urgent = false) {
     const k = this.key(z, x, y);
@@ -343,34 +365,38 @@ export class TileCache {
     // Khoá/phiên: hỏi bằng fetch để biết mã lỗi. Nơi chưa có ảnh ở mức zoom này ibasemaps trả 404
     // (máy chủ công khai thì trả ô xám 200) — đó là "không có ảnh", KHÔNG phải khoá/phiên hỏng:
     // lấy ô cha, không đếm lỗi, không chuyển sang nguồn công khai.
-    let blobUrl = null, httpBad = false;
-    if (mode === 'key' || mode === 'sess') {
+    // Lúc xuất video (this.bitmap, export.js bật) mọi nguồn đều tải bằng fetch rồi giải mã thành ImageBitmap để nhả ô
+    // là close() trả RAM ngay. Ảnh hợp lệ mà máy không giải mã được → tắt cách này cho cả lần xuất, tải lại bằng <img>.
+    const useBm = this.bitmap && typeof createImageBitmap === 'function';
+    let blob = null, httpBad = false;
+    if (mode === 'key' || mode === 'sess' || useBm) {
       try {
         const r = await fetch(url, { mode: 'cors', credentials: 'omit' });
-        if (r.status === 404) {
+        if (r.status === 404 && (mode === 'key' || mode === 'sess')) {
           e.failed = true; e.missing = true;
           // Không await ô cha trong lúc giữ chỗ tải (12 chỗ cùng chờ ô cha nằm trong hàng đợi = kẹt)
           if (z > 10) this.request(z - 1, x >> 1, y >> 1, true).then(() => e.resolve(false));
           else e.resolve(false);
           return;
         }
-        if (r.ok) blobUrl = URL.createObjectURL(await r.blob());
+        if (r.ok) blob = await r.blob();
         else httpBad = true;
       } catch { httpBad = true; }
+      // ArcGIS hay báo lỗi bằng JSON kèm mã 200: không phải ảnh → đi đường lỗi như <img>
+      if (blob && useBm && !/^image\//.test(blob.type)) { blob = null; httpBad = true; }
     }
     return new Promise(done => {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.decoding = 'async';
       const keyed = mode === 'key';
+      let blobUrl = null;
       const free = () => { if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; } };
-      img.onload = () => {
+      const onload = img => {
         free();
         if (keyed) { keyedOk++; keyedStreak = 0; }
         if (mode === 'sess') { sessOk++; tileReport?.(e.pro ? 'phien_xuat' : 'phien'); }
         if (mode === 'pub' && src === 'img') tileReport?.('congkhai');
         // Ô ảnh vệ tinh z ≥ 19 nơi chưa có ảnh: dùng ô cha (z thấp hơn) — chờ ô cha tải xong mới báo xong
         if (src === 'img' && z >= 19 && isPlaceholder(img)) {
+          img.close?.();
           e.failed = true; e.missing = true;
           this.request(z - 1, x >> 1, y >> 1, true).then(() => e.resolve(false));
           done();
@@ -378,7 +404,7 @@ export class TileCache {
         }
         e.img = img; e.ok = true; e.resolve(true); this.onLoad?.(); done();
       };
-      img.onerror = () => {
+      const onerror = () => {
         free();
         if (keyed) {
           // Khoá lỗi: ô này thử phiên bản đồ ngay (không tính lượt thử). Lỗi liên tục (hết hạn mức/khoá hỏng) → bỏ khoá cả phiên làm việc.
@@ -407,7 +433,17 @@ export class TileCache {
         else { e.failed = true; e.resolve(false); }
         done();
       };
-      if (httpBad) { img.onerror(); return; }
+      if (httpBad) { onerror(); return; }
+      if (useBm && blob) {
+        createImageBitmap(blob).then(onload, () => { this.bitmap = false; this.queue.push(job); this.pump(); done(); });
+        return;
+      }
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.decoding = 'async';
+      img.onload = () => onload(img);
+      img.onerror = onerror;
+      if (blob) blobUrl = URL.createObjectURL(blob);
       img.src = blobUrl || url;
     });
   }
@@ -1706,21 +1742,25 @@ function placeRoadLabels(tl, cam, only = () => true, block = null) {
   return out;
 }
 
-// Danh sách ô ảnh cần cho cả video (tải trước khi xuất)
-export function collectTiles(tl, scale, step = 1 / 10) {
+// Ô ảnh mà khung ở thời điểm t cần — ĐÚNG như drawTiles trong render() (cùng camAt, groundRect, tileSpan).
+// 1/11: xuất video tải ô ảnh theo từng khung thay vì nạp cả video vào bộ nhớ (xem export.js tileFeeder).
+export function tilesAt(tl, scale, t) {
   useBase(tl.scene.base);
-  const gs = scale;
+  const cam = camAt(tl, Math.max(0, Math.min(t, tl.duration)));
+  const P = proj(cam.pitch, tl.LW, tl.LH);
+  const T = tileSpan(cam, groundRect(P), scale);
+  const out = [];
+  for (let ty = T.y0; ty <= T.y1; ty++) {
+    for (let tx = T.x0; tx <= T.x1; tx++) out.push([T.tz, ((tx % T.n) + T.n) % T.n, ty]);
+  }
+  return out;
+}
+
+// Danh sách ô ảnh cần cho cả video (tải trước khi xuất — nay chỉ còn dùng cho đường quay thời gian thực)
+export function collectTiles(tl, scale, step = 1 / 10) {
   const set = new Map();
   for (let t = 0; t <= tl.duration + 1e-6; t += step) {
-    const cam = camAt(tl, t);
-    const P = proj(cam.pitch, tl.LW, tl.LH);
-    const T = tileSpan(cam, groundRect(P), gs);
-    for (let ty = T.y0; ty <= T.y1; ty++) {
-      for (let tx = T.x0; tx <= T.x1; tx++) {
-        const wx = ((tx % T.n) + T.n) % T.n;
-        set.set(T.tz + '/' + wx + '/' + ty, [T.tz, wx, ty]);
-      }
-    }
+    for (const k of tilesAt(tl, scale, t)) set.set(k[0] + '/' + k[1] + '/' + k[2], k);
   }
   return [...set.values()];
 }
