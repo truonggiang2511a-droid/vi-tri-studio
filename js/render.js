@@ -226,6 +226,16 @@ function dropSession() {
   sess = null; sessDead = true;
   try { localStorage.removeItem(SESS_LS); } catch { /* bỏ qua */ }
 }
+// 1/11: lúc XUẤT video dùng phiên CHỦ ĐỘNG (không chờ khoá lỗi). Xuất 1080p tốn ~4.400 ô/video = gần hết 2 triệu ô/tháng,
+// còn phiên thì ô không giới hạn; mỗi máy 1 phiên/12 giờ (~20 máy xuất/ngày ≈ 600 phiên/tháng < 1.000 miễn phí).
+// Xem trước vẫn dùng khoá. Phiên lỗi → ô đó quay về khoá (không phải nguồn công khai).
+let preferSess = false;
+export function preferSession(on) { preferSess = !!on; }
+// Xin sẵn phiên trước khi tải ô (để ô đầu tiên đã đi phiên); trả true nếu có phiên
+export async function warmSession() {
+  if (!keyKnown) await keyGate;
+  return !!(await getSession());
+}
 const PUBLIC_TILE = (z, x, y) =>
   `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
 const ESRI = svc => (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/${svc}/MapServer/tile/${z}/${y}/${x}`;
@@ -317,11 +327,13 @@ export class TileCache {
     const { z, x, y, e, src } = job;
     // Ảnh vệ tinh đi lần lượt: khoá → phiên bản đồ → máy chủ công khai (e.mode nhớ bước của từng ô)
     if (src === 'img' && !keyKnown) await keyGate;
-    let mode = src !== 'img' ? 'other' : e.mode || (IMG_TOKEN ? 'key' : sessDead ? 'pub' : 'sess');
+    let mode = src !== 'img' ? 'other'
+      : e.mode || (preferSess && IMG_KEY && !sessDead ? 'sess' : IMG_TOKEN ? 'key' : sessDead ? 'pub' : 'sess');
+    if (mode === 'sess' && !e.mode && preferSess && IMG_TOKEN) e.pro = true; // phiên chủ động lúc xuất (khoá vẫn tốt)
     let stok = null;
     if (mode === 'sess') {
       stok = await getSession();
-      if (!stok) mode = 'pub';
+      if (!stok) mode = e.pro && IMG_TOKEN && !e.keyTried ? 'key' : 'pub';
     }
     return new Promise(done => {
       const img = new Image();
@@ -330,7 +342,7 @@ export class TileCache {
       const keyed = mode === 'key';
       img.onload = () => {
         if (keyed) { keyedOk++; keyedStreak = 0; }
-        if (mode === 'sess') { sessOk++; tileReport?.('phien'); }
+        if (mode === 'sess') { sessOk++; tileReport?.(e.pro ? 'phien_xuat' : 'phien'); }
         if (mode === 'pub' && src === 'img') tileReport?.('congkhai');
         // Ô ảnh vệ tinh z ≥ 19 nơi chưa có ảnh: dùng ô cha (z thấp hơn) — chờ ô cha tải xong mới báo xong
         if (src === 'img' && z >= 19 && isPlaceholder(img)) {
@@ -347,7 +359,8 @@ export class TileCache {
           keyedFail++; keyedStreak++;
           if ((keyedFail >= 6 && !keyedOk) || keyedStreak >= 12) IMG_TOKEN = '';
           tileReport?.('khoa_loi');
-          e.mode = sessDead ? 'pub' : 'sess';
+          e.keyTried = true;
+          e.mode = sessDead || e.sessTried ? 'pub' : 'sess';
           this.queue.push(job); this.pump();
           done();
           return;
@@ -355,7 +368,10 @@ export class TileCache {
         if (mode === 'sess') {
           sessFail++;
           if (sessFail >= 6 && !sessOk) dropSession();
-          e.mode = 'pub';
+          e.sessTried = true;
+          if (e.pro) tileReport?.('phien_loi');
+          // Phiên chủ động lỗi mà khoá còn tốt → quay về khoá; còn lại → nguồn công khai như trước
+          e.mode = e.pro && IMG_TOKEN && !e.keyTried ? 'key' : 'pub';
           this.queue.push(job); this.pump();
           done();
           return;

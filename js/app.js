@@ -3,7 +3,7 @@ import { parseCoords, haversineKm, formatKm } from './geo.js';
 import { CATEGORIES, scanArea, autoPick, autoPickRoads, routeTo, searchPlaces, placesNear, guessCategory, stitchWays, bridgeWays, localFrame, pickHubs, loadInfra, metroBuildNear, simplifyLine, loadHubFx, loadZones, loadWater } from './data.js';
 import { ICON_PATHS } from './icons.js';
 import {
-  FORMATS, TileCache, setImageryToken, onTileSource, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, HI_THEMES, LOT_STYLES, LOT_COLORS, STYLES, BASES,
+  FORMATS, TileCache, setImageryToken, onTileSource, preferSession, warmSession, buildTimeline, render, renderEdit, editTapToLatLng, lotAreaM2, formatArea, CAT_COLORS, FONT, LINE_THEMES, HI_THEMES, LOT_STYLES, LOT_COLORS, STYLES, BASES,
   CLIP_MAX, clipTime, camAt, coverTime,
 } from './render.js';
 import { sfxEvents, setSfxSample, hasSfxSample } from './sfx.js';
@@ -3293,6 +3293,9 @@ async function doExport() {
     const height = Math.round(width * F.LH / F.LW);
     const scale = width / F.LW;
     progress(1, 'Đang tải ảnh vệ tinh…');
+    // Ô ảnh lúc xuất đi phiên bản đồ (không tính vào 2 triệu ô ArcGIS); xin phiên lỗi thì vẫn dùng khoá như cũ
+    preferSession(true);
+    await warmSession().catch(() => false);
     await preloadTiles(xtl, scale, cache, (d, n) => progress(2 + 26 * d / Math.max(1, n), `Đang tải ảnh vệ tinh ${d}/${n}`), signal);
     if (signal.aborted) throw new DOMException('Đã huỷ', 'AbortError');
     await fontsReady();
@@ -3347,6 +3350,7 @@ async function doExport() {
     else { console.error(e); funnel('xuat_loi'); lastIssue = 'Xuất video lỗi: ' + (e.message || e); toast('Xuất video lỗi: ' + (e.message || e) + keep + ' Bấm Hỗ trợ (Zalo) để nhắn Giang.', 8000); pulseSupport(); }
   } finally {
     exporting = false;
+    preferSession(false);
     for (const c of media.clips) { try { c.el.pause(); } catch { /* bỏ qua */ } }
     dirty = true;
     updateBigPlay();
