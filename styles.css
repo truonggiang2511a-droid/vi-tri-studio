@@ -935,3 +935,22 @@ html.fs-lock, html.fs-lock body { overflow: hidden; }
 .stage.fs .transport .chip-btn, .stage.fs .lot-bar, .stage.fs .plan-bar, .stage.fs .look-pick, .stage.fs .buy-nudge { display: none !important; }
 .stage.fs:fullscreen { width: 100vw; height: 100vh; }
 .fx-all { align-self: flex-start; text-align: left; white-space: normal; font-size: 13.5px; padding: 2px 0 6px; }
+
+/* Hướng dẫn khoanh sáng cho khách mới (js/coach.js, 2/11/2026). Lớp tối không chặn bấm. */
+.coach-hole {
+  position: fixed; z-index: 70; pointer-events: none; border-radius: 14px;
+  box-shadow: 0 0 0 3px var(--accent), 0 0 0 9999px rgba(4, 10, 8, 0.62);
+  animation: coachPulse 1.8s ease-in-out infinite;
+}
+@keyframes coachPulse { 50% { box-shadow: 0 0 0 6px var(--accent), 0 0 0 9999px rgba(4, 10, 8, 0.62); } }
+.coach-tip {
+  position: fixed; z-index: 71; background: var(--surface); color: var(--ink); border-radius: 14px;
+  padding: 12px 14px 10px; box-shadow: 0 14px 36px rgba(0, 0, 0, 0.35); border: 2px solid var(--accent);
+  font-size: 14px; line-height: 1.45;
+}
+.coach-tip strong { display: block; font-size: 15.5px; margin-bottom: 2px; }
+.coach-tip p { margin: 0; }
+.coach-tip small { display: block; margin-top: 6px; color: var(--muted); font-size: 12.5px; }
+.coach-step { font-size: 11.5px; font-weight: 700; letter-spacing: .04em; color: var(--accent); text-transform: uppercase; }
+.coach-skip { margin-top: 6px; padding: 4px 0; background: none; border: 0; color: var(--muted); font: inherit; font-size: 12.5px; text-decoration: underline; cursor: pointer; }
+@media (prefers-reduced-motion: reduce) { .coach-hole { animation: none; } }

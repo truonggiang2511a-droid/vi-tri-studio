@@ -10,8 +10,9 @@ F_BLACK = '/usr/share/fonts/opentype/inter/Inter-Black.otf'
 F_XB = '/usr/share/fonts/opentype/inter/Inter-ExtraBold.otf'
 F_SB = '/usr/share/fonts/opentype/inter/Inter-SemiBold.otf'
 YEL = (251, 191, 36); WHITE = (255, 255, 255); INK = (12, 14, 20)
-GRADE = 'eq=brightness=0.03:contrast=1.06:saturation=1.18'
+GRADE = "curves=r='0/0 0.18/0.32 0.5/0.69 1/1':g='0/0 0.18/0.30 0.5/0.66 1/1':b='0/0 0.18/0.28 0.5/0.63 1/1',eq=contrast=1.07:saturation=1.45,unsharp=5:5:0.9:3:3:0.4"
 
+UI_GRADE = 'eq=contrast=1.05:saturation=1.25,unsharp=5:5:0.7:3:3:0.3'
 def run(cmd):
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode:
@@ -81,7 +82,7 @@ def cut(src, segs, name):
     for i, (ss, dur) in enumerate(segs):
         p = os.path.join(OUT, f'_{name}_{i}.mp4')
         run(['ffmpeg', '-v', 'error', '-y', '-ss', str(ss), '-t', str(dur), '-i', src, '-an',
-             '-vf', f'scale={W}:{H}:flags=lanczos,{GRADE},fps=30,setsar=1',
+             '-vf', f'scale={W}:{H}:flags=lanczos,{GRADE if "demo" in src else UI_GRADE},fps=30,setsar=1',
              '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', '-pix_fmt', 'yuv420p', p])
         parts.append(p)
     lst = os.path.join(OUT, f'_{name}.txt')
@@ -117,7 +118,7 @@ CTA_Y = 640
 
 def ad_a():
     base, T = cut(DEMO, [(6.0, 3.6), (25.0, 3.0), (49.5, 4.0), (72.5, 3.0), (103.0, 3.0), (108.0, 3.2)], 'A')
-    hook = card([('DÁN TOẠ ĐỘ', WHITE, F_BLACK, 84), ('2 PHÚT CÓ VIDEO VỊ TRÍ', YEL, F_BLACK, 70)], 250, accent=YEL, name='A_hook')
+    hook = card([('MÔI GIỚI BĐS ƠI!', YEL, F_BLACK, 66), ('DÁN TOẠ ĐỘ', WHITE, F_BLACK, 84), ('2 PHÚT CÓ VIDEO VỊ TRÍ', YEL, F_BLACK, 70)], 250, accent=YEL, name='A_hook')
     t1, t2, t3 = 3.6, 6.6, 10.6
     ov = [(hook, 0, 3.6),
           (chip('✓ Tự vẽ trục đường lớn', 250, 'A_c1'), t1, t2),
@@ -145,7 +146,9 @@ def ad_c():
     bgp = os.path.join(OUT, '_C_bg.png')
     poster(DEMO, 8.0, bgp)
     im = Image.open(bgp).convert('RGB').resize((W, H), Image.LANCZOS).filter(ImageFilter.GaussianBlur(10))
-    im = Image.blend(im, Image.new('RGB', (W, H), (8, 10, 16)), 0.45); im.save(bgp)
+    from PIL import ImageEnhance
+    im = ImageEnhance.Brightness(im).enhance(1.35); im = ImageEnhance.Color(im).enhance(1.4)
+    im = Image.blend(im, Image.new('RGB', (W, H), (8, 10, 16)), 0.22); im.save(bgp)
     intro = os.path.join(OUT, '_C_intro.mp4')
     run(['ffmpeg', '-v', 'error', '-y', '-loop', '1', '-t', '4.6', '-i', bgp, '-vf', 'fps=30,format=yuv420p,setsar=1',
          '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '16', intro])

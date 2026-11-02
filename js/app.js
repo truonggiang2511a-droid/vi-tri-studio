@@ -17,6 +17,7 @@ import { onAccountChange, initAccount, setAccountLocation, beginExport, requireL
 import { splitVoice, joinForTts, splitAt } from './voicesplit.js';
 import { loadConfig, initTracking, countVisit, funnel } from './track.js';
 import { initInstall } from './install.js';
+import { enableCoach, coach, coachDone, coachOpen, coachActive } from './coach.js';
 import { initLeads, downloadPageQr, pageUrl, openLeads } from './leads.js';
 import { SB_URL, SB_KEY } from './sb.js';
 import { speakNumbers, speakPhones } from './vinum.js';
@@ -1663,7 +1664,7 @@ function applyCoords(text, { silent = false } = {}) {
       state.coordText = t;
       state.coordSet = true;
       $('coordInput').value = t;
-      funnel('toado');
+      funnel('toado'); coachAfterCoords();
       msg.textContent = `Đã đọc từ link${r.name ? ' (' + r.name + ')' : ''}: ${t}`;
       msg.className = 'hint ok';
     }).catch(e => { msg.textContent = e.message; msg.className = 'hint err'; });
@@ -1677,7 +1678,7 @@ function applyCoords(text, { silent = false } = {}) {
   }
   setHouse({ lat: r.lat, lng: r.lng }, { fresh: !silent });
   state.coordText = text;
-  if (!silent) { state.coordSet = true; funnel('toado'); }
+  if (!silent) { state.coordSet = true; funnel('toado'); coachAfterCoords(); }
   msg.textContent = `Đã đọc: ${r.lat.toFixed(6)}, ${r.lng.toFixed(6)}`;
   msg.className = 'hint ok';
   return true;
@@ -1840,7 +1841,7 @@ async function bootSample() {
   } catch { return false; }
   const d = await fetchSample(2500);
   if (!d || !d.pois?.length) return false;
-  try { writeSampleStore(d); return true; } catch { return false; }
+  try { writeSampleStore(d); enableCoach(); return true; } catch { return false; }
 }
 // Khách đổi sang căn của mình: bỏ thông tin mẫu (giá, diện tích…) để không lọt vào video căn thật
 // Giọng đọc của căn mẫu: một file m4a, mỗi câu một đoạn (mốc trong sample.json) → cắt ra gắn vào từng cảnh như giọng AI thật
@@ -1931,6 +1932,7 @@ function autoPlaySample() {
   t = 0; updateTimeUi();
   setTimeout(() => { if (!playing && !editing && state.sample) play(); }, 350);
   toast('Video mẫu đang phát. Dán toạ độ căn của anh/chị để làm video thật.', 5000);
+  setTimeout(coachCoords, 10000); // 2/11: khoanh sáng ô dán vị trí sau khi khách đã thấy phần đầu video mẫu
   // 28/10: trên điện thoại (một cột) khung "Chọn kiểu video" cao ~260 px đẩy ô dán toạ độ xuống dưới màn hình →
   // chỉ hiện ở máy tính (2 cột); điện thoại vẫn thấy khung này sau khi quét căn của mình.
   if (matchMedia('(min-width: 980px)').matches) setTimeout(showLooks, 2500);
@@ -1971,7 +1973,8 @@ function maybeNudge() {
   // 28/10 (Giang): khách CHƯA đăng nhập thấy lời mời đăng ký sớm — video mẫu sau ~12 s (vừa qua thẻ giá + cảnh tỉnh/thành),
   // video căn của khách sau ~15 s. Trước đây đợi 60% video (~70 s) → 27/10 chỉ 13/62 khách xem tới đó. Hết lượt: vẫn 60%.
   const at = !account.profile ? Math.min(state.sample ? 12 : 15, (tl?.duration || 0) * 0.6) : (tl?.duration || 0) * 0.6;
-  if (nudgeDone || !tl || t < at) return;
+  // Đang khoanh sáng hướng dẫn, hoặc khách mới vừa dán vị trí căn của mình mà chưa quét: mời đăng ký đợi sau (không chồng 2 lời nhắc)
+  if (nudgeDone || !tl || t < at || coachOpen() || (coachActive() && !state.sample && step === 1)) return;
   nudgeDone = true;
   try { if (sessionStorage.getItem('vitri.nudge')) return; sessionStorage.setItem('vitri.nudge', '1'); } catch { /* bỏ qua */ }
   const p = account.profile, info = account.info || {};
@@ -2162,6 +2165,7 @@ async function scan() {
   const btn = $('scanBtn');
   btn.disabled = true;
   $('scanLabel').textContent = 'Đang quét…';
+  coachDone('quet');
   setStatus('Đang tìm tiện ích và đường lớn quanh căn nhà…');
   try {
     const res = await scanArea(state.house, state.radiusKm, scanCtrl.signal, msg => setStatus(msg));
@@ -2206,6 +2210,7 @@ async function scan() {
     toast(`Tìm thấy ${res.pois.length} tiện ích, ${res.roads.length} tuyến đường lớn` + (b ? `, ranh ${b.short} cách ${formatKm(b.km)}` : '') + `. Đã chọn sẵn ${state.selected.length} điểm.`, 4000);
     showStep(2);
     setTimeout(showLooks, 700);
+    if (!state.sample) setTimeout(() => coachStep(2), 1600);
   } catch (e) {
     if (e.name !== 'AbortError') toast(e.message || 'Không quét được. Kiểm tra mạng rồi thử lại.', 5000);
   } finally {
@@ -3471,6 +3476,7 @@ function showStep(n, { scroll = true } = {}) {
     else window.scrollTo({ top: 0, behavior: 'smooth' });
   }
   updateQuick();
+  if (scroll && step >= 3) setTimeout(() => coachStep(step), 500);
 }
 let curSub = 'info';
 function setSub(name, { scroll = false } = {}) {
@@ -3514,6 +3520,38 @@ function updateQuick() {
   updateBigPlay();
 }
 let lastFresh = null;
+// ---------- Hướng dẫn khoanh sáng cho khách mới (js/coach.js, 2/11) ----------
+// Mỗi lần khoanh đúng 1 chỗ khách cần bấm tiếp; chỉ chạy trên máy mới (bật lúc video mẫu tự phát lần đầu).
+function coachCoords() {
+  if (!state.sample || $('coordInput').value.trim()) return;
+  coach($('coordInput').closest('.input-row'), {
+    key: 'toado', step: 'Bước 1/5', title: 'Dán vị trí căn nhà của anh/chị',
+    text: 'Video đang phát chỉ là video mẫu. Dán <b>link Google Maps</b> hoặc toạ độ căn nhà vào ô này để làm video thật.',
+    small: 'Lấy link: mở Google Maps → nhấn giữ lên căn nhà → Chia sẻ → Sao chép liên kết.',
+    onShow: () => funnel('hd_toado'),
+  });
+}
+function coachAfterCoords() {
+  coachDone('toado');
+  setTimeout(() => {
+    if (state.sample || !state.house || $('scanBtn').disabled || step !== 1) return;
+    coach($('scanBtn'), {
+      key: 'quet', step: 'Bước 2/5', title: 'Bấm Quét tiện ích',
+      text: 'App tự tìm trường, chợ, bệnh viện, đường lớn quanh căn nhà — khoảng 20 giây.',
+      onShow: () => funnel('hd_quet'),
+    });
+  }, 700);
+}
+const COACH_STEPS = {
+  2: { key: 'tiep', step: 'Bước 3/5', title: 'Video căn của anh/chị đã có', text: 'Bấm <b>▶ Xem</b> để xem thử. Ưng thì bấm nút này để thêm giá, giọng đọc.' },
+  3: { key: 'giong', step: 'Bước 4/5', title: 'Thêm giá và giọng đọc', text: 'Điền giá, diện tích nếu có rồi bấm nút này — app dẫn lần lượt tới <b>Tạo giọng đọc</b> (AI viết lời và đọc cho video).' },
+  4: { key: 'xuat', step: 'Bước 5/5', title: 'Xuất video', text: 'Bấm để xuất MP4 — lưu về máy, đăng TikTok, Facebook, Zalo được ngay.' },
+};
+function coachStep(n) {
+  const c = COACH_STEPS[n];
+  if (!c || state.sample || step !== n || !state.pois.length) return;
+  coach($('stepNext'), { ...c, onShow: () => funnel('hd_' + c.key) });
+}
 // Khách đang ở căn mẫu bấm Quét/Tiếp tục mà chưa dán toạ độ: đưa tới ô toạ độ, nháy sáng
 function askCoords() {
   showStep(1);
@@ -3522,6 +3560,7 @@ function askCoords() {
   inp.classList.remove('coord-hot'); void inp.offsetWidth; inp.classList.add('coord-hot');
   $('coordMsg').textContent = 'Dán toạ độ hoặc link Google Maps căn của anh/chị vào ô này, rồi bấm Quét tiện ích.';
   $('coordMsg').className = 'hint coord-cta';
+  setTimeout(coachCoords, 500);
 }
 async function stepNext() {
   if (step === 4) { doExport(); return; }
