@@ -1051,7 +1051,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   // Không đủ tiện ích để chèn giữa: dời đoạn "giữa" xuống trước cảnh tổng kết
   while (clipNext < clips.length && CLIP_SLOTS[clipNext] === 'mid') CLIP_SLOTS[clipNext] = 'sum';
   pushClips('sum');
-  if (pois.length || boundary) raw.push({ type: 'summary', d: 5.4, to: camSummary, move: 0.5, push: 0.14, side: 1, arc: 1.0, vkey: 'summary' });
+  if ((pois.length || boundary) && !scene.noSummary) raw.push({ type: 'summary', d: 5.4, to: camSummary, move: 0.5, push: 0.14, side: 1, arc: 1.0, vkey: 'summary' });
   // 24/10 tối (Giang): cảnh kết (kêu gọi đi xem nhà) đứng NGAY sau tổng kết; video + ảnh thực tế dồn hết xuống CUỐI video,
   // chiếu liền nhau (không chen bản đồ): video phụ (đoạn đầu có câu mời xem) → ảnh. Khách gắn nhãn phòng, app xếp
   // mặt tiền → phòng khách → bếp → phòng ngủ → toilet.

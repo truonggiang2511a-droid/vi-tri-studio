@@ -420,6 +420,7 @@ function buildScene() {
     roadWidth: (state.roadWidth || '').trim(),
     showStreets: state.showStreets !== false,
     sweep: !!state.showSweep,
+    noSummary: !!(state.sample && state.sampleShort), // video mẫu ngắn (2/11): bỏ cảnh tổng kết
     roadTheme: state.roadTheme,
     hiTheme: state.hiTheme,
     lotStyle: state.lotStyle, lotColor: state.lotColor, lotDims: lotDimsOn(),
@@ -1822,9 +1823,23 @@ async function fetchSample(ms = 4000) {
   } catch { return null; } finally { clearTimeout(tm); }
 }
 // Ghi căn mẫu vào bộ nhớ máy (ngoài state) để lần mở trang kế tiếp dựng UI từ đầu như một căn bình thường
+// 2/11 tối (Giang duyệt): video mẫu NGẮN ~1 phút (trước ~2 phút, 7 ngày chỉ 16% khách xem tới 60%). Giữ đủ hiệu ứng Giang chốt
+// sáng 2/11 (khoanh xã → tỉnh, tia radar ở cảnh bán kính, máy bay cất cánh, chữ điểm nhấn) nhưng bớt cảnh: 1 trục đường ★,
+// 2 tiện ích, Kết nối vùng chỉ các điểm mốc có trong lời đọc, bỏ hạ tầng đang thi công + cảnh tổng kết (scene.noSummary).
+// Lời đọc các cảnh bị bỏ vẫn nằm trong sample.json, chỉ không dùng. Dựng lại sample.json thì xem lại các id dưới đây.
+const SAMPLE_SHORT_POIS = ['p1072881_10661986', 'o1072654_10661343']; // Chợ Kiến Đức 2 · Bệnh viện mắt Tây Nam
+function shortSample(d) {
+  const sel = d.selected || [];
+  const keep = SAMPLE_SHORT_POIS.filter(id => sel.includes(id));
+  const road = (d.roadStars || [])[0] || (d.selectedRoads || [])[0];
+  const off = (d.region?.anchors || []).map(a => a.id).filter(id => !/Trung tâm|Tân Sơn Nhất|Ga Sài Gòn/.test(id));
+  return { sampleShort: true, selected: keep.length === 2 ? keep : sel.slice(0, 2), selectedRoads: road ? [road] : [],
+    roadStars: road ? [road] : [], regionOff: off, showInfra: false };
+}
 function writeSampleStore(d, base = {}) {
   const o = { ...base };
   for (const k of SAMPLE_KEYS) if (k in d) o[k] = d[k];
+  Object.assign(o, shortSample(d));
   Object.assign(o, { sample: true, coordSet: true, cloudId: null, projName: '', musicLib: 'hung-hon', musicV: 2, labelV: 3, speedV: 2,
     fxV: 3, m1V: 2, ...SAMPLE_FX, // 2/11 Giang: video mẫu bật ĐỦ hiệu ứng để khách mới thấy ấn tượng; căn của khách tắt sẵn (leaveSample)
     lot: [], sampleVoice: d.voice || null, aiVoiceOn: true, subsOn: true });
@@ -1885,6 +1900,7 @@ function leaveSample() {
     if (state[k] === SAMPLE[k]) { state[k] = ''; const el = $(id); if (el) el.value = ''; }
   }
   Object.assign(state, OWN_FX); // căn của khách: hiệu ứng thêm tắt sẵn, khách tự tick
+  if (state.sampleShort) { state.sampleShort = false; state.showInfra = true; } // video mẫu ngắn đã tắt cảnh hạ tầng
   syncFxBoxes();
   const tg = $('sampleTag'); if (tg) tg.hidden = true;
 }
