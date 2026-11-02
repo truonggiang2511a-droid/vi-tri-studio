@@ -156,6 +156,7 @@ function load() {
     const raw = localStorage.getItem(STORE);
     if (raw) {
       const o = fixLook(fixSpeed(JSON.parse(raw)));
+      if (o.sample && o.sampleFxV !== SAMPLE_FX.sampleFxV) Object.assign(o, SAMPLE_FX); // máy đang mở video mẫu bản cũ (hiệu ứng tắt)
       // 23/10/2026: mặc định chữ trục đường đổi từ Vàng kim sang Trắng bóng
       if (o.labelV !== 2) { if (!o.roadLabelFace || o.roadLabelFace === 'vangkim') o.roadLabelFace = 'trang'; o.labelV = 2; }
       if (o.labelV !== 3) { o.roadLabelFace = 'line'; o.labelV = 3; } // 23/10 tối: mặc định về kiểu gốc theo màu line
@@ -1806,6 +1807,11 @@ const SAMPLE_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusK
   // Kịch bản AI (phong cách Chuyên gia) + giọng đọc tạo sẵn 1 lần cho căn mẫu (sample-voice.m4a), có phụ đề
   'scriptEdits', 'scriptAi', 'voSig', 'aiTone', 'scriptMode', 'voiceId', 'voiceSpeed'];
 const SAMPLE_PLAY = 'vitri.samplePlay';
+// 2/11 (Giang): VIDEO MẪU bật đủ hiệu ứng thêm (khoanh xã/phường → tỉnh/thành, tia radar, máy bay/metro/khoanh tiện ích,
+// chữ điểm nhấn + icon mẫu 1) để khách mới vào thấy ấn tượng. Khách sang căn của mình → tắt hết (OWN_FX), khách tự tick
+// (hoặc bấm "Bật hết như video mẫu" #fxAllBtn). Đổi bộ hiệu ứng của video mẫu thì đổi SAMPLE_FX_V để máy đang mở mẫu cũng nhận.
+const SAMPLE_FX = { showAdminArea: true, showSweep: true, showHubFx: true, keyLook: 'mau1', sampleFxV: 1 };
+const OWN_FX = { showAdminArea: false, showSweep: false, showHubFx: false, keyLook: '' };
 async function fetchSample(ms = 4000) {
   const ctl = new AbortController();
   const tm = setTimeout(() => ctl.abort(), ms);
@@ -1819,8 +1825,7 @@ function writeSampleStore(d, base = {}) {
   const o = { ...base };
   for (const k of SAMPLE_KEYS) if (k in d) o[k] = d[k];
   Object.assign(o, { sample: true, coordSet: true, cloudId: null, projName: '', musicLib: 'hung-hon', musicV: 2, labelV: 3, speedV: 2,
-    showAdminArea: false, showSweep: false, showHubFx: false, fxV: 3, // 1/11 19:55: video mẫu tự nhiên như bản đầu, hiệu ứng thêm khách tự tick
-    keyLook: '', m1V: 2, // 31/10 15:40 Giang: video mẫu trở lại thẻ giá như cũ — mẫu 1 chỉ khi khách tự tick (trước: 30/10 15:52 bật sẵn)
+    fxV: 3, m1V: 2, ...SAMPLE_FX, // 2/11 Giang: video mẫu bật ĐỦ hiệu ứng để khách mới thấy ấn tượng; căn của khách tắt sẵn (leaveSample)
     lot: [], sampleVoice: d.voice || null, aiVoiceOn: true, subsOn: true });
   if (!d.voice) Object.assign(o, { scriptEdits: {}, scriptAi: false, voSig: '' });
   localStorage.setItem(STORE, JSON.stringify(o));
@@ -1878,7 +1883,25 @@ function leaveSample() {
   for (const [k, id] of [['price', 'priceInput'], ['area', 'areaInput'], ['beds', 'bedsInput'], ['legal', 'legalInput'], ['floors', 'floorsInput']]) {
     if (state[k] === SAMPLE[k]) { state[k] = ''; const el = $(id); if (el) el.value = ''; }
   }
+  Object.assign(state, OWN_FX); // căn của khách: hiệu ứng thêm tắt sẵn, khách tự tick
+  syncFxBoxes();
   const tg = $('sampleTag'); if (tg) tg.hidden = true;
+}
+// Ô tick "Hiệu ứng thêm" (mục ② Phong cách) theo state + nút bật nhanh cả bộ như video mẫu
+function syncFxBoxes() {
+  const set = (id, v) => { const el = $(id); if (el) el.checked = v; };
+  set('adminAreaOn', !!state.showAdminArea);
+  set('sweepOn', !!state.showSweep);
+  set('hubFxOn', state.showHubFx === true);
+  set('mau1On', state.keyLook === 'mau1');
+  const b = $('fxAllBtn');
+  if (b) b.hidden = !!(state.sample || (state.showAdminArea && state.showSweep && state.showHubFx === true && state.keyLook === 'mau1'));
+}
+function fxAll() {
+  Object.assign(state, { showAdminArea: true, showSweep: true, showHubFx: true, keyLook: 'mau1' });
+  syncFxBoxes();
+  save(); media.mixKey = ''; renderScript(); ensureHubFx(); prepMau1(); scheduleRebuild();
+  toast(voiceDurations() ? 'Đã bật đủ hiệu ứng như video mẫu.' : 'Đã bật đủ hiệu ứng. Chữ điểm nhấn hiện theo giọng đọc — tạo giọng ở mục ③ để thấy.', 3500);
 }
 // Phát video mẫu. Trình duyệt chặn tiếng khi khách chưa chạm vào trang → phát hình trước, nút "Bật tiếng" nháy;
 // chạm bất kỳ đâu là có nhạc ngay đúng chỗ đang phát.
@@ -4719,18 +4742,17 @@ function init() {
   $('showTitle').addEventListener('change', e => { state.showTitle = e.target.checked; $('titleInput').disabled = !e.target.checked; save(); scheduleRebuild(); });
   $('showStreets').checked = state.showStreets !== false;
   $('showStreets').addEventListener('change', e => { state.showStreets = e.target.checked; scheduleRebuild(); });
-  $('sweepOn').checked = !!state.showSweep;
-  $('adminAreaOn').checked = !!state.showAdminArea;
-  $('adminAreaOn').addEventListener('change', e => { state.showAdminArea = e.target.checked; save(); renderScript(); scheduleRebuild(); });
-  $('sweepOn').addEventListener('change', e => { state.showSweep = e.target.checked; save(); scheduleRebuild(); });
-  $('hubFxOn').checked = state.showHubFx === true;
-  $('hubFxOn').addEventListener('change', e => { state.showHubFx = e.target.checked; save(); if (e.target.checked) ensureHubFx(); scheduleRebuild(); });
+  $('adminAreaOn').addEventListener('change', e => { state.showAdminArea = e.target.checked; save(); renderScript(); scheduleRebuild(); syncFxBoxes(); });
+  $('sweepOn').addEventListener('change', e => { state.showSweep = e.target.checked; save(); scheduleRebuild(); syncFxBoxes(); });
+  $('hubFxOn').addEventListener('change', e => { state.showHubFx = e.target.checked; save(); if (e.target.checked) ensureHubFx(); scheduleRebuild(); syncFxBoxes(); });
   $('mau1On').addEventListener('change', e => {
-    state.keyLook = e.target.checked ? 'mau1' : ''; save(); media.mixKey = ''; scheduleRebuild(); prepMau1();
+    state.keyLook = e.target.checked ? 'mau1' : ''; save(); media.mixKey = ''; scheduleRebuild(); prepMau1(); syncFxBoxes();
     if (e.target.checked && !voiceDurations()) toast('Chữ điểm nhấn hiện theo giọng đọc — tạo giọng ở mục ③ để thấy.', 3500);
   });
+  $('fxAllBtn').addEventListener('click', fxAll);
   onAccountChange(() => { syncMau1Row(); ensureHubFx(); scheduleRebuild(); });
   syncMau1Row();
+  syncFxBoxes();
   for (const [id, key] of [['areaWardInput', 'areaWard'], ['areaProvInput', 'areaProv'], ['roadWidthInput', 'roadWidth']]) {
     $(id).value = state[key] || '';
     $(id).addEventListener('input', e => { state[key] = e.target.value; scheduleRebuild(); });

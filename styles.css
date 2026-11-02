@@ -934,3 +934,4 @@ html.fs-lock, html.fs-lock body { overflow: hidden; }
 .stage.fs .transport { padding: 0 12px 6px; color: #fff; }
 .stage.fs .transport .chip-btn, .stage.fs .lot-bar, .stage.fs .plan-bar, .stage.fs .look-pick, .stage.fs .buy-nudge { display: none !important; }
 .stage.fs:fullscreen { width: 100vw; height: 100vh; }
+.fx-all { align-self: flex-start; text-align: left; white-space: normal; font-size: 13.5px; padding: 2px 0 6px; }
