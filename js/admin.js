@@ -353,6 +353,7 @@ async function loadFunnel() {
     $('funDaily').innerHTML = f.daily.map(d => `<tr><td class="num">${String(d.day).split('-').reverse().join('/')}</td><td class="num">${d.visits}<span class="mini-bar" style="width:${Math.round(80 * d.visits / maxV)}px"></span></td><td class="num">${d.installs ?? 0}</td><td class="num">${d.signups}</td><td class="num">${d.exports}</td><td class="num">${d.paid}</td></tr>`).join('');
   } catch (e) { steps.innerHTML = `<p class="hint err">${esc(e.message)}</p>`; }
   loadFollowups();
+  loadDormant();
   loadMapUsage();
 }
 const MAP_NAME = { 'vietmap-route': 'Vietmap · đường đi (tính phí)', 'vietmap-reverse': 'Vietmap · tên xã/tỉnh (tính phí)', 'vietmap-loi': 'Vietmap lỗi / hết lượt (đã chuyển dự phòng)',
@@ -378,6 +379,45 @@ async function loadFollowups() {
         <td class="num">${u.credits}</td><td class="num">${u.exports}</td><td class="num">${fmt(u.last_export)}</td>
         <td>${esc(SRC_NAME[u.source] || u.source || '—')}</td><td><div class="acts">${contact}</div></td></tr>`;
     }).join('') || '<tr><td colspan="6" class="muted">Chưa có khách nào cần chăm sóc.</td></tr>';
+  } catch (e) { tb.innerHTML = `<tr><td colspan="6" class="hint err">${esc(e.message)}</td></tr>`; }
+}
+
+// Khách ĐÃ TRẢ TIỀN mà ≥ 7 ngày không xuất/tạo giọng (2/11): tin nhắn soạn sẵn theo lượt còn lại để Giang chép rồi nhắn Zalo
+function dormantMsg(u) {
+  const live = u.unlimited_until && new Date(u.unlimited_until) > Date.now();
+  const left = live ? `Gói không giới hạn của anh/chị còn hạn tới ${new Date(u.unlimited_until).toLocaleDateString('vi-VN')}`
+    : u.credits > 0 ? `Tài khoản của anh/chị còn ${u.credits} lượt video` : '';
+  const nm = (u.name || '').trim();
+  const hi = !nm ? 'Chào anh/chị' : /^(anh|chị|chi|cô|chú|em)\s/i.test(nm) ? 'Chào ' + nm : 'Chào anh/chị ' + nm; // tên đã có "Anh …" thì không lặp
+  return `${hi}, em là Vị Trí Studio ạ. ${left ? left + '. ' : ''}`
+    + 'Tuần này anh/chị có căn mới không ạ? Chỉ cần dán link Google Maps của căn vào vitristudio.com là có video vị trí trong khoảng 2 phút'
+    + (u.page_views > 0 ? `, kèm trang web căn (các trang của anh/chị đã có ${u.page_views} lượt xem)` : '')
+    + '. Anh/chị gửi em link căn, em làm giúp luôn ạ.';
+}
+async function loadDormant() {
+  const tb = $('funDormant');
+  if (!tb) return;
+  tb.innerHTML = '<tr><td colspan="6" class="muted">Đang tải…</td></tr>';
+  try {
+    const list = await call('vt_admin_dormant', { p_days: 7 });
+    tb.innerHTML = list.map((u, i) => {
+      const phone = /^0\d{9}$/.test(u.login) ? u.login : '';
+      const msg = dormantMsg(u);
+      const contact = phone ? `<a class="btn btn-quiet" href="https://zalo.me/${phone}" target="_blank" rel="noopener">Nhắn Zalo</a>`
+        : u.login.includes('@') ? `<a class="btn btn-quiet" href="mailto:${esc(u.login)}?subject=${encodeURIComponent('Vị Trí Studio — căn mới tuần này?')}&body=${encodeURIComponent(msg)}">Gửi email</a>` : '';
+      const live = u.unlimited_until && new Date(u.unlimited_until) > Date.now();
+      return `<tr><td>${esc(u.name || '—')}<span class="sub">${esc(u.login)}${u.tg ? ' · có Telegram' : ''}</span>${u.note ? `<span class="sub">📝 ${esc(u.note)}</span>` : ''}</td>
+        <td class="num">${live ? 'Không giới hạn' : u.credits}</td><td class="num">${money(u.paid_total)}</td><td class="num">${u.exports}</td>
+        <td class="num">${u.last_use ? fmt(u.last_use) : '—'}</td>
+        <td><div class="acts"><button type="button" class="btn btn-quiet" data-dmsg="${i}">Chép tin nhắn</button>${contact}</div></td></tr>`;
+    }).join('') || '<tr><td colspan="6" class="muted">Khách đã trả tiền đều đang dùng đều. 👍</td></tr>';
+    tb.onclick = async e => {
+      const b = e.target.closest('[data-dmsg]');
+      if (!b) return;
+      const msg = dormantMsg(list[+b.dataset.dmsg]);
+      try { await navigator.clipboard.writeText(msg); b.textContent = 'Đã chép ✓'; }
+      catch { prompt('Chép tin nhắn:', msg); }
+    };
   } catch (e) { tb.innerHTML = `<tr><td colspan="6" class="hint err">${esc(e.message)}</td></tr>`; }
 }
 
