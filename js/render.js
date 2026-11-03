@@ -40,6 +40,16 @@ let GOLD = '#FFD166';
 // ---------- Phong cách video ----------
 // Mỗi kiểu đổi màu nhấn, nền thẻ, font tiêu đề, kiểu chữ tiêu đề, tông bản đồ, cảnh mở đầu và cảnh kết.
 export const STYLES = {
+  // 3/11/2026 (Giang chốt): "Vàng neon" = Y NGUYÊN phong cách mặc định đợt đăng ký đông nhất 20–24/10 (bản 5ce19cb: Neon đêm
+  // màu vàng, Be Vietnam Pro 800, tiêu đề chữ 3D, thẻ giá mở đầu KIỂU CŨ — không có gói chữ động trong STYLE_MOTION).
+  // Đứng ĐẦU + mặc định cho khách mới và video mẫu; "Xanh neon" xếp thứ 2. Khoá 'neon' giữ nguyên cho căn khách đã lưu.
+  vangneon: {
+    label: 'Vàng neon', desc: 'Line phát sáng, chữ 3D vàng — nổi bật trên TikTok',
+    head: BASE_FONT, headW: 800, acc: '#FFD166', accInk: '#1b1405', acc2: '#5EEAF5',
+    card: 'rgba(12,16,24,0.9)', ink: '#ffffff', soft: 'rgba(255,255,255,0.82)', mute: 'rgba(255,255,255,0.6)',
+    tint: '#9fc4be', dark: 0.12, title: '3d', capBg: 'rgba(0,0,0,0.62)', capInk: '#ffffff',
+    road: 'auto', route: 'vang', swatch: ['#0c1513', '#FFD166', '#5EEAF5'],
+  },
   neon: {
     // 30/10 14:20 Giang: đồng bộ màu — Neon đêm lấy XANH NEON làm màu chính (thẻ, thẻ mở đầu, chữ điểm nhấn, CTA), vàng là màu phụ
     label: 'Xanh neon', desc: 'Line phát sáng, chữ 3D — nổi bật trên TikTok',
@@ -1133,7 +1143,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   });
   // 30/10 14:25 Giang: phụ đề trắng bóng đậm từng từ (Hook Kit, có gõ phím) CHỈ cho phong cách đầu tiên Neon đêm;
   // 5 phong cách còn lại giữ phụ đề riêng của phong cách (nền thẻ màu) như video khách thường
-  const capM1 = scene.keyLook === 'mau1' && (scene.style || 'neon') === 'neon';
+  const capM1 = scene.keyLook === 'mau1' && ['neon', 'vangneon'].includes(scene.style || 'neon'); // 3/11: cả Vàng neon (phong cách đầu tiên mới)
   const captions = opts.captions && vd ? buildCaptions(phases, opts.captions, vd, fmtKey, capM1) : [];
   const first = type => phases.find(p => p.type === type);
   const tl = {

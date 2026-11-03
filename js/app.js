@@ -61,7 +61,7 @@ const state = {
   quality: '1080',
   musicVol: 0.8,
   fitVoice: true,
-  style: 'neon',     // phong cách video
+  style: 'vangneon', // phong cách video — 3/11: Vàng neon (giống đợt đông khách 20–24/10) mặc định cho khách mới
   base: 'vetinh',    // nền bản đồ
   flow: 'lanluot',   // cách hiện tiện ích: lanluot | radar
   lot: [],           // ranh lô đất khách tự vẽ [{lat,lng}]
@@ -342,7 +342,7 @@ function motionOn() {
 // trước đây cùng một thẻ cũ giống hệt nhau → tách riêng. Tài khoản nội bộ/?motion=1 thêm tiêu đề động; ?motionKey=… ép 1 gói.
 const STYLE_MOTION = { neon: 'denneon', sangtrong: 'tapchi', tretrung: 'khoi', toigian: 'hiendai', xanhla: 'denxanh', doruc: 'dendo' };
 // 30/10 14:20 Giang: chọn phong cách thì line trục đường ★ cũng đổi theo màu phong cách (khách vẫn đổi lại được)
-const STYLE_HI = { neon: 'dien', sangtrong: 'vang', tretrung: 'hong', toigian: 'trang', xanhla: 'la', doruc: 'do' };
+const STYLE_HI = { vangneon: 'vang', neon: 'dien', sangtrong: 'vang', tretrung: 'hong', toigian: 'trang', xanhla: 'la', doruc: 'do' };
 function sceneMotion() {
   if (!state.house) return null;
   if (motionOn()) {
@@ -1841,7 +1841,7 @@ function writeSampleStore(d, base = {}) {
   for (const k of SAMPLE_KEYS) if (k in d) o[k] = d[k];
   Object.assign(o, shortSample(d));
   Object.assign(o, { sample: true, coordSet: true, cloudId: null, projName: '', musicLib: 'hung-hon', musicV: 2, labelV: 3, speedV: 2,
-    fxV: 3, m1V: 2, ...SAMPLE_FX, // 2/11 Giang: video mẫu bật ĐỦ hiệu ứng để khách mới thấy ấn tượng; căn của khách tắt sẵn (leaveSample)
+    fxV: 3, m1V: 2, ...SAMPLE_FX, style: 'vangneon', hiTheme: 'vang', roadTheme: 'auto', routeTheme: 'vang', // 3/11: video mẫu Vàng neon // 2/11 Giang: video mẫu bật ĐỦ hiệu ứng để khách mới thấy ấn tượng; căn của khách tắt sẵn (leaveSample)
     lot: [], sampleVoice: d.voice || null, aiVoiceOn: true, subsOn: true });
   if (!d.voice) Object.assign(o, { scriptEdits: {}, scriptAi: false, voSig: '' });
   localStorage.setItem(STORE, JSON.stringify(o));
@@ -3106,8 +3106,8 @@ async function generateVoices() {
 function renderStyles() {
   const el = $('styleRow');
   if (!el) return;
-  if (!STYLES[state.style]) state.style = 'neon';
-  const sample = { neon: '3D', sangtrong: 'Aa', tretrung: 'Hi!', toigian: 'Aa', xanhla: '3D', doruc: '3D' };
+  if (!STYLES[state.style]) state.style = 'vangneon';
+  const sample = { vangneon: '3D', neon: '3D', sangtrong: 'Aa', tretrung: 'Hi!', toigian: 'Aa', xanhla: '3D', doruc: '3D' };
   el.innerHTML = Object.entries(STYLES).map(([k, st]) => {
     const [bg, a1, a2] = st.swatch;
     const font = k === 'sangtrong' ? 'font-family:"Playfair Display",serif;' : k === 'tretrung' ? 'font-family:"Baloo 2",sans-serif;' : k === 'toigian' ? 'font-weight:300;' : '';
@@ -3134,9 +3134,9 @@ function renderStyles() {
 // Mỗi kiểu = phong cách chữ + nền bản đồ + màu line trục đường ★. Ảnh xem trước vẽ bằng chính bộ dựng video,
 // tại cảnh trục đường điểm nhấn của căn đang làm. Bấm một kiểu: áp dụng + phát lại từ đầu.
 const LOOKS = [
+  { id: 'vang', label: 'Vàng neon', style: 'vangneon', base: 'vetinh', hiTheme: 'vang' },
   { id: 'neon', label: 'Xanh neon', style: 'neon', base: 'phim', hiTheme: 'dien' },
   { id: 'sang', label: 'Vàng sang trọng', style: 'sangtrong', base: 'vetinh', hiTheme: 'vang' },
-  { id: 'gian', label: 'Trắng tối giản', style: 'toigian', base: 'duongpho', hiTheme: 'trang' },
 ];
 const isLook = L => state.style === L.style && state.base === L.base && state.hiTheme === L.hiTheme;
 function lookState(L) {
@@ -3521,7 +3521,7 @@ function updateQuick() {
     }
     else if (step === 2) label = state.pois.length ? 'Tiếp tục: Nội dung →' : 'Về bước 1';
     else if (step === 3) label = voiceDurations() || !state.aiVoiceOn ? 'Tiếp tục: Xuất video →'
-      : curSub === 'info' ? 'Tiếp: Phong cách →'
+      : curSub === 'info' ? 'Tiếp: Giọng & nhạc →'
       : curSub === 'look' ? 'Tiếp: Giọng & nhạc →'
       : needTone() ? '👆 Chọn phong cách' : '🎙️ Tạo giọng đọc';
     else label = 'Xuất video MP4'; // bước 4: nút chính luôn nằm ở thanh dưới, không bị che
@@ -3585,7 +3585,7 @@ async function stepNext() {
   if (step === 3) {
     if (!voiceDurations() && state.aiVoiceOn && curSub !== 'sound') {
       // Đi lần lượt: Thông tin → Phong cách → Kịch bản & giọng
-      setSub(curSub === 'info' ? 'look' : 'sound', { scroll: true });
+      setSub('sound', { scroll: true }); // 3/11: Thông tin → Giọng, nhạc (không bắt ghé Phong cách — app đã chọn sẵn kiểu đẹp)
       return;
     }
     if (!voiceDurations() && state.aiVoiceOn) {

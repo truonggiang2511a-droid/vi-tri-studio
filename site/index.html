@@ -338,7 +338,7 @@
             <label class="field"><span class="field-label">Tên kênh / sàn cuối video</span><input autocomplete="off" id="brandInput" class="input" type="text" maxlength="40" placeholder="Nhà Đất Bình Chánh"></label>
           </div>
         </details>
-        <button class="btn btn-dark btn-block pane-next" type="button" data-next="look">Xong thông tin → Chọn phong cách video</button>
+        <button class="btn btn-dark btn-block pane-next" type="button" data-next="sound">Xong thông tin → Kịch bản &amp; giọng đọc</button>
       </div>
 
       <div class="subpane" data-pane="look" hidden>
@@ -356,6 +356,11 @@
           <span class="field-label">Phong cách chữ &amp; khung thông tin</span>
           <div class="style-grid" id="styleRow" role="radiogroup" aria-label="Phong cách video"></div>
         </div>
+        <button type="button" class="link-btn fx-all" id="fxAllBtn" hidden>✨ Bật hết hiệu ứng như video mẫu</button>
+        <!-- 3/11 (Giang duyệt): mục Phong cách chỉ để ngoài khung hình + phong cách + nút bật hết; còn lại gom vào đây, đóng sẵn -->
+        <details class="more" id="lookMore">
+          <summary>⚙️ Tuỳ chỉnh nâng cao <span class="sub-note">hiệu ứng, nền bản đồ, logo, viền lô…</span></summary>
+          <div class="more-body">
         <div class="field">
           <span class="field-label">Cách hiện tiện ích</span>
           <span class="hint small pane-tip">Bay tới từng nơi: rõ đường đi, video dài hơn · Quét vòng tròn: nhanh gọn</span>
@@ -366,7 +371,6 @@
         </div>
         <div class="field">
           <span class="field-label">Hiệu ứng thêm (tuỳ chọn)</span>
-          <button type="button" class="link-btn fx-all" id="fxAllBtn" hidden>✨ Bật hết hiệu ứng như video mẫu</button>
           <label class="check"><input autocomplete="off" id="adminAreaOn" type="checkbox"> Khoanh sáng xã/phường, rồi lùi ra vẽ nổi cả tỉnh/thành</label>
           <label class="check"><input autocomplete="off" id="sweepOn" type="checkbox"> Tia radar quét quanh vòng bán kính</label>
           <label class="check"><input autocomplete="off" id="hubFxOn" type="checkbox"> Máy bay cất cánh ở sân bay, tàu metro chạy qua, khoanh sáng tiện ích quan trọng + sông/kênh gần nhà</label>
@@ -403,9 +407,6 @@
           <span class="field-label">Màu viền lô</span>
           <div class="swatches" id="lotColorRow" role="radiogroup" aria-label="Màu viền lô đất"></div>
         </div>
-        <details class="more">
-          <summary>Tuỳ chỉnh nâng cao</summary>
-          <div class="more-body">
             <div class="field">
               <span class="field-label">Nhịp máy lia</span>
               <div class="seg" id="speedSeg" role="radiogroup" aria-label="Nhịp máy lia">
