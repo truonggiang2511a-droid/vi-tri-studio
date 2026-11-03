@@ -300,6 +300,8 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 - 2026-11-03 08:40 (Giang hỏi: báo cáo 7h ghi "khoá ArcGIS lỗi ở 1 máy — có thể đã hết 2 triệu ô" mà chưa hết hạn mức): đúng là chưa hết — ngày 2/11 có 104 lượt vào app mà chỉ 1 máy báo khoá lỗi, 14/14 máy xuất video đi phiên bản đồ được (`f_o_phien_xuat`); hết 2 triệu ô thì Esri chặn gần như MỌI máy. `f_o_khoa_loi` ghi khi BẤT KỲ 1 ô có khoá tải hỏng (fetch lỗi mạng/mất sóng, mã HTTP khác 404) → lỗi lẻ 1–2 máy là bình thường. `f_o_congkhai` > khoá lỗi thường do /api/config về chậm hơn 3 s (`keyGate`) nên ô đầu đi nguồn công khai. Sửa `dailyReportText` (lib/pages.js): chỉ cảnh báo hết hạn mức khi ≥ 5 máy khoá lỗi; nguồn công khai cảnh báo khi ≥ 10 máy; dòng 🛰 ghi thêm "xuất video qua phiên N máy". Không đổi app/SQL. Thử: `node /tmp/t_rep.mjs` (số liệu 2/11 → ✅; ngày xấu 40 máy → cảnh báo).
 
+- 2026-11-03 09:20 (Giang: phong cách đầu tiên dùng font + màu đợt 25–29/10, "font Montserrat"): đối chiếu bản c611259 (29/10): màu `STYLES.neon` lúc đó = y hệt `vangneon` hiện tại (vàng #FFD166 + xanh #5EEAF5, tiêu đề Be Vietnam Pro 3D); khác duy nhất là thẻ giá mở đầu đen – vàng chữ Montserrat (`denvang`). → `STYLE_MOTION.vangneon = 'denvang'` (app.js), hookEnd 1,76 → 2,32 s. Tiêu đề cảnh vẫn Be Vietnam như 25–29/10 (khách thường `motionHookOnly`). Lưu ý đo: bản thẻ cũ chỉ chạy 08:20–09:20 nên KHÔNG so được thẻ cũ vs thẻ đen–vàng; từ nay video mẫu + khách mới = đúng giao diện 25–29/10. Khách đã lưu 'neon' vẫn Xanh neon. Thử: scratchpad `t_vang.py 390` (motion denvang, khung 0,9/1,5 s là thẻ đen – vàng, 0 lỗi trang, khách cũ giữ neon).
+
 ---
 
 ## 6. Công nghệ & dịch vụ đã nghiên cứu (đọc trước khi đề xuất lại — 25/10/2026)

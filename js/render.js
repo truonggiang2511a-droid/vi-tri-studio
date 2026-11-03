@@ -41,7 +41,7 @@ let GOLD = '#FFD166';
 // Mỗi kiểu đổi màu nhấn, nền thẻ, font tiêu đề, kiểu chữ tiêu đề, tông bản đồ, cảnh mở đầu và cảnh kết.
 export const STYLES = {
   // 3/11/2026 (Giang chốt): "Vàng neon" = Y NGUYÊN phong cách mặc định đợt đăng ký đông nhất 20–24/10 (bản 5ce19cb: Neon đêm
-  // màu vàng, Be Vietnam Pro 800, tiêu đề chữ 3D, thẻ giá mở đầu KIỂU CŨ — không có gói chữ động trong STYLE_MOTION).
+  // màu vàng, Be Vietnam Pro 800, tiêu đề chữ 3D, thẻ giá mở đầu đen – vàng Montserrat `denvang` như 25–29/10 — đổi 3/11 09:16, trước đó 08:20 là thẻ cũ).
   // Đứng ĐẦU + mặc định cho khách mới và video mẫu; "Xanh neon" xếp thứ 2. Khoá 'neon' giữ nguyên cho căn khách đã lưu.
   vangneon: {
     label: 'Vàng neon', desc: 'Line phát sáng, chữ 3D vàng — nổi bật trên TikTok',

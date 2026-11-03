@@ -340,7 +340,8 @@ function motionOn() {
 // Thẻ giá mở đầu theo phong cách — mỗi phong cách một kiểu chữ động riêng, cho MỌI khách (chỉ thẻ mở đầu,
 // tiêu đề cảnh giữ kiểu cũ: motionHookOnly). 25/10 22:12: Neon = đen – vàng. 26/10 Giang: Sang trọng/Trẻ trung/Tối giản
 // trước đây cùng một thẻ cũ giống hệt nhau → tách riêng. Tài khoản nội bộ/?motion=1 thêm tiêu đề động; ?motionKey=… ép 1 gói.
-const STYLE_MOTION = { neon: 'denneon', sangtrong: 'tapchi', tretrung: 'khoi', toigian: 'hiendai', xanhla: 'denxanh', doruc: 'dendo' };
+// 3/11 09:16 Giang: Vàng neon dùng thẻ giá mở đầu đen – vàng chữ Montserrat (denvang) như đợt 25–29/10, không còn thẻ cũ
+const STYLE_MOTION = { vangneon: 'denvang', neon: 'denneon', sangtrong: 'tapchi', tretrung: 'khoi', toigian: 'hiendai', xanhla: 'denxanh', doruc: 'dendo' };
 // 30/10 14:20 Giang: chọn phong cách thì line trục đường ★ cũng đổi theo màu phong cách (khách vẫn đổi lại được)
 const STYLE_HI = { vangneon: 'vang', neon: 'dien', sangtrong: 'vang', tretrung: 'hong', toigian: 'trang', xanhla: 'la', doruc: 'do' };
 function sceneMotion() {
