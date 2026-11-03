@@ -363,6 +363,17 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .qr-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .qr-wrap canvas { width: min(250px, 70vw); height: auto; aspect-ratio: 1; border-radius: 12px; background: #fff; border: 1px solid var(--line); image-rendering: pixelated; }
 .qr-cap { font-size: 12.5px; color: var(--muted); text-align: center; }
+.bank-apps { margin: 4px 0 12px; padding: 10px; border: 1px solid var(--line); border-radius: 12px; }
+.bank-apps-h { margin: 0 0 8px; font-size: 13.5px; text-align: center; }
+.bank-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 6px; }
+.bank-grid + .bank-grid { margin-top: 8px; }
+.bank-app { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 2px; border-radius: 10px; color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+.bank-app:active { background: rgba(127, 127, 127, .14); }
+.bank-app img, .bank-app b { width: 44px; height: 44px; border-radius: 11px; object-fit: cover; background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .18); }
+.bank-app b { display: grid; place-items: center; font-size: 18px; color: #333; }
+.bank-app span { max-width: 100%; font-size: 11px; line-height: 1.2; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bank-app i { position: absolute; top: 0; right: 2px; font-style: normal; font-size: 9px; font-weight: 700; padding: 1px 4px; border-radius: 6px; background: #16a34a; color: #fff; }
+.bank-more { display: block; margin: 8px auto 0; }
 .qr-img { width: min(300px, 78vw); height: auto; border-radius: 16px; background: #fff; box-shadow: 0 6px 24px rgba(0,0,0,.18); -webkit-touch-callout: default; }
 .qr-save { width: min(300px, 78vw); margin-top: 6px; }
 .pkg.loading { opacity: .7; pointer-events: none; }

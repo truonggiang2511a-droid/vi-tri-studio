@@ -752,13 +752,19 @@
     <div id="payQr" hidden>
       <button class="link-btn" type="button" id="payBack">← Chọn gói khác</button>
       <h3 id="payTitle"></h3>
+      <div id="bankApps" class="bank-apps" hidden>
+        <p class="bank-apps-h"><strong>Bấm vào app ngân hàng của anh/chị để chuyển khoản</strong></p>
+        <div id="bankGrid" class="bank-grid"></div>
+        <div id="bankGridMore" class="bank-grid" hidden></div>
+        <button class="link-btn bank-more" type="button" id="bankMore">Ngân hàng khác ▾</button>
+      </div>
       <div class="qr-wrap">
         <img id="qrImg" class="qr-img" alt="Mã VietQR chuyển khoản" hidden>
         <button id="qrSave" class="btn btn-primary qr-save" type="button">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0-4-4m4 4 4-4M5 17v3h14v-3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           Lưu mã QR vào thư viện ảnh
         </button>
-        <span class="qr-cap">Đang dùng điện thoại: lưu ảnh rồi mở app ngân hàng → Quét QR → chọn ảnh vừa lưu. Số tiền và nội dung đã điền sẵn.</span>
+        <span class="qr-cap" id="qrCap">Đang dùng điện thoại: lưu ảnh rồi mở app ngân hàng → Quét QR → chọn ảnh vừa lưu. Số tiền và nội dung đã điền sẵn.</span>
       </div>
       <dl class="pay-info">
         <div><dt>Ngân hàng</dt><dd id="pBank"></dd></div>

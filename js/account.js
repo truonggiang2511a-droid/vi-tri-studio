@@ -515,27 +515,101 @@ function showOrder(order, bank) {
   $('payStatus').innerHTML = '<span class="spinner" aria-hidden="true"></span> Đang chờ ngân hàng báo về…';
   payView('qr');
   stopPoll();
+  renderBankApps(order, bank);
   const started = Date.now();
-  pollTimer = setInterval(async () => {
+  pollTimer = setInterval(() => {
     if (!$('payDlg').open) { stopPoll(); return; }
     if (Date.now() - started > 30 * 60 * 1000) { stopPoll(); return; }
-    try {
-      const r = await rpc('vt_order_status', { p_token: S.token, p_code: order.code });
-      if (r.order.status === 'paid') {
-        stopPoll();
-        S.profile = r.profile;
-        S.order = null;
-        emit();
-        const p = r.profile;
-        $('payDoneText').textContent = p.unlimited
-          ? `Đã nhận ${money(order.amount)}. Gói không giới hạn tới ${fmtDate(p.unlimited_until, false)}.`
-          : `Đã nhận ${money(order.amount)}. Tài khoản hiện có ${p.credits} lượt.`;
-        payView('done');
-        toast('Thanh toán thành công, đã cộng lượt.', 4000);
-        track('purchase', { value: order.amount, id: order.package_id, login: S.profile?.login });
-      }
-    } catch { /* thử lại ở vòng sau */ }
+    checkPaid(order);
   }, 4000);
+}
+
+let checking = false;
+async function checkPaid(order) {
+  if (checking || S.order?.code !== order.code) return;
+  checking = true;
+  try {
+    const r = await rpc('vt_order_status', { p_token: S.token, p_code: order.code });
+    if (r.order.status === 'paid' && S.order?.code === order.code) {
+      stopPoll();
+      S.profile = r.profile;
+      S.order = null;
+      emit();
+      const p = r.profile;
+      $('payDoneText').textContent = p.unlimited
+        ? `Đã nhận ${money(order.amount)}. Gói không giới hạn tới ${fmtDate(p.unlimited_until, false)}.`
+        : `Đã nhận ${money(order.amount)}. Tài khoản hiện có ${p.credits} lượt.`;
+      payView('done');
+      toast('Thanh toán thành công, đã cộng lượt.', 4000);
+      track('purchase', { value: order.amount, id: order.package_id, login: S.profile?.login });
+    }
+  } catch { /* thử lại ở vòng sau */ }
+  finally { checking = false; }
+}
+
+// ---------- Mở app ngân hàng (3/11/2026) ----------
+// Điện thoại không quét được mã QR đang hiện trên chính nó → nút mở thẳng app ngân hàng qua deeplink của VietQR.io
+// (https://dl.vietqr.io/pay?app=…&ba=<stk>@<mã NH nhận>&am=<tiền>&tn=<nội dung>&bn=<chủ TK>&url=<trang quay về>).
+// App có `autofill` (MB, VietinBank, BIDV, ACB, OCB theo api.vietqr.io/v2/*-app-deeplinks) tự điền sẵn; app khác chỉ mở app,
+// nên lúc bấm luôn chép sẵn mã đơn để khách dán vào ô Nội dung. Mở ở thẻ mới (<a target=_blank>) để trang này vẫn chờ tiền về
+// và bắn sự kiện purchase như cũ. Không đổi đơn/SQL/sự kiện đo. Danh sách app lấy từ API ngày 3/11/2026.
+const MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const BANK_KEY = 'vitri.bankApp';
+const BANK_FILL = new Set(['mb', 'icb', 'bidv', 'acb', 'ocb']);
+const BANK_TOP = [['mb', 'MB Bank'], ['vcb', 'Vietcombank'], ['vba', 'Agribank'], ['icb', 'VietinBank'], ['bidv', 'BIDV'], ['tcb', 'Techcombank'], ['vpb', 'VPBank'], ['acb', 'ACB']];
+const BANK_MORE = [['tpb', 'TPBank'], ['cake', 'Cake'], ['ocb', 'OCB'], ['timo', 'Timo'], ['lpb', 'LPBank'], ['hdb', 'HDBank'], ['vib-2', 'VIB'], ['shb', 'SHB'],
+  ['seab', 'SeABank'], ['scb', 'SCB'], ['shbvn', 'Shinhan'], ['eib', 'Eximbank'], ['abb', 'ABBank'], ['pvcb', 'PVcomBank'], ['nab', 'Nam A Bank', 'android']];
+// Mã ngân hàng NHẬN tiền theo BIN (đổi ngân hàng nhận trong trang quản trị mà không có ở đây thì nút chỉ mở app, khách dán nội dung)
+const BIN_CODE = { 970422: 'mb', 970415: 'icb', 970418: 'bidv', 970436: 'vcb', 970416: 'acb', 970448: 'ocb', 970407: 'tcb', 970432: 'vpb', 970405: 'vba', 970423: 'tpb' };
+function bankLink(app, order, bank) {
+  const enc = encodeURIComponent, code = BIN_CODE[String(bank.bin)];
+  let u = 'https://dl.vietqr.io/pay?app=' + enc(app);
+  if (code && bank.account) {
+    u += `&ba=${enc(bank.account + '@' + code)}&am=${enc(order.amount)}&tn=${enc(order.code)}`;
+    if (bank.holder) u += '&bn=' + enc(bank.holder);
+    u += '&url=' + enc(location.origin + '/');
+  }
+  return u;
+}
+function bankItem([id, name], order, bank) {
+  const logo = `https://cdn.vietqr.io/bank-app-icon/${id}-${IOS ? 'ios' : 'android'}.webp`;
+  return `<a class="bank-app" href="${esc(bankLink(id, order, bank))}" target="_blank" rel="noopener" data-bank="${esc(id)}">
+    <img src="${logo}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('b'),{textContent:'${esc(name[0])}'}))">
+    <span>${esc(name)}</span>${BANK_FILL.has(id) ? '<i>tự điền</i>' : ''}</a>`;
+}
+// 3/11: chỉ bật cho tài khoản test để Giang thử trên điện thoại thật (máy thử của Claude không kiểm được phần tự điền) — đổi BANK_APPS_ALL = true để mở cho mọi khách
+const BANK_APPS_ALL = false;
+function renderBankApps(order, bank) {
+  const box = $('bankApps');
+  if (!box) return;
+  const on = MOBILE && (BANK_APPS_ALL || isTestAcct(S.profile));
+  box.hidden = !on;
+  if (on) $('qrCap').textContent = 'Hoặc lưu mã QR, mở app ngân hàng → Quét QR → chọn ảnh vừa lưu.';
+  if (!on) return;
+  let last = '';
+  try { last = localStorage.getItem(BANK_KEY) || ''; } catch { /* bỏ qua */ }
+  const more = BANK_MORE.filter(b => !b[2] || !IOS);
+  const all = [...BANK_TOP, ...more];
+  const top = BANK_TOP.slice();
+  const lastItem = all.find(b => b[0] === last);
+  if (lastItem) { const i = top.findIndex(b => b[0] === last); if (i >= 0) top.splice(i, 1); else top.pop(); top.unshift(lastItem); }
+  const rest = all.filter(b => !top.includes(b));
+  $('bankGrid').innerHTML = top.map(b => bankItem(b, order, bank)).join('');
+  $('bankGridMore').innerHTML = rest.map(b => bankItem(b, order, bank)).join('');
+  $('bankGridMore').hidden = true;
+  $('bankMore').hidden = false;
+}
+function onBankClick(e) {
+  const a = e.target.closest('a[data-bank]');
+  if (!a || !S.order) return;
+  try { localStorage.setItem(BANK_KEY, a.dataset.bank); } catch { /* bỏ qua */ }
+  // Chép mã đơn ngay trong cú chạm (không chờ) rồi để thẻ <a> tự mở app ở thẻ mới
+  const code = S.order.code;
+  try { navigator.clipboard?.writeText(code).catch(() => {}); } catch { /* bỏ qua */ }
+  toast(BANK_FILL.has(a.dataset.bank)
+    ? `Đang mở app… Nếu app chưa điền sẵn, nội dung ${code} đã được chép — dán vào ô Nội dung.`
+    : `Đã chép nội dung ${code}. Trong app: chọn Chuyển tiền → dán nội dung, nhập số tiền ${money(S.order.amount)}.`, 6000);
 }
 
 async function pickPackage(id) {
@@ -638,6 +712,10 @@ export async function initAccount(opts = {}) {
   });
   $('payBack').addEventListener('click', () => { stopPoll(); openPricing(); });
   $('qrSave').addEventListener('click', saveQr);
+  $('bankApps')?.addEventListener('click', onBankClick);
+  $('bankMore')?.addEventListener('click', () => { $('bankGridMore').hidden = false; $('bankMore').hidden = true; });
+  // Khách chuyển khoản xong quay lại trang: kiểm tra ngay, không chờ vòng 4 giây
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && pollTimer && S.order?.status === 'pending') checkPaid(S.order); });
   $('payQr').addEventListener('click', e => {
     const b = e.target.closest('button[data-copy]');
     if (!b) return;
