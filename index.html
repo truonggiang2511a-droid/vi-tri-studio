@@ -274,7 +274,7 @@
         <div class="grid2">
           <label class="field"><span class="field-label">Giá bán</span><input autocomplete="off" id="priceInput" class="input" type="text" maxlength="30" placeholder="3,2 tỷ"></label>
           <label class="field"><span class="field-label">Diện tích</span><input autocomplete="off" id="areaInput" class="input" type="text" maxlength="30" placeholder="5x20m"></label>
-          <label class="field"><span class="field-label">Đất thổ cư</span><input autocomplete="off" id="thoCuInput" class="input" type="text" maxlength="20" placeholder="VD: 100m² (để trống nếu full thổ cư)"></label>
+          <label class="field"><span class="field-label">Loại đất</span><input autocomplete="off" id="thoCuInput" class="input" type="text" maxlength="60" placeholder="Full thổ cư · SKC · TMDV…" list="landList"></label>
           <label class="field"><span class="field-label">Số tầng</span><input autocomplete="off" id="floorsInput" class="input" type="text" maxlength="20" placeholder="VD: 1 trệt 2 lầu"></label>
           <label class="field"><span class="field-label">Phòng ngủ</span><input autocomplete="off" id="bedsInput" class="input" type="text" inputmode="numeric" maxlength="20" placeholder="3"></label>
           <label class="field"><span class="field-label">Pháp lý</span><input autocomplete="off" id="legalInput" class="input" type="text" maxlength="30" placeholder="Sổ hồng riêng" list="legalList"></label>
@@ -282,6 +282,11 @@
         <datalist id="legalList">
           <option value="Sổ hồng riêng"></option><option value="Sổ hồng chung"></option><option value="Sổ đỏ"></option>
           <option value="Sổ hồng hoàn công"></option><option value="Đang chờ sổ"></option><option value="Hợp đồng mua bán"></option>
+        </datalist>
+        <datalist id="landList">
+          <option value="Full thổ cư"></option><option value="100m² thổ cư"></option><option value="100m² thổ cư + 200m² CLN"></option>
+          <option value="Đất SKC"></option><option value="Đất TMDV"></option><option value="Đất trồng cây lâu năm (CLN)"></option>
+          <option value="Đất nông nghiệp"></option><option value="Đất ở đô thị (ODT)"></option><option value="Đất ở nông thôn (ONT)"></option>
         </datalist>
         <label class="field"><span class="field-label">Điểm nổi bật của bất động sản <small>(tuỳ chọn)</small></span>
           <textarea autocomplete="off" id="highlightsInput" class="input" rows="3" maxlength="240" placeholder="Mỗi dòng 1 ý, VD:&#10;Nhà mới xây 2025&#10;Hẻm thông 6m, xe hơi vào tận nhà&#10;Chủ cần bán gấp, giảm 200 triệu"></textarea></label>

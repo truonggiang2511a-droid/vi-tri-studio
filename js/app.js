@@ -21,6 +21,7 @@ import { enableCoach, coach, coachDone, coachOpen, coachActive } from './coach.j
 import { initLeads, downloadPageQr, pageUrl, openLeads } from './leads.js';
 import { SB_URL, SB_KEY } from './sb.js';
 import { speakNumbers, speakPhones } from './vinum.js';
+import { landUseSpeak, landUseHasResidential } from './landuse.js';
 
 const $ = id => document.getElementById(id);
 const STORE = 'vitri.project.v1';
@@ -389,8 +390,8 @@ function buildScene() {
     logo: media.logo,
     logoBg: state.logoBg,
     photos: media.photos.map(p => p.img),
-    photoLabels: media.photos.map(p => roomLabel(p.room)),
-    clips: media.clips.map(c => ({ el: c.el, dur: c.dur, room: c.room || '', label: roomLabel(c.room) })),
+    photoLabels: media.photos.map(p => capText(p.cap)), // 4/11: chỉ hiện chú thích khách tự gõ, không còn nhãn phòng tự gắn
+    clips: media.clips.map(c => ({ el: c.el, dur: c.dur, room: c.room || '', label: capText(c.cap) })),
     info: { price: state.price, area: state.area, thoCu: isRentType() || isAptType() ? '' : state.thoCu, beds: isLandType() || isRoomType() ? '' : state.beds,
       legal: isRentType() ? '' : state.legal, floors: isLandType() || isRoomType() ? '' : aptFloor(state.floors), roadWidth: isAptType() ? '' : state.roadWidth },
     radiusKm: state.radiusKm,
@@ -2472,7 +2473,7 @@ function infoSentence(pick, skipPrice = false) {
   const beds = noRooms ? '' : c(state.beds), legal = rent ? '' : c(state.legal), floors = noRooms ? '' : c(state.floors), thoCu = rent || apt ? '' : c(state.thoCu), rw = apt ? '' : c(state.roadWidth);
   const parts = [];
   if (c(state.area)) parts.push('diện tích ' + c(state.area));
-  if (thoCu) parts.push(/thổ cư/i.test(thoCu) ? thoCu : thoCu + ' thổ cư');
+  if (thoCu) parts.push(landUseSpeak(thoCu)); // 4/11: đọc đúng loại đất khách gõ (SKC → đất sản xuất kinh doanh), không tự thêm "thổ cư"
   if (!isLand && floors) parts.push(apt ? (/^\d+$/.test(floors) ? 'căn ở tầng ' + floors : floors) : /^\d+$/.test(floors) ? floors + ' tầng' : floors);
   if (!isLand && beds) parts.push(/^\d+$/.test(beds) ? beds + ' phòng ngủ' : beds);
   if (rw) parts.push((isLand ? 'đường trước lô ' : 'đường trước nhà ') + (/^\d+([.,]\d+)?$/.test(rw) ? rw + ' mét' : rw.replace(/(\d)\s*m\b/i, '$1 mét')));
@@ -2796,7 +2797,7 @@ async function aiRewrite() {
     const facts = {
       loai_bds: TYPE_WORD[state.typeLabel] || 'Căn nhà', tieu_de: state.title, dong_phu: state.sub, thuong_hieu: state.brand,
       so_dien_thoai_lien_he: phoneDisplay(state.phone) || null,
-      thong_tin_nha: { gia: state.price || null, dien_tich: state.area || null, tho_cu: (!isAptType() && state.thoCu) || null, so_tang: (!isLandType() && !isAptType() && state.floors) || null,
+      thong_tin_nha: { gia: state.price || null, dien_tich: state.area || null, loai_dat: (!isAptType() && !isRentType() && landUseSpeak(state.thoCu)) || null, dat_o: !isAptType() && !isRentType() && state.thoCu ? landUseHasResidential(state.thoCu) : null, so_tang: (!isLandType() && !isAptType() && state.floors) || null,
         can_ho_o_tang: (isAptType() && state.floors) || null,
         phong_ngu: (!isLandType() && state.beds) || null, phap_ly: state.legal || null, duong_truoc_nha: (!isAptType() && state.roadWidth) || null, gia_moi_m2: pricePerM2(), dien_tich_m2: areaFromText(state.area) || null },
       diem_noi_bat: highlightLines(), khach_muc_tieu: state.buyer || null,
@@ -3954,6 +3955,15 @@ function guessRoom(name, list) {
   return (ROOMS.find(([k]) => k !== 'khac' && !used.has(k)) || ['khac'])[0];
 }
 const sortRooms = list => list.map((x, i) => [x, i]).sort((a, b) => (ROOM_IDX[a[0].room] ?? 5) - (ROOM_IDX[b[0].room] ?? 5) || a[1] - b[1]).map(p => p[0]);
+// 4/11 (Giang: nhãn phòng tự gắn theo thứ tự hay lệch với ảnh thật, nhất là lô đất/dự án/kho xưởng): ảnh và video
+// KHÔNG còn nhãn tự động — hiện theo đúng thứ tự tải lên, chỉ có chú thích khách tự gõ (`cap`, để trống = không hiện chữ).
+// Video: chỉ còn 1 lựa chọn ★ "Mở đầu video" (room = 'mattien'), các đoạn khác room = 'khac'.
+const CAP_MAX = 28;
+const capText = v => String(v || '').replace(/\s+/g, ' ').trim().slice(0, CAP_MAX);
+const normClipRoom = r => (r === 'mattien' ? 'mattien' : r ? 'khac' : ''); // '' = dữ liệu rất cũ (chưa có nhãn) → vẫn mở đầu như trước
+const frontFirst = list => list.map((x, i) => [x, i]).sort((a, b) => (a[0].room === 'mattien' ? 0 : 1) - (b[0].room === 'mattien' ? 0 : 1) || a[1] - b[1]).map(p => p[0]);
+const escAttr = v => String(v || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+const capInput = (cur, i, kind) => `<input class="cap-in" type="text" maxlength="${CAP_MAX}" autocomplete="off" data-cap-${kind}="${i}" value="${escAttr(cur)}" placeholder="+ ghi chú" aria-label="Ghi chú trên video (tuỳ chọn)">`;
 const roomSelect = (cur, i, kind) => `<select class="room-sel" data-room-${kind}="${i}" aria-label="Nhãn ảnh/video">${roomList().map(([k, l, sh]) => `<option value="${k}"${k === cur ? ' selected' : ''}>${sh || l}</option>`).join('')}</select>`;
 // Tiêu đề + hướng dẫn mục ảnh/video đổi theo loại bất động sản
 const set2 = (el, t) => { if (el.textContent !== t) el.textContent = t; };
@@ -3995,14 +4005,15 @@ function syncRoomUi() {
   const pf = $('priceInput'), pl = pf?.closest('.field')?.querySelector('.field-label');
   if (pl) set2(pl, isRentType() ? 'Giá thuê / tháng' : 'Giá bán');
   if (pf) pf.placeholder = isRentType() ? '15 triệu/tháng' : '3,2 tỷ';
-  set('photoHint', `Chọn nhãn dưới mỗi ảnh, app tự xếp: ${order}.`);
-  set('clipHint', `Mỗi đoạn 5–15 giây, quay chậm. Chọn nhãn, app tự xếp: ${order}.`);
+  void order;
+  set('photoHint', 'Ảnh hiện đúng thứ tự tải lên. Muốn có chữ trên ảnh thì gõ ghi chú, để trống là không hiện chữ.');
+  set('clipHint', 'Mỗi đoạn 5–15 giây, quay chậm. ★ = đoạn mở đầu video; các đoạn khác chiếu ở cuối theo thứ tự tải lên.');
 }
 let photoHouse = '';
 function savePhotos() {
   const k = photoKey(state.house);
   if (!k) return;
-  if (media.photos.length) photoDb('put', k, media.photos.map(p => ({ src: p.src, room: p.room || 'khac' })));
+  if (media.photos.length) photoDb('put', k, media.photos.map(p => ({ src: p.src, room: 'khac', cap: capText(p.cap) })));
   else photoDb('del', k);
 }
 async function restorePhotos() {
@@ -4019,8 +4030,7 @@ async function restorePhotos() {
   const imgs = await Promise.all(items.map(x => loadLogo(x.src)));
   if (photoHouse !== k) return;
   media.photos = [];
-  imgs.forEach((img, i) => { if (img) media.photos.push({ img, src: img.src, room: items[i].room || guessRoom('', media.photos) }); });
-  media.photos = sortRooms(media.photos);
+  imgs.forEach((img, i) => { if (img) media.photos.push({ img, src: img.src, room: 'khac', cap: capText(items[i].cap) }); });
   showPhotos();
   scheduleRebuild();
 }
@@ -4052,9 +4062,8 @@ async function pickPhotos(files) {
   let bad = 0;
   for (const f of list.slice(0, room)) {
     const p = await shrinkPhoto(f).catch(() => null);
-    if (p) { p.room = guessRoom(f.name, media.photos); media.photos.push(p); } else bad++;
+    if (p) { p.room = 'khac'; p.cap = ''; media.photos.push(p); } else bad++;
   }
-  media.photos = sortRooms(media.photos);
   $('photoAdd').classList.remove('busy');
   if (list.length > room) toast(`Chỉ lấy ${room} ảnh đầu (tối đa ${PHOTO_MAX} ảnh).`, 3000);
   else if (bad) toast('Có ảnh không đọc được. Dùng ảnh JPG hoặc PNG.', 3500);
@@ -4077,7 +4086,7 @@ function showPhotos() {
   media.photos.forEach((p, i) => {
     const d = document.createElement('div');
     d.className = 'photo-th';
-    d.innerHTML = `<img alt="Ảnh ${i + 1}"><span class="ord">${i + 1}</span><button type="button" aria-label="Bỏ ảnh ${i + 1}" data-rm="${i}">×</button>${roomSelect(p.room || 'khac', i, 'photo')}`;
+    d.innerHTML = `<img alt="Ảnh ${i + 1}"><span class="ord">${i + 1}</span><button type="button" aria-label="Bỏ ảnh ${i + 1}" data-rm="${i}">×</button>${capInput(p.cap, i, 'photo')}`;
     d.querySelector('img').src = p.src;
     row.insertBefore(d, add);
   });
@@ -4163,7 +4172,7 @@ function dropClip(c) {
 function saveClips() {
   const k = photoKey(state.house);
   if (!k) return;
-  if (media.clips.length) clipDb('put', k, media.clips.map(c => ({ blob: c.blob, name: c.name, room: c.room || 'khac' })));
+  if (media.clips.length) clipDb('put', k, media.clips.map(c => ({ blob: c.blob, name: c.name, room: c.room || 'khac', cap: capText(c.cap) })));
   else clipDb('del', k);
 }
 async function restoreClips() {
@@ -4177,9 +4186,9 @@ async function restoreClips() {
   const list = await clipDb('get', k);
   if (!Array.isArray(list) || clipHouse !== k) return;
   const out = [];
-  for (const it of list) { const c = it && it.blob ? await openClip(it.blob, it.name) : null; if (c) { c.room = it.room || guessRoom(it.name, out); out.push(c); } }
+  for (const it of list) { const c = it && it.blob ? await openClip(it.blob, it.name) : null; if (c) { c.room = normClipRoom(it.room); c.cap = capText(it.cap); out.push(c); } }
   if (clipHouse !== k) { out.forEach(dropClip); return; }
-  media.clips = sortRooms(out);
+  media.clips = frontFirst(out);
   for (const c of out) c.el.addEventListener('seeked', () => { dirty = true; });
   showClips();
   scheduleRebuild();
@@ -4196,9 +4205,9 @@ async function pickClips(files) {
   for (const f of list.slice(0, room)) {
     if (f.size > CLIP_MB * 1048576) { big++; continue; }
     const c = await openClip(f, f.name).catch(() => null);
-    if (c) { c.el.addEventListener('seeked', () => { dirty = true; }); c.room = guessRoom(f.name, media.clips); media.clips.push(c); } else bad++;
+    if (c) { c.el.addEventListener('seeked', () => { dirty = true; }); c.room = media.clips.length ? 'khac' : 'mattien'; c.cap = ''; media.clips.push(c); } else bad++;
   }
-  media.clips = sortRooms(media.clips);
+  media.clips = frontFirst(media.clips);
   $('clipAdd').classList.remove('busy');
   if (list.length > room) toast(`Chỉ lấy ${room} đoạn đầu (tối đa ${CLIP_MAX} đoạn).`, 3000);
   else if (big) toast(`Video quá lớn (trên ${CLIP_MB} MB). Quay ngắn 5–15 giây mỗi đoạn là đẹp nhất.`, 4500);
@@ -4223,7 +4232,7 @@ function showClips() {
   media.clips.forEach((c, i) => {
     const d = document.createElement('div');
     d.className = 'photo-th clip-th';
-    d.innerHTML = `<img alt="Video ${i + 1}"><span class="ord">▶ ${Math.round(c.dur)}s</span><button type="button" aria-label="Bỏ video ${i + 1}" data-rm="${i}">×</button>${roomSelect(c.room || 'khac', i, 'clip')}`;
+    d.innerHTML = `<img alt="Video ${i + 1}"><span class="ord">▶ ${Math.round(c.dur)}s</span><button type="button" aria-label="Bỏ video ${i + 1}" data-rm="${i}">×</button><button type="button" class="front-btn" data-front="${i}" aria-pressed="${i === 0 && hasFrontClip()}" title="Dùng đoạn này mở đầu video" aria-label="Dùng video ${i + 1} mở đầu video">★</button>${capInput(c.cap, i, 'clip')}`;
     if (c.thumb) d.querySelector('img').src = c.thumb;
     row.insertBefore(d, add);
   });
@@ -4833,20 +4842,32 @@ function init() {
   $('clipFile').addEventListener('change', e => pickClips(e.target.files));
   $('newHouseBtn').addEventListener('click', startNewHouse);
   document.addEventListener('click', e => { if (e.target.closest('[data-act="newhouse"]')) startNewHouse(); });
-  $('clipRow').addEventListener('click', e => { const b = e.target.closest('button[data-rm]'); if (b) removeClip(Number(b.dataset.rm)); });
-  // Đổi nhãn phòng → xếp lại mặt tiền → phòng khách → bếp → phòng ngủ → toilet
-  $('clipRow').addEventListener('change', e => {
-    const sel = e.target.closest('select[data-room-clip]');
-    const c = sel && media.clips[Number(sel.dataset.roomClip)];
+  $('clipRow').addEventListener('click', e => {
+    const b = e.target.closest('button[data-rm]');
+    if (b) { removeClip(Number(b.dataset.rm)); return; }
+    // ★ mở đầu video: bấm đoạn khác → đoạn đó mở đầu; bấm lại đoạn đang mở đầu → bỏ, mọi đoạn chiếu ở cuối
+    const f = e.target.closest('button[data-front]');
+    const c = f && media.clips[Number(f.dataset.front)];
     if (!c) return;
-    c.room = sel.value; media.clips = sortRooms(media.clips); saveClips(); showClips(); scheduleRebuild();
+    const on = c === media.clips[0] && hasFrontClip();
+    for (const x of media.clips) x.room = 'khac';
+    if (!on) c.room = 'mattien';
+    media.clips = frontFirst(media.clips); saveClips(); showClips(); scheduleRebuild();
   });
-  $('photoRow').addEventListener('change', e => {
-    const sel = e.target.closest('select[data-room-photo]');
-    const p = sel && media.photos[Number(sel.dataset.roomPhoto)];
-    if (!p) return;
-    p.room = sel.value; media.photos = sortRooms(media.photos); savePhotos(); showPhotos(); scheduleRebuild();
-  });
+  // Ghi chú trên ảnh/video (tuỳ chọn): gõ tới đâu cập nhật tới đó, rời ô thì lưu
+  const capEdit = (e, save) => {
+    const el = e.target.closest('input[data-cap-photo], input[data-cap-clip]');
+    if (!el) return;
+    const item = el.dataset.capPhoto != null ? media.photos[Number(el.dataset.capPhoto)] : media.clips[Number(el.dataset.capClip)];
+    if (!item) return;
+    item.cap = capText(el.value);
+    scheduleRebuild();
+    if (save) (el.dataset.capPhoto != null ? savePhotos : saveClips)();
+  };
+  for (const id of ['photoRow', 'clipRow']) {
+    $(id).addEventListener('input', e => capEdit(e, false));
+    $(id).addEventListener('change', e => capEdit(e, true));
+  }
   $('pageVideo').value = state.pageVideo || '';
   $('pageDesc').value = state.pageDesc || '';
   $('pageVideo').addEventListener('input', e => { state.pageVideo = e.target.value; save(); });

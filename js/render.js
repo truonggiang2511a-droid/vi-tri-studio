@@ -5,6 +5,7 @@ import { project, unproject, haversineKm, metersPerPixel, formatKm, fitZoom } fr
 import { drawIcon } from './icons.js';
 import { CATEGORIES, iconOf } from './data.js';
 import { motionHook, motionTitle, keyPop, keyPopBox, findKeywords } from './motion.js';
+import { landUseText } from './landuse.js';
 import { drawMau1, mau1Layout, drawM1Cta, m1CtaSize, M1_CTA_COL } from './mau1.js';
 
 export const BASE_FONT = '"Be Vietnam Pro", "Segoe UI", system-ui, sans-serif';
@@ -2588,7 +2589,7 @@ function infoData(scene) {
   const clean = v => String(v ?? '').replace(/\s+/g, ' ').trim();
   const beds = clean(i.beds);
   const tc = clean(i.thoCu);
-  const det = [clean(i.area), tc ? (/thổ cư/i.test(tc) ? tc : tc + ' thổ cư') : '', beds ? (/^\d+$/.test(beds) ? beds + ' phòng ngủ' : beds) : '', clean(i.legal)].filter(Boolean);
+  const det = [clean(i.area), landUseText(tc, false), beds ? (/^\d+$/.test(beds) ? beds + ' phòng ngủ' : beds) : '', clean(i.legal)].filter(Boolean);
   const price = clean(i.price);
   return price || det.length ? { price, det } : null;
 }
@@ -2600,7 +2601,7 @@ function infoFullItems(scene) {
   const area = clean(i.area), tc = clean(i.thoCu), fl = clean(i.floors), beds = clean(i.beds), legal = clean(i.legal), rw = clean(i.roadWidth);
   return [
     area ? (/diện tích/i.test(area) ? area : 'Diện tích ' + area) : '',
-    tc ? (/thổ cư/i.test(tc) ? tc : 'Thổ cư ' + tc) : '',
+    landUseText(tc, true), // 4/11: hiện đúng loại đất khách gõ (SKC, TMDV…), chỉ con số diện tích mới thêm chữ "Thổ cư"
     fl ? (num(fl) ? fl + ' tầng' : fl) : '',
     beds ? (num(beds) ? beds + ' phòng ngủ' : beds) : '',
     legal,
@@ -3438,7 +3439,9 @@ function drawClips(ctx, tl, t, logo) {
   const la = Math.min(A, clamp01((1.8 - lt) / 0.35 + 1) * clamp01(lt / 0.25));
   if (la > 0.01) {
     ctx.globalAlpha = la;
-    const label = tl.clips[w.clip]?.label ? String(tl.clips[w.clip].label).toUpperCase() : 'VIDEO THỰC TẾ';
+    // 4/11: không còn nhãn mặc định "VIDEO THỰC TẾ" — chỉ hiện ghi chú khách tự gõ
+    const label = tl.clips[w.clip]?.label ? String(tl.clips[w.clip].label).toUpperCase() : '';
+    if (label) {
     ctx.font = `800 13px ${FONT}`;
     const lw = spacedWidth(ctx, label, 1.2) + 40;
     const top = safe.top + 6, lx = safe.x;
@@ -3448,6 +3451,7 @@ function drawClips(ctx, tl, t, logo) {
     ctx.beginPath(); ctx.arc(lx + 15, top + 15, 4.5, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#10161d'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
     fillSpaced(ctx, label, lx + 7 + lw / 2, top + 15.5, 1.2);
+    }
   }
   ctx.restore();
 }
@@ -3528,15 +3532,20 @@ function drawPhotos(ctx, tl, t, logo) {
   ctx.fillStyle = bg; ctx.fillRect(0, LH - safe.bottom - 120, LW, safe.bottom + 120);
   // Nhãn "Hình ảnh thực tế" + số thứ tự ảnh
   const top = safe.top + 6;
-  const label = String((tl.photoLabels || [])[i] || 'HÌNH ẢNH THỰC TẾ').toUpperCase();
-  ctx.font = `800 13px ${FONT}`;
-  const lw = spacedWidth(ctx, label, 1.2) + 26;
+  // 4/11: không còn nhãn mặc định "HÌNH ẢNH THỰC TẾ" / nhãn phòng tự gắn — chỉ ghi chú khách tự gõ (trống = không có viên chữ)
+  const label = String((tl.photoLabels || [])[i] || '').toUpperCase();
   const maxX = logo ? logo.x - 10 : LW - safe.x;
   const lx = safe.x;
-  roundRect(ctx, lx, top, lw, 30, 15);
-  ctx.fillStyle = GOLD; ctx.fill();
-  ctx.fillStyle = '#10161d'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-  fillSpaced(ctx, label, lx + lw / 2, top + 15.5, 1.2);
+  let lw = -8;
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  if (label) {
+    ctx.font = `800 13px ${FONT}`;
+    lw = spacedWidth(ctx, label, 1.2) + 26;
+    roundRect(ctx, lx, top, lw, 30, 15);
+    ctx.fillStyle = GOLD; ctx.fill();
+    ctx.fillStyle = '#10161d';
+    fillSpaced(ctx, label, lx + lw / 2, top + 15.5, 1.2);
+  }
   if (n > 1 && lx + lw + 64 < maxX) {
     const cnt = `${Math.min(n, i + (into > xf / 2 ? 2 : 1))}/${n}`;
     ctx.font = `700 13px ${FONT}`;
