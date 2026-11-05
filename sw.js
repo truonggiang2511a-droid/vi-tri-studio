@@ -49,7 +49,7 @@ self.addEventListener('fetch', e => {
   // Trang web căn nhà, ảnh căn nhà, API: luôn lấy từ mạng
   if (/^\/(can|m|goi|api)\//.test(url.pathname)) return;
   // Video phát theo từng đoạn (Range): để trình duyệt tự tải, không lưu vào bộ nhớ đệm
-  if (req.headers.has('range') || /\.(mp4|webm|m4a)$/.test(url.pathname)) return;
+  if (req.headers.has('range') || /\.(mp4|webm|m4a|wasm|tflite)$/.test(url.pathname)) return;
 
   // Mạng trước, mất mạng thì dùng bản đã lưu
   e.respondWith(

@@ -7,6 +7,8 @@ rm -rf site && mkdir -p site/icons
 $ESBUILD js/app.js --bundle --format=esm --minify --target=es2020 --charset=utf8 --line-limit=400 --outfile=site/app.js --log-level=warning
 $ESBUILD js/admin.js --bundle --format=esm --minify --target=es2020 --charset=utf8 --line-limit=400 --outfile=site/admin.js --log-level=warning
 $ESBUILD js/xuat-entry.js --bundle --format=esm --minify --target=es2020 --charset=utf8 --outfile=site/xuat.js --log-level=warning
+# 5/11: tách nền ảnh sale (MediaPipe Tasks Vision, Apache-2.0) — gói riêng, chỉ tải khi khách chọn ảnh sale
+$ESBUILD js/tachnen-entry.js --bundle --format=esm --minify --target=es2020 --charset=utf8 --outfile=site/tachnen.js --log-level=warning
 $ESBUILD js/landing.js --bundle --format=esm --minify --target=es2020 --charset=utf8 --line-limit=400 --outfile=site/landing.js --log-level=warning
 $ESBUILD styles.css --minify --outfile=site/styles.css --log-level=warning
 $ESBUILD landing.css --minify --outfile=site/landing.css --log-level=warning
@@ -37,6 +39,8 @@ cp manifest.webmanifest _headers 404.html gioi-thieu.html chinh-sach-bao-mat.htm
 cp -r poi site/poi
 cp -r l site/l
 cp -r music site/music
+# WASM của MediaPipe (chỉ bản SIMD: máy không hỗ trợ SIMD thì app tự dùng khung tròn) + mô hình tách người ~250 KB
+mkdir -p site/mp && cp mp/selfie_segmenter.tflite site/mp/ && cp node_modules/@mediapipe/tasks-vision/wasm/vision_wasm_internal.js node_modules/@mediapipe/tasks-vision/wasm/vision_wasm_internal.wasm site/mp/
 # Độ dài các file video để worker trả từng đoạn (Range) cho Safari/iPhone
 python3 - <<'PY'
 import os, json

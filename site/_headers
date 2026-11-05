@@ -10,6 +10,9 @@
 /demo.mp4
   Cache-Control: public, max-age=86400
 
+/mp/*
+  Cache-Control: public, max-age=2592000
+
 /music/*
   Cache-Control: public, max-age=604800
 

@@ -425,6 +425,8 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .seg-line:not(:focus-within) .seg-say { display: none; }
 .lbl-acts { display: inline-flex; gap: 12px; }
 
+.avatar-preview{height:44px;width:44px;object-fit:contain;border-radius:8px;background:repeating-conic-gradient(#d9dee3 0 25%,#fff 0 50%) 0 0/12px 12px}
+#avatarModeSeg{margin-top:8px}
 .logo-preview{height:34px;max-width:96px;object-fit:contain;border-radius:6px;background:#fff;padding:3px}
 #musicLib{margin-bottom:4px}
 

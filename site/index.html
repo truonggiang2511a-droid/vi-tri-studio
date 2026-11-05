@@ -337,10 +337,27 @@
           <label class="check"><input autocomplete="off" id="showTitle" type="checkbox" checked> Hiện tiêu đề trên đầu video</label>
           <input autocomplete="off" id="titleInput" class="input" type="text" maxlength="40" placeholder="Ghi theo ý anh/chị, VD: Nhà phố 5x20 khu Sadeco">
         </div>
-        <details class="more">
-          <summary>Thương hiệu cuối video</summary>
+        <details class="more" id="brandMore">
+          <summary>Thương hiệu, ảnh sale cuối video <span class="sub-note">ảnh không nền + SĐT, chống lấy video</span></summary>
           <div class="more-body">
             <label class="field"><span class="field-label">Tên kênh / sàn cuối video</span><input autocomplete="off" id="brandInput" class="input" type="text" maxlength="40" placeholder="Nhà Đất Bình Chánh"></label>
+            <!-- 5/11 (khách góp ý): ảnh sale tách nền, số điện thoại dưới chân ảnh ở cảnh cuối; chữ thương hiệu mờ suốt video -->
+            <div class="field">
+              <span class="field-label">Ảnh sale cuối video <small>(tuỳ chọn)</small></span>
+              <div class="file-row">
+                <label class="btn btn-quiet file-btn">Chọn ảnh<input autocomplete="off" id="avatarFile" type="file" accept="image/*"></label>
+                <img id="avatarPreview" class="avatar-preview" alt="Ảnh sale" hidden>
+                <span id="avatarName" class="file-name">Chưa có</span>
+                <button id="avatarClear" class="link-btn" type="button" hidden>Bỏ</button>
+              </div>
+              <div class="seg seg-sub" id="avatarModeSeg" role="radiogroup" aria-label="Kiểu ảnh sale" hidden>
+                <button type="button" role="radio" data-v="cut">Tách nền</button>
+                <button type="button" role="radio" data-v="tron">Khung tròn</button>
+              </div>
+              <span class="hint small">Ảnh rõ mặt, nửa người là đẹp nhất. App tự tách nền ngay trên máy, không gửi ảnh đi đâu. Số điện thoại ở mục trên sẽ nằm dưới chân ảnh.</span>
+            </div>
+            <label class="check"><input autocomplete="off" id="wmOn" type="checkbox"> Đóng tên thương hiệu mờ suốt video (khó bị lấy video)</label>
+            <span class="hint small" id="wmHint" hidden>Nhập tên kênh / sàn ở trên để đóng lên video.</span>
           </div>
         </details>
         <button class="btn btn-dark btn-block pane-next" type="button" data-next="sound">Xong thông tin → Kịch bản &amp; giọng đọc</button>

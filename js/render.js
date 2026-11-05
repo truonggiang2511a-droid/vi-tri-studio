@@ -2557,6 +2557,202 @@ function drawBrand(ctx, tl, text, phone, alpha) {
   ctx.restore();
 }
 
+// ---------- Ảnh sale + số điện thoại cuối video (5/11/2026, khách góp ý) ----------
+// Có ảnh sale (scene.avatar) VÀ có SĐT hoặc tên thương hiệu → thay viên "Gọi xem nhà" bằng thẻ: ảnh sale (tách nền
+// hoặc khung tròn) đứng bên trái, "bệ" kính tối dưới chân ghi tên thương hiệu + số điện thoại cách điệu (nhóm số tách
+// bằng chấm, xen màu nhấn, không kèm chữ "Gọi ngay"). Bệ che phần ngực bị cắt của ảnh. Phụ đề + nút CTA mẫu 1 đứng bên
+// PHẢI ảnh (occ.leftPanel), không chồng lên ảnh. Không có ảnh sale → drawBrand cũ, video y như trước.
+const PHONE_PATH = typeof Path2D !== 'undefined' ? new Path2D('M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z') : null;
+const SALE_DIM = { v: { ph: 60, ah: 196, r: 60, pw: 0 }, s: { ph: 54, ah: 170, r: 52, pw: 0 }, h: { ph: 54, ah: 196, r: 56, pw: 470 } };
+function saleLayout(tl) {
+  const sc = tl.scene, img = sc.avatar;
+  if (!img || !img.width || (!sc.phone && !sc.brand)) return null;
+  const { LH, safe } = tl, B = lowBand(tl), D = SALE_DIM[tl.fmt] || SALE_DIM.v;
+  const bottom = LH - safe.bottom + (tl.fmt === 'v' ? -6 : 0);
+  const pw = D.pw ? Math.min(B.w, D.pw) : B.w, px = B.x0, py = bottom - D.ph;
+  let a;
+  if (sc.avatarCut) {
+    let ah = D.ah, aw = ah * img.width / img.height;
+    if (aw > pw * 0.42) { aw = pw * 0.42; ah = aw * img.height / img.width; }
+    const ax = px + 10, base = py + D.ph * 0.55;   // chân ảnh khuất sau bệ
+    a = { cut: true, x: ax, y: base - ah, w: aw, h: ah, base, top: base - ah, right: ax + aw };
+  } else {
+    const r = D.r, cx = px + 12 + r, cy = py - r + 16;
+    a = { cut: false, cx, cy, r, top: cy - r, right: cx + r };
+  }
+  return { px, py, pw, ph: D.ph, a, tx0: a.right + 14, tx1: px + pw - 14, top: Math.min(py, a.top) };
+}
+function drawSaleCard(ctx, tl, alpha, lt) {
+  const L = saleLayout(tl);
+  if (!L || alpha <= 0.01) return;
+  const sc = tl.scene, img = sc.avatar, A = L.a;
+  const pA = alpha * clamp01(lt / 0.35), aA = alpha * clamp01((lt - 0.12) / 0.45);
+  const rise = (1 - easeOut(clamp01(lt / 0.35))) * 14;
+  ctx.save();
+  // Quầng sáng + vòng màu nhấn sau ảnh (ảnh tách nền "bật" ra khỏi vòng)
+  if (aA > 0.01) {
+    const pop = easeOutBack(clamp01((lt - 0.12) / 0.5));
+    ctx.save();
+    ctx.globalAlpha = aA;
+    if (A.cut) {
+      const cx = A.x + A.w / 2, r = Math.min(A.w * 0.62, A.h * 0.44), cy = L.py - r * 0.72;
+      const gr = ctx.createRadialGradient(cx, cy, r * 0.2, cx, cy, r * 1.25);
+      gr.addColorStop(0, hexA(GOLD, 0.55)); gr.addColorStop(0.7, hexA(GOLD, 0.16)); gr.addColorStop(1, hexA(GOLD, 0));
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(cx, cy, r * 1.25 * pop, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 2.4; ctx.strokeStyle = hexA(GOLD, 0.9);
+      ctx.beginPath(); ctx.arc(cx, cy, r * pop, Math.PI * 0.95, Math.PI * 2.05); ctx.stroke();
+      // ảnh: trồi lên từ sau bệ, cắt ngang chân bệ
+      ctx.beginPath(); ctx.rect(A.x - 40, 0, A.w + 80, L.py + L.ph * 0.6); ctx.clip();
+      const dy = (1 - pop) * A.h * 0.35;
+      ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 4;
+      ctx.drawImage(img, A.x, A.y + dy, A.w, A.h);
+    } else {
+      const r = A.r * (0.6 + 0.4 * pop);
+      ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 4;
+      ctx.beginPath(); ctx.arc(A.cx, A.cy, r + 4, 0, Math.PI * 2); ctx.fillStyle = GOLD; ctx.fill();
+      ctx.shadowColor = 'transparent';
+      ctx.beginPath(); ctx.arc(A.cx, A.cy, r + 1, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+      ctx.save(); ctx.beginPath(); ctx.arc(A.cx, A.cy, r - 1.5, 0, Math.PI * 2); ctx.clip();
+      ctx.drawImage(img, A.cx - r, A.cy - r, r * 2, r * 2); ctx.restore();
+    }
+    ctx.restore();
+  }
+  // Bệ kính tối: tên thương hiệu + SĐT cách điệu
+  if (pA > 0.01) {
+    ctx.save();
+    ctx.globalAlpha = pA;
+    ctx.translate(0, rise);
+    const { px, py, pw, ph } = L;
+    ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 4;
+    roundRect(ctx, px, py, pw, ph, 14);
+    const bg = ctx.createLinearGradient(px, py, px, py + ph);
+    bg.addColorStop(0, 'rgba(22,26,32,0.95)'); bg.addColorStop(1, 'rgba(6,8,11,0.95)');
+    ctx.fillStyle = bg; ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.lineWidth = 1.2; ctx.strokeStyle = hexA(GOLD, 0.55); ctx.stroke();
+    // vạch sáng màu nhấn mép trên, chạy từ trái sang
+    const lw = (pw - 28) * easeOut(clamp01((lt - 0.1) / 0.6));
+    const hl = ctx.createLinearGradient(px + 14, 0, px + 14 + lw, 0);
+    hl.addColorStop(0, hexA(GOLD, 0)); hl.addColorStop(0.5, GOLD); hl.addColorStop(1, hexA(GOLD, 0.2));
+    ctx.fillStyle = hl; ctx.fillRect(px + 14, py, lw, 2);
+    const tx0 = L.tx0, tx1 = L.tx1, tw = tx1 - tx0, cyMid = py + ph / 2;
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    const brand = String(sc.brand || '').toUpperCase(), phone = String(sc.phone || '');
+    let phoneY = cyMid;
+    if (brand && phone) {
+      ctx.font = `800 ${tl.fmt === 'v' ? 12 : 11}px ${FONT}`;
+      ctx.fillStyle = GOLD;
+      const bt = fitOneLine(ctx, brand, tw);
+      fillLeftSpaced(ctx, bt, tx0, py + ph * 0.28, 1.2, tw);
+      phoneY = py + ph * 0.66;
+    } else if (brand) {
+      ctx.font = `900 ${tl.fmt === 'v' ? 19 : 17}px ${NAME_FONT}`;
+      ctx.fillStyle = '#fff';
+      ctx.fillText(fitOneLine(ctx, brand, tw), tx0, cyMid + 1);
+    }
+    if (phone) {
+      const groups = phone.split(/\s+/).filter(Boolean);
+      const big = brand ? (tl.fmt === 'v' ? 25 : 22) : (tl.fmt === 'v' ? 28 : 25);
+      const ic = big * 0.95, gap = big * 0.3, dotW = big * 0.42;
+      let fs = big, total = 0;
+      const measure = f => {
+        ctx.font = `900 ${f}px ${NAME_FONT}`;
+        return ic * f / big + gap + groups.reduce((a, g) => a + ctx.measureText(g).width + f * 0.04 * (g.length - 1), 0) + dotW * f / big * (groups.length - 1);
+      };
+      total = measure(fs);
+      if (total > tw) { fs = Math.max(14, fs * tw / total); total = measure(fs); }
+      const k = fs / big;
+      let x = tx0;
+      // biểu tượng điện thoại trong vòng tròn màu nhấn
+      const r = ic * k / 2;
+      ctx.beginPath(); ctx.arc(x + r, phoneY, r, 0, Math.PI * 2); ctx.fillStyle = GOLD; ctx.fill();
+      if (PHONE_PATH) {
+        ctx.save(); ctx.translate(x + r - r * 0.62, phoneY - r * 0.62); ctx.scale(r * 1.24 / 24, r * 1.24 / 24);
+        ctx.fillStyle = ST.accInk || '#111'; ctx.fill(PHONE_PATH); ctx.restore();
+      }
+      x += r * 2 + gap * k;
+      ctx.font = `900 ${fs}px ${NAME_FONT}`;
+      ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 4;
+      groups.forEach((g, i) => {
+        if (i) {
+          ctx.fillStyle = hexA(GOLD, 0.85);
+          ctx.beginPath(); ctx.arc(x + dotW * k / 2, phoneY + 1, fs * 0.075, 0, Math.PI * 2); ctx.fill();
+          x += dotW * k;
+        }
+        ctx.fillStyle = i % 2 ? GOLD : '#FFFFFF';
+        for (const ch of g) { ctx.fillText(ch, x, phoneY + 1); x += ctx.measureText(ch).width + fs * 0.04; }
+        x -= fs * 0.04;
+      });
+      ctx.shadowColor = 'transparent';
+      // một vệt sáng lướt qua dãy số (1 lần)
+      const sw = clamp01((lt - 0.7) / 0.7);
+      if (sw > 0 && sw < 1) {
+        const sx = tx0 + (x - tx0 + 60) * sw - 30;
+        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = pA * 0.35 * Math.sin(sw * Math.PI);
+        const g2 = ctx.createLinearGradient(sx - 24, 0, sx + 24, 0);
+        g2.addColorStop(0, 'rgba(255,255,255,0)'); g2.addColorStop(0.5, '#fff'); g2.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g2; ctx.fillRect(sx - 24, phoneY - fs * 0.6, 48, fs * 1.2); ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+function fillLeftSpaced(ctx, text, x, y, sp, maxW) {
+  for (const ch of text) { const w = ctx.measureText(ch).width; if (x + w > x + maxW) break; ctx.fillText(ch, x, y); x += w + sp; }
+}
+// Màu hex (#RGB/#RRGGBB) → rgba với độ đục a
+function hexA(hex, a) {
+  let h = String(hex || '#FFD166').replace('#', '');
+  if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  const n = parseInt(h.slice(0, 6), 16);
+  if (!isFinite(n)) return `rgba(255,209,102,${a})`;
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+// ---------- Chữ thương hiệu mờ suốt video (5/11, khách tự tick "Đóng tên thương hiệu") ----------
+// Logo góc dễ bị cắt khung → chữ mờ nằm TRONG khung hình, nghiêng nhẹ, mỗi 6 s đổi sang chỗ khác (mờ dần qua lại).
+// Không hiện lúc thẻ mở đầu (ảnh bìa sạch) và cảnh kết (đã có thẻ thương hiệu). Không có SĐT (đỡ bị nền tảng hạn chế).
+const WM_SPOTS = {
+  v: [[0.30, 0.34], [0.68, 0.56], [0.32, 0.66], [0.66, 0.28]],
+  s: [[0.28, 0.32], [0.70, 0.62], [0.30, 0.70], [0.70, 0.30]],
+  h: [[0.26, 0.30], [0.72, 0.64], [0.30, 0.70], [0.70, 0.30]],
+};
+const WM_PERIOD = 6;
+function drawWatermark(ctx, tl, t) {
+  const text = String(tl.scene.wm || '').toUpperCase();
+  if (!text) return;
+  const ou = tl.outro;
+  const t0 = (tl.hookEnd || 0.4) + 0.2, t1 = ou ? ou.t0 + 0.6 : tl.duration;
+  const env = fadeWin(t, t0, t1, 0.5, 0.5);
+  if (env <= 0.01) return;
+  const u = t - t0, i = Math.floor(u / WM_PERIOD), lu = u - i * WM_PERIOD;
+  const a = env * Math.min(1, lu / 0.5, (WM_PERIOD - lu) / 0.5);
+  if (a <= 0.01) return;
+  const spots = WM_SPOTS[tl.fmt] || WM_SPOTS.v, sp = spots[((i % spots.length) + spots.length) % spots.length];
+  const { LW, LH } = tl;
+  let size = Math.round(Math.min(LW, LH) * 0.042);
+  ctx.save();
+  ctx.font = `900 ${size}px ${NAME_FONT}`;
+  let gap = size * 0.18, tw = spacedWidth(ctx, text, gap);
+  const maxW = LW * 0.66;   // tên dài: thu nhỏ chữ, không cắt
+  if (tw > maxW) { size = Math.max(11, size * maxW / tw); ctx.font = `900 ${size}px ${NAME_FONT}`; gap = size * 0.18; tw = spacedWidth(ctx, text, gap); }
+  // chữ nghiêng nằm trọn trong khung (canh giữa tại điểm đặt)
+  const hw = tw / 2 * Math.cos(0.16) + size, hh = tw / 2 * Math.sin(0.16) + size;
+  const x = Math.max(hw + 8, Math.min(LW - hw - 8, LW * sp[0])), y = Math.max(hh + 8, Math.min(LH - hh - 8, LH * sp[1]));
+  ctx.translate(x, y);
+  ctx.rotate(-0.16);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const txt = text;
+  ctx.globalAlpha = a * 0.32;
+  ctx.lineJoin = 'round'; ctx.lineWidth = size * 0.16; ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  strokeSpaced(ctx, txt, 0, 0, gap);
+  ctx.globalAlpha = a * 0.46;
+  ctx.fillStyle = '#FFFFFF';
+  fillSpaced(ctx, txt, 0, 0, gap);
+  ctx.restore();
+}
+
 // ---------- Logo, thông tin căn nhà, phụ đề ----------
 const LOGO_H = { v: 58, h: 50, s: 48 };
 function logoBox(tl) {
@@ -2727,6 +2923,7 @@ function captionLayoutM1(ctx, tl, cap, occ) {
   const { LW, LH, safe } = tl;
   let left = safe.x + 6, right = lowBand(tl).x1 - 6;
   if (occ.rightPanel) right = occ.rightPanel - 12;
+  if (occ.leftPanel) left = Math.max(left, occ.leftPanel + 10);
   const maxW = right - left;
   let size = 0.075 * Math.min(LW, LH);   // 30/10: nhỏ hơn Hook Kit (0,095) vì bản đồ đã nhiều nhãn
   ctx.save();
@@ -2774,6 +2971,7 @@ function captionLayout(ctx, tl, cap, occ) {
   const size = CAP_SIZE[tl.fmt] || 24;
   let left = safe.x + 10, right = lowBand(tl).x1 - 10;
   if (occ.rightPanel) right = occ.rightPanel - 16;
+  if (occ.leftPanel) left = Math.max(left, occ.leftPanel + 12);
   const maxW = right - left - 28;
   ctx.save();
   ctx.font = `800 ${size}px ${FONT}`;
@@ -3820,6 +4018,8 @@ function drawBars(ctx, tl, t) {
 function brandTop(tl) {
   const { LH, safe, scene } = tl;
   if (!scene.brand && !scene.phone) return Infinity;
+  const sl = saleLayout(tl);
+  if (sl) return sl.py;   // thẻ ảnh sale: phụ đề/CTA đứng trên bệ, bên phải ảnh (occ.leftPanel)
   const bottom = LH - safe.bottom + (tl.fmt === 'v' ? -6 : 0);
   return scene.phone ? bottom - 46 - (scene.brand ? 34 : 0) : bottom - 38;
 }
@@ -5330,6 +5530,8 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false, cover = 
   }
   if (B && bp && t >= bp.t0 + 0.5 * (bp.t1 - bp.t0) && t < bp.t1 + 0.6) occ.top = Math.min(occ.top, LH - safe.bottom - 104 - (tl.fmt === 'h' ? 0 : 14));
   if (brandA > 0.05) occ.top = Math.min(occ.top, brandTop(tl));
+  const saleL = saleLayout(tl), sale = brandA > 0.05 ? saleL : null;
+  if (sale) occ.leftPanel = sale.a.right;
   // Mẫu 1: nút kêu gọi "NHẮN TIN XEM NHÀ NGAY" cuối video (Hook Kit mg_cta), ngay trên thẻ môi giới; phụ đề đứng trên nút
   let cta = null;
   if (tl.m1Cta && t >= ou.t0 + 0.4) {
@@ -5338,7 +5540,12 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false, cover = 
     const bt = brandTop(tl);   // Infinity khi không có thẻ môi giới
     const bottom = brandA > 0.05 && isFinite(bt) ? bt - 10 : LH - safe.bottom - (tl.fmt === 'v' ? 10 : 6);
     cta = { text, icon: ty.icon, col: M1_CTA_COL[scene.style] || ty.col, k, cx: lowBand(tl).cx, cy: bottom - S.h / 2, h: S.h, w: S.w, lt: t - ou.t0 - 0.4 };
-    occ.top = Math.min(occ.top, bottom - S.h - 8);
+    if (sale) {   // có ảnh sale: nút đứng bên phải ảnh, nhỏ lại cho vừa
+      const x0 = sale.a.right + 10, x1 = lowBand(tl).x1, avail = x1 - x0;
+      if (S.w > avail) { const k2 = k * avail / S.w, S2 = m1CtaSize(ctx, text, k2); Object.assign(cta, { k: k2, w: S2.w, h: S2.h, cy: bottom - S2.h / 2 }); }
+      cta.cx = (x0 + x1) / 2;
+    }
+    occ.top = Math.min(occ.top, bottom - cta.h - 8);
   }
   // Ảnh bìa (cover): không vẽ phụ đề lời đọc — ảnh bìa chỉ giữ thẻ mở đầu của phong cách
   let cap = cover ? null : captionAt(tl, t);
@@ -5637,13 +5844,15 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false, cover = 
     }
   }
   if (sm) drawSummary(ctx, tl, sumP);
-  drawBrand(ctx, tl, scene.brand, scene.phone, brandA);
+  if (saleL) drawSaleCard(ctx, tl, brandA, t - ou.t0 - 0.8);
+  else drawBrand(ctx, tl, scene.brand, scene.phone, brandA);
   drawInfo(ctx, infoBottom, infoHouseA);
   drawInfo(ctx, infoTop, infoEndA);
   drawPhotos(ctx, tl, t, logo);
   drawClips(ctx, tl, t, logo);
   if (capL && capA > 0.01) occBox(ctx, capL.x, capL.y, capL.x + capL.w, capL.y + capL.h);
   if (cta) { occBox(ctx, cta.cx - cta.w / 2, cta.cy - cta.h * 0.6, cta.cx + cta.w / 2, cta.cy + cta.h * 0.6); drawM1Cta(ctx, cta.text, cta.cx, cta.cy, cta.lt, T - ou.t0 + 1, cta.k, cta.icon, cta.col); }
+  if (!cover) drawWatermark(ctx, tl, t);
   OCC_CTX = null;
   drawKeyPops(ctx, tl, t);
   OCC = null;

@@ -50,6 +50,8 @@ const state = {
   buyer: '',      // khách nhắm tới: o | dau_tu | cho_thue
   subsOn: true,      // phụ đề chạy chữ theo giọng AI
   logoBg: true,      // nền trắng sau logo
+  avatarMode: 'cut', // ảnh sale cuối video: cut = tách nền, tron = khung tròn (5/11)
+  wmOn: false,       // chữ thương hiệu mờ suốt video (5/11, khách tự tick)
   musicLib: 'hung-hon', // nhạc nền có sẵn đang chọn (khách mới mặc định nhạc hùng hồn; ai đã chọn/bỏ nhạc thì giữ lựa chọn cũ)
   simple: undefined, // chế độ 3 bước cho người mới
   coordSet: false,   // đã tự nhập toạ độ (không phải toạ độ ví dụ)
@@ -124,8 +126,9 @@ const state = {
   useBoundary: true,
   scannedAt: null,
 };
-const media = { music: null, voice: null, musicName: '', voiceName: '', mixed: null, mixKey: '', voiceSegs: new Map(), voiceCache: new Map(), logo: null, photos: [], clips: [], planImg: null, planRaw: null };
+const media = { music: null, voice: null, musicName: '', voiceName: '', mixed: null, mixKey: '', voiceSegs: new Map(), voiceCache: new Map(), logo: null, avatarRaw: null, avatarCut: null, photos: [], clips: [], planImg: null, planRaw: null };
 const LOGO_STORE = 'vitri.logo.v1';
+const AVATAR_RAW = 'vitri.avatar.raw.v1', AVATAR_CUT = 'vitri.avatar.cut.v1';   // ảnh sale: gốc (khung tròn) + đã tách nền
 const ai = { tts: false, ttsProvider: null, script: false, gated: true, voices: null };
 
 // ---------- Lưu dự án gần nhất ----------
@@ -389,6 +392,9 @@ function buildScene() {
     phone: phoneDisplay(state.phone),
     logo: media.logo,
     logoBg: state.logoBg,
+    avatar: avatarImg(),
+    avatarCut: avatarImg() === media.avatarCut,
+    wm: state.wmOn && String(state.brand || '').trim() ? String(state.brand).trim() : '',
     photos: media.photos.map(p => p.img),
     photoLabels: media.photos.map(p => capText(p.cap)), // 4/11: chỉ hiện chú thích khách tự gõ, không còn nhãn phòng tự gắn
     clips: media.clips.map(c => ({ el: c.el, dur: c.dur, room: c.room || '', label: capText(c.cap) })),
@@ -3613,7 +3619,7 @@ async function stepNext() {
 // ---------- Căn nhà đã lưu theo tài khoản ----------
 const PROJECT_KEYS = ['coordText', 'house', 'typeLabel', 'label', 'sub', 'radiusKm', 'title', 'showTitle', 'brand', 'phone', 'price', 'area', 'beds', 'legal', 'highlights', 'buyer',
   'scriptSeed', 'scriptEdits', 'scriptAi', 'scriptOwn', 'aiTone', 'scriptMode', 'voSig', 'thoCu', 'floors', 'fmt', 'speed', 'style', 'base', 'flow', 'lot', 'myRoads', 'plan', 'planOn', 'lotText', 'lotArea', 'areaWard', 'areaProv', 'areaFor', 'roadWidth', 'showStreets', 'showSweep', 'showAdminArea', 'showHubFx', 'fxV', 'keyLook', 'm1V', 'stars', 'roadStars', 'roadFills', 'iso', 'isoFor', 'showIso', 'region', 'regionFor', 'showRegion', 'showInfra', 'regionOff', 'pageVideo', 'pageDesc', 'roadTheme', 'hiTheme', 'lotStyle', 'lotColor', 'lotSrc', 'lotDims', 'routeTheme', 'roadLabelFace', 'voiceId', 'voiceSpeed', 'useBoundary', 'musicLib', 'musicVol',
-  'subsOn', 'logoBg', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
+  'subsOn', 'logoBg', 'avatarMode', 'wmOn', 'sfxOn', 'sfxVol', 'scannedAt', 'speedV'];
 const round5 = v => Array.isArray(v) ? v.map(round5)
   : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, round5(x)]))
   : typeof v === 'number' && !Number.isInteger(v) ? Math.round(v * 1e5) / 1e5 : v;
@@ -3797,6 +3803,91 @@ function showLogo() {
   $('logoClear').hidden = !has;
   $('logoPreview').hidden = !has;
   if (has) $('logoPreview').src = media.logo.src;
+}
+
+// ---------- Ảnh sale cuối video (5/11, khách góp ý) ----------
+// Lưu trên máy như logo (giữ khi đổi căn). Tách nền bằng gói riêng site/tachnen.js (MediaPipe, chỉ tải khi chọn ảnh).
+// Tách nền lỗi (máy cũ không có WASM SIMD, ảnh không có người) → tự dùng Khung tròn.
+function avatarImg() {
+  if (state.avatarMode !== 'tron' && media.avatarCut) return media.avatarCut;
+  return media.avatarRaw;
+}
+function storeImg(key, data) {
+  try { localStorage.setItem(key, data); return true; } catch { return false; }
+}
+let tachNen = null;
+async function cutAvatar(cv) {
+  if (!tachNen) tachNen = import(new URL('tachnen.js', document.baseURI).href);
+  const m = await tachNen.catch(e => { tachNen = null; throw e; });
+  if (m.hasAlpha(cv)) return cv;   // ảnh đã tách nền sẵn (PNG trong suốt)
+  return m.cutPortrait(cv);
+}
+async function pickAvatar(file) {
+  if (!file) return;
+  let img;
+  try {
+    const url = URL.createObjectURL(file);
+    img = await loadLogo(url);
+    URL.revokeObjectURL(url);
+    if (!img) throw new Error('bad');
+  } catch {
+    toast('Không đọc được ảnh. Dùng ảnh JPG hoặc PNG.', 3500);
+    return;
+  }
+  const k = Math.min(1, 720 / Math.max(img.width, img.height));
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(img.width * k)); cv.height = Math.max(1, Math.round(img.height * k));
+  cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+  // Ảnh gốc cho Khung tròn: cắt vuông giữa ảnh, lệch lên trên (mặt thường ở nửa trên)
+  const sq = Math.min(cv.width, cv.height), rc = document.createElement('canvas');
+  rc.width = rc.height = Math.min(480, sq);
+  rc.getContext('2d').drawImage(cv, (cv.width - sq) / 2, Math.max(0, (cv.height - sq) * 0.2), sq, sq, 0, 0, rc.width, rc.height);
+  const raw = rc.toDataURL('image/jpeg', 0.88);
+  storeImg(AVATAR_RAW, raw);
+  media.avatarRaw = await loadLogo(raw);
+  media.avatarCut = null;
+  try { localStorage.removeItem(AVATAR_CUT); } catch { /* bỏ qua */ }
+  $('avatarName').textContent = 'Đang tách nền…';
+  showAvatar(true);
+  scheduleRebuild();
+  try {
+    const cut = await cutAvatar(cv);
+    // Gọn lại để lưu trên máy: cao tối đa 520 px (đủ nét cho 1080p, ảnh chiếm ~1/4 khung)
+    const kk = Math.min(1, 520 / cut.height), oc = document.createElement('canvas');
+    oc.width = Math.max(1, Math.round(cut.width * kk)); oc.height = Math.max(1, Math.round(cut.height * kk));
+    oc.getContext('2d').drawImage(cut, 0, 0, oc.width, oc.height);
+    const data = oc.toDataURL('image/png');
+    storeImg(AVATAR_CUT, data);
+    media.avatarCut = await loadLogo(data);
+    state.avatarMode = 'cut';
+    toast('Đã tách nền ảnh sale. Xem ở cuối video.');
+  } catch (e) {
+    console.warn('tach nen', e);
+    state.avatarMode = 'tron';
+    lastIssue = 'Tách nền ảnh sale lỗi: ' + (e && e.message || e);
+    toast('Máy này chưa tách nền được ảnh, đã dùng khung tròn.', 4000);
+  }
+  showAvatar();
+  scheduleRebuild();
+}
+function clearAvatar() {
+  media.avatarRaw = media.avatarCut = null;
+  try { localStorage.removeItem(AVATAR_RAW); localStorage.removeItem(AVATAR_CUT); } catch { /* bỏ qua */ }
+  $('avatarFile').value = '';
+  showAvatar();
+  scheduleRebuild();
+}
+function showAvatar(busy = false) {
+  const img = avatarImg(), has = !!img;
+  if (!busy) $('avatarName').textContent = !has ? 'Chưa có' : img === media.avatarCut ? 'Đã tách nền' : 'Khung tròn';
+  $('avatarClear').hidden = !has || busy;
+  $('avatarPreview').hidden = !has;
+  if (has) $('avatarPreview').src = img.src;
+  $('avatarModeSeg').hidden = !media.avatarCut || busy;
+  setSeg('avatarModeSeg', avatarImg() === media.avatarCut ? 'cut' : 'tron');
+}
+function showWmHint() {
+  $('wmHint').hidden = !(state.wmOn && !String(state.brand || '').trim());
 }
 
 // ---------- Ảnh thực tế căn nhà ----------
@@ -4823,7 +4914,7 @@ function init() {
     $(id).addEventListener('input', e => { state[key] = e.target.value; scheduleRebuild(); });
   }
   updateAreaPlaceholders();
-  $('brandInput').addEventListener('input', e => { state.brand = e.target.value; scheduleRebuild(); });
+  $('brandInput').addEventListener('input', e => { state.brand = e.target.value; showWmHint(); scheduleRebuild(); });
   $('musicFile').addEventListener('change', e => pickAudio('music', e.target.files[0]));
   $('musicLib').innerHTML = '<option value="">— Không dùng —</option>' + MUSIC_LIB.map(x => `<option value="${x.id}">${esc(x.label)}</option>`).join('');
   $('musicLib').value = state.musicLib || '';
@@ -4883,6 +4974,21 @@ function init() {
   let savedLogo = null;
   try { savedLogo = localStorage.getItem(LOGO_STORE); } catch { /* bỏ qua */ }
   if (savedLogo) loadLogo(savedLogo).then(img => { media.logo = img; showLogo(); scheduleRebuild(); });
+  $('avatarFile').addEventListener('change', e => pickAvatar(e.target.files[0]));
+  $('avatarClear').addEventListener('click', clearAvatar);
+  bindSeg('avatarModeSeg', v => { state.avatarMode = v; showAvatar(); scheduleRebuild(); });
+  $('wmOn').checked = !!state.wmOn;
+  $('wmOn').addEventListener('change', e => { state.wmOn = e.target.checked; showWmHint(); scheduleRebuild(); });
+  showWmHint();
+  {
+    let raw = null, cut = null;
+    try { raw = localStorage.getItem(AVATAR_RAW); cut = localStorage.getItem(AVATAR_CUT); } catch { /* bỏ qua */ }
+    Promise.all([raw && loadLogo(raw), cut && loadLogo(cut)]).then(([r, c]) => {
+      media.avatarRaw = r || null; media.avatarCut = c || null;
+      showAvatar();
+      if (r || c) scheduleRebuild();
+    });
+  }
   $('voiceFile').addEventListener('change', e => pickAudio('voice', e.target.files[0]));
   $('ownVoiceFile').addEventListener('change', e => pickOwnVoice(e.target.files[0]));
   $('recOpen').addEventListener('click', openRecorder);
