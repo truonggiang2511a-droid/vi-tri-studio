@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0b1220">
+<title>AI đạo diễn · Vị Trí Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&family=Montserrat:wght@900&display=swap">
+<link rel="stylesheet" href="maplibre-gl.css">
+<link rel="stylesheet" href="dao-dien.css">
+</head>
+<body>
+<header class="top">
+  <a class="back" href="/" aria-label="Về kiểu cũ">‹ Kiểu cũ</a>
+  <div class="brand">🎬 <b>AI đạo diễn</b></div>
+  <span class="badge">Mới</span>
+</header>
+
+<main class="wrap">
+  <ol class="steps" aria-label="Các bước">
+    <li data-s="1" class="on"><i>1</i><span>Vị trí</span></li>
+    <li data-s="2"><i>2</i><span>Thông tin</span></li>
+    <li data-s="3"><i>3</i><span>Dựng video</span></li>
+  </ol>
+
+  <!-- Bước 1: toạ độ -->
+  <section class="card" id="s1">
+    <h1>Dán vị trí căn nhà</h1>
+    <p class="sub">Toạ độ hoặc link Google Maps. AI tự quét tiện ích, đường đi, sân bay, metro quanh nhà.</p>
+    <label class="field">
+      <input id="coord" inputmode="text" autocomplete="off" placeholder="vd: 10.7285, 106.6185 hoặc link maps.app.goo.gl/…">
+    </label>
+    <p class="msg" id="coordMsg" role="status"></p>
+    <button class="cta" id="go1">Tiếp tục ›</button>
+    <p class="tip">Mẹo: trên Google Maps nhấn giữ vào căn nhà → chép toạ độ hiện ra ở ô tìm kiếm.</p>
+  </section>
+
+  <!-- Bước 2: tin đăng + khách mua -->
+  <section class="card" id="s2" hidden>
+    <h1>Dán thông tin căn</h1>
+    <p class="sub">Dán nguyên tin đăng bạn hay gửi khách. AI tự nhận ra loại nhà, giá, diện tích, pháp lý.</p>
+    <label class="field">
+      <textarea id="listing" rows="6" placeholder="vd: Bán nhà hẻm xe hơi An Lạc, 5x20m, 1 trệt 2 lầu, 3PN, sổ hồng riêng, giá 3,2 tỷ…"></textarea>
+    </label>
+    <div class="understood" id="understood" hidden>
+      <div class="u-head">🤖 AI hiểu căn này là <button class="link" id="editInfo">Sửa</button></div>
+      <div class="chips" id="chips"></div>
+      <div class="infoform" id="infoform" hidden></div>
+    </div>
+    <h2>Video dành cho khách nào?</h2>
+    <div class="buyers" id="buyers"></div>
+    <label class="field small">
+      <span>Tên thương hiệu hiện mờ trên video <em>(tuỳ chọn)</em></span>
+      <input id="brand" maxlength="40" placeholder="vd: Nhà Đất Giang">
+    </label>
+    <div class="scan" id="scanState" role="status"></div>
+    <button class="cta gold" id="go2">🎬 Agent dựng video</button>
+  </section>
+
+  <!-- Bước 3: Agent dựng + bảng phân cảnh -->
+  <section class="card studio" id="s3" hidden>
+    <div class="agent" id="agent">
+      <h1>Agent đang dựng video…</h1>
+      <ul class="tasks" id="tasks"></ul>
+    </div>
+    <div class="studio-body" id="studio" hidden>
+      <div class="left">
+        <div class="player">
+          <canvas id="cv" width="540" height="960" aria-label="Xem trước video"></canvas>
+          <button class="play" id="play" aria-label="Phát">▶</button>
+          <div class="stale" id="stale" hidden>Bạn vừa sửa video<br><small>Bấm “Tạo lại video” để AI đọc lại và dựng lại</small></div>
+          <div class="bar"><i id="barFill"></i></div>
+        </div>
+      </div>
+      <div class="right">
+        <div class="note" id="voiceNote" hidden>
+          <b>🎙 Video đang chưa có giọng đọc</b>
+          <span>Đăng ký miễn phí (tặng video dùng thử) để AI đọc lời bằng giọng thật và xuất video.</span>
+          <button class="cta gold" id="loginBtn">Đăng ký / Đăng nhập</button>
+        </div>
+        <button class="cta gold big" id="redo" hidden>🔄 Tạo lại video</button>
+        <div class="export" id="exportBox">
+          <h2>Video đã sẵn sàng 🎉</h2>
+          <div class="q" role="radiogroup" aria-label="Chất lượng">
+            <label><input type="radio" name="q" value="fast" checked><b>Nhanh</b><span>720p</span></label>
+            <label><input type="radio" name="q" value="best"><b>Đẹp nhất</b><span>1080p · 60 hình/giây</span></label>
+          </div>
+          <button class="cta gold big" id="exportBtn">⬇ Xuất video</button>
+          <p class="tip">Trừ 1 lượt khi xuất xong. Xuất lại căn này trong 24 giờ không trừ thêm.</p>
+          <div class="xbar" id="xbar" hidden><i id="xfill"></i><span id="xtxt"></span></div>
+          <div id="out"></div>
+        </div>
+        <details class="edit" id="editBox">
+          <summary>✏️ Sửa video <small>thêm, bỏ, đổi thứ tự tiện ích · sửa lời · nhạc</small></summary>
+          <div class="meta">
+            <label class="sel">🎵 Nhạc nền <select id="music"></select></label>
+            <label class="tog"><input type="checkbox" id="bird"> Vẽ đường chim bay</label>
+          </div>
+          <p class="tip">Kéo ⋮⋮ để đổi thứ tự · chạm vào câu để sửa lời · ✕ để bỏ cảnh</p>
+          <ul class="board" id="board"></ul>
+          <button class="add" id="addPoi">＋ Thêm tiện ích</button>
+        </details>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- Thêm tiện ích: danh sách / bản đồ -->
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-in" role="dialog" aria-modal="true" aria-label="Thêm tiện ích">
+    <div class="sheet-top">
+      <div class="tabs"><button class="on" data-t="list">Danh sách</button><button data-t="map">Chọn trên bản đồ</button></div>
+      <button class="x" id="sheetX" aria-label="Đóng">✕</button>
+    </div>
+    <input class="search" id="poiSearch" placeholder="Tìm tên tiện ích…">
+    <div class="poi-list" id="poiList"></div>
+    <div class="pick-map" id="pickMap" hidden></div>
+    <p class="tip" id="mapTip" hidden>Chạm vào chấm tiện ích trên bản đồ để thêm vào video.</p>
+  </div>
+</div>
+
+<script type="module" src="dao-dien.js"></script>
+</body>
+</html>

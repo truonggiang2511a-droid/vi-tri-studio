@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Thử AI đạo diễn · kiểu vẽ 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@500;600;700;800;900&display=swap">
+<style>
+  body { margin:0; background:#0b1220; color:#e8edf7; font-family:'Be Vietnam Pro',system-ui,sans-serif; padding:16px; }
+  .wrap { max-width:420px; margin:0 auto; }
+  h1 { font-size:18px; margin:0 0 6px; }
+  p { color:#a9b6d3; font-size:13px; line-height:1.5; margin:0 0 10px; }
+  canvas { width:100%; aspect-ratio:9/16; border-radius:14px; background:#111a2e; display:block; }
+  .row { display:flex; gap:8px; margin:10px 0; flex-wrap:wrap; }
+  .opts { font-size:13px; gap:6px 14px; }
+  .opts label { display:flex; align-items:center; gap:5px; }
+  button, select { flex:1; min-width:120px; padding:11px; border-radius:12px; border:1px solid #2a3760; background:#16203a; color:#e8edf7; font:700 14px inherit; font-family:inherit; }
+  button.main { background:#f5c451; color:#111; border:0; }
+  #log { font-size:13px; color:#f5c451; min-height:20px; }
+  #time { font-size:12px; color:#7f8cab; }
+  a { color:#4cc9f0; display:block; margin-top:8px; font-weight:700; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎬 AI đạo diễn · kiểu vẽ 3D (bản thử)</h1>
+  <p>Trang thử nội bộ, nhánh riêng, chưa có trong app. Căn mẫu An Lạc với tiện ích, đường đi, sân bay, cao tốc là dữ liệu thật app đã quét. Lô đất nền là lô mẫu 5×20 m.</p>
+  <div class="row"><select id="mode">
+    <option value="giadinh">👨‍👩‍👧 Gia đình có con nhỏ, mua để ở</option>
+    <option value="dautu">💼 Nhà đầu tư cho thuê</option>
+    <option value="datnen">📐 Lô đất nền</option>
+    <option value="ketnoi">🛫 Kết nối khu vực + hạ tầng</option>
+  </select></div>
+  <div class="row opts">
+    <label><input type="checkbox" id="bird"> Vẽ đường chim bay</label>
+    <label><input type="checkbox" id="infra"> Thêm cảnh hạ tầng</label>
+    <label><input type="checkbox" id="voice" checked> Giọng đọc (tạm)</label>
+    <label><input type="checkbox" id="sfx" checked> SFX</label>
+    <label>Xuất <select id="fps" style="min-width:0;padding:4px 6px;font-size:13px"><option value="30">30</option><option value="60" selected>60</option></select> hình/giây</label>
+  </div>
+  <canvas id="cv" width="540" height="960"></canvas>
+  <div id="time"></div>
+  <div class="row"><button id="play" class="main">▶ Xem trước</button></div>
+  <div class="row"><button id="x720">Xuất MP4 720p</button><button id="x1080">Xuất MP4 1080p</button></div>
+  <div id="log"></div>
+  <div id="out"></div>
+</div>
+<script type="module" src="js/thu-3d.js"></script>
+</body>
+</html>

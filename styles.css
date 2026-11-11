@@ -860,6 +860,14 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .vn-entry-ico { font-size: 22px; flex: none; }
 .vn-entry strong { display: block; font-size: 14px; }
 .vn-entry small { display: block; font-size: 12.5px; color: var(--muted); }
+/* Lối vào AI đạo diễn (chế độ mới cho khách mới, trang riêng /dao-dien.html) — nổi bật màu vàng kim */
+.dd-entry { display: flex; align-items: center; gap: 10px; margin: 2px 0 12px; padding: 11px 12px; border-radius: 14px; text-decoration: none; color: #1a1205;
+  background: linear-gradient(135deg, #fff1b8, #f5c451 45%, #d49a1e); box-shadow: 0 6px 18px rgba(245, 196, 81, .28); }
+.dd-entry-ico { font-size: 24px; flex: none; }
+.dd-entry strong { display: block; font-size: 14.5px; font-weight: 800; }
+.dd-entry strong em { font-style: normal; font-size: 11px; font-weight: 800; background: #1a1205; color: #f5c451; padding: 2px 7px; border-radius: 999px; margin-left: 4px; vertical-align: 1px; }
+.dd-entry small { display: block; font-size: 12.5px; color: #3d2b06; line-height: 1.35; }
+.dd-entry-go { margin-left: auto; font-size: 26px; font-weight: 800; line-height: 1; }
 .vn-card select.flash { animation: install-pulse 1s ease-out 3; border-color: var(--accent); }
 .vn-snap { display: grid; gap: 6px; padding: 12px; border-radius: 12px; border: 1px dashed color-mix(in srgb, var(--focus) 45%, transparent); }
 .vn-snap .btn { width: 100%; min-width: 0; white-space: normal; }

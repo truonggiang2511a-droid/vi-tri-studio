@@ -259,7 +259,8 @@ function blobSink() {
   };
 }
 
-export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffer, onProgress, signal, prepFrame = null, tiles = true }) {
+// source (tuỳ chọn, kiểu vẽ 3D AI đạo diễn — js/dd3d.js): { canvas, prepare(t) → promise, draw(tl, t) } thay cho render() + ô ảnh
+export async function exportMp4({ tl, width, height, fps = 30, cache = {}, audioBuffer, onProgress, signal, prepFrame = null, tiles = true, source = null }) {
   const scale = width / tl.LW;
   const pv = await pickVideoCodec(width, height, fps);
   if (!pv) throw new Error('Máy này không mã hoá được video ở độ phân giải ' + width + 'x' + height + '. Thử chất lượng 720p.');
@@ -324,9 +325,9 @@ export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffe
   });
   venc.configure(pv.cfg);
 
-  const gr = gradedRenderer(width, height);
+  const gr = source || gradedRenderer(width, height);
   const canvas = gr.canvas;
-  const feed = tiles ? tileFeeder(tl, scale, cache) : null;
+  const feed = tiles && !source ? tileFeeder(tl, scale, cache) : null;
   const bmPrev = cache.bitmap;
   if (feed) cache.bitmap = true;   // ô tải trong lúc xuất là ImageBitmap → nhả là trả RAM ngay (render.js TileCache)
   const us = 1e6 / fps;
@@ -345,6 +346,7 @@ export async function exportMp4({ tl, width, height, fps = 30, cache, audioBuffe
       // Video thực tế: tua đúng khung hình trong file trước khi vẽ (chỉ ở các cảnh có video)
       const pf = prepFrame && prepFrame(i / fps);
       if (pf) await pf;
+      if (source) { const sp = source.prepare(i / fps); if (sp) await sp; }
       gr.draw(tl, i / fps, { cache, scale, request: false });
       const frame = new VideoFrame(canvas, { timestamp: Math.round(i * us), duration: Math.round(us) });
       venc.encode(frame, { keyFrame: i % (fps * 2) === 0 });

@@ -9,6 +9,10 @@ $ESBUILD js/admin.js --bundle --format=esm --minify --target=es2020 --charset=ut
 $ESBUILD js/xuat-entry.js --bundle --format=esm --minify --target=es2020 --charset=utf8 --outfile=site/xuat.js --log-level=warning
 # 5/11: tách nền ảnh sale (MediaPipe Tasks Vision, Apache-2.0) — gói riêng, chỉ tải khi khách chọn ảnh sale
 $ESBUILD js/tachnen-entry.js --bundle --format=esm --minify --target=es2020 --charset=utf8 --outfile=site/tachnen.js --log-level=warning
+# AI đạo diễn (/dao-dien.html): chế độ mới cho khách mới, tách hẳn khỏi kiểu cũ — gói riêng, app chính không tải
+$ESBUILD js/dao-dien.js --bundle --format=esm --minify --target=es2020 --charset=utf8 --outfile=site/dao-dien.js --log-level=warning
+sed -e 's#<script type="module" src="js/dao-dien.js"></script>#<script type="module" src="dao-dien.js"></script>#' dao-dien.html > site/dao-dien.html
+cp dao-dien.css site/dao-dien.css && cp node_modules/maplibre-gl/dist/maplibre-gl.css site/maplibre-gl.css
 $ESBUILD js/landing.js --bundle --format=esm --minify --target=es2020 --charset=utf8 --line-limit=400 --outfile=site/landing.js --log-level=warning
 $ESBUILD styles.css --minify --outfile=site/styles.css --log-level=warning
 $ESBUILD landing.css --minify --outfile=site/landing.css --log-level=warning

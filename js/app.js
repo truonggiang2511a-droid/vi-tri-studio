@@ -5306,6 +5306,11 @@ function init() {
   $('coverSave').addEventListener('click', saveCover);
   $('coverSaveTop').addEventListener('click', saveCover);
 
+  // Lối vào AI đạo diễn: khách đã dán toạ độ ở đây thì mang sang luôn (trang đó tự đọc ?c=)
+  $('ddEntry')?.addEventListener('click', e => {
+    const v = $('coordInput').value.trim();
+    if (v) { e.preventDefault(); location.href = '/dao-dien?c=' + encodeURIComponent(v); }
+  });
   initInstall({ toast, onChange: () => {} });
   setAccountLocation(state.house);
   initLeads({ toast });
@@ -5315,6 +5320,18 @@ function init() {
     const h = location.hash;
     if (h === '#thu' || h === '#dangky' || h === '#mua' || h === '#khach') history.replaceState(null, '', location.pathname + location.search);
     if (h === '#khach') openLeads('leads');
+    // Từ trang AI đạo diễn (/dao-dien.html → /?dd=1#dangky hoặc #mua): đăng ký/đăng nhập xong, hoặc mua lượt xong,
+    // tự quay về AI đạo diễn (trang đó tự điền lại toạ độ + tin đăng đã nhập)
+    if (new URLSearchParams(location.search).get('dd') === '1') {
+      const back = () => location.replace('/dao-dien');
+      if (h === '#dangky' && account.profile) { back(); return; }
+      const had = !!account.profile, c0 = account.profile?.credits || 0;
+      onAccountChange(a => {
+        if (!a.profile) return;
+        if (!had) back();
+        else if (h === '#mua' && ((a.profile.credits || 0) > c0 || (a.profile.unlimited_until && new Date(a.profile.unlimited_until) > new Date()))) back();
+      });
+    }
     if (h === '#dangky' && !account.profile) requireLogin('', 'register');
     else if (h === '#mua') openPricing();
   });
