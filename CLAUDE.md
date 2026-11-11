@@ -86,6 +86,8 @@ Tài khoản thử nội bộ: `giang.test@vitristudio.com` (`no_limits`). Căn 
 | `lib/tts.js`, `lib/script.js`, `lib/sepay.js`, `lib/capi.js`, `lib/config.js`, `lib/resolve.js`, `lib/vt.js` | Giọng / kịch bản AI / webhook tiền / Meta CAPI / cấu hình công khai / mở link rút gọn Google Maps / env + gọi RPC |
 | `js/tachnen-entry.js` → `site/tachnen.js` + `mp/selfie_segmenter.tflite` + `site/mp/vision_wasm_internal.*` | Tách nền ảnh sale trên máy khách (MediaPipe Tasks Vision 0.10.21, Apache-2.0), 5/11 — xem nhật ký 5/11 |
 | `js/mau1.js` + `js/mau1-icons.js` + `music/sfx_lk_a2.m4a`/`sfx_lk_b2.m4a` + `music/sfx_key1..6.wav` | Chữ điểm nhấn + icon "mẫu 1" lấy từ Hook Kit (skill batdongsan-editor), 30/10, chỉ admin — xem nhật ký 30/10 |
+| `dao-dien.html` + `dao-dien.css` + `js/dao-dien.js` → `site/dao-dien.*` | **AI đạo diễn** (11/11): chế độ mới cho khách mới, trang riêng `/dao-dien`, kiểu cũ giữ nguyên. Xem nhật ký 11/11 |
+| `js/dd3d.js` (vẽ 3D MapLibre GL + lớp 2D, phụ đề, vùng an toàn), `js/dd-parse.js` (đọc tin đăng), `js/dd-agent.js` (chọn tiện ích, viết lời, nhạc), `js/dd-voice.js` (giọng /api/tts + kiểm tra/trừ lượt) | Bộ máy AI đạo diễn. `js/thu-3d.js` + `thu-3d.html` = trang thử nội bộ, KHÔNG đóng gói vào `site/` |
 | `supabase/*.sql` | Bảng + hàm `vt_*` (tài khoản, lượt, đơn, trang, lead, giới hạn làm lại, chống lạm dụng) |
 | `tools/` | `build_poi_tiles.py` (dựng `poi/` từ Overture, chạy hằng tháng), `make_music.py`, `make_sample.py`, `make_sample_voice.py` |
 
@@ -218,6 +220,23 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 ---
 
 ## 5. Nhật ký bài học
+
+- 2026-11-11 (Giang duyệt, đẩy main dff9ccf): **AI đạo diễn** `/dao-dien` — chế độ MỚI cho khách mới chưa rành công nghệ, tách hẳn kiểu cũ
+  (kiểu cũ chỉ thêm nút vàng `#ddEntry` ở bước 1, bấm khi đã dán toạ độ thì mang sang `?c=`). 3 bước: dán toạ độ → dán NGUYÊN tin đăng
+  (`dd-parse.js` đọc loại nhà / giá / kích thước / pháp lý bằng luật, KHÔNG đưa SĐT lên video) + chọn khách (để ở / cho thuê / kết nối khu vực)
+  → Agent (`dd-agent.js`) chọn tiện ích + viết lời CHỈ từ số liệu quét thật → dựng 3D (`dd3d.js`). Vẽ: MapLibre GL 4.7.1 (BSD-3, gói riêng
+  `site/dao-dien.js`, app chính không tải) + ảnh vệ tinh Esri + khối nhà OpenFreeMap; máy quay = đúng công thức easeTo/flyTo của bản thử Giang
+  duyệt (đường cong `bezier(.25,.1,.25,1)`, cú lướt tiện ích `t*(2-t)` 1,7 s); xuất từng khung: `prepare(t)` jumpTo + `map.redraw()` đồng bộ,
+  thiếu ô thì chờ `data` rồi vẽ lại (KHÔNG dựa vào requestAnimationFrame → tab nền không bị chậm). `exportMp4` nhận thêm `source` (mặc định như cũ).
+  Ghim vàng giọt nước rơi nảy, line vàng 3 lớp (quầng/thân/lõi, line cũ mờ 32%), phụ đề cụm ≤ 3 từ nảy vào trắng/vàng bóng đậm ở 72% chiều cao,
+  thẻ/nhãn/CTA trong vùng an toàn (`SAFE` trong dd3d.js = FORMATS.v.safe của render.js). Hạ tầng: "Kết nối khu vực" đủ máy bay cất cánh
+  (đường băng thật qua `loadHubFx`), metro (ga trong `hubs.js`, tàu vẽ to ~4 lần mới thấy), cao tốc; 2 kiểu kia AI chỉ thêm 1 cảnh khi gần
+  (metro ≤ 2 km, sân bay ≤ 20 phút, cao tốc ≤ 3 km). Nhạc mặc định Hùng hồn. Giọng `/api/tts` (giọng `nu-nam`), nhớ theo câu → sửa/đổi thứ tự
+  chỉ đọc lại câu đã đổi (vẫn tính vào giới hạn giọng mỗi căn của `vt_redo_limits`). LƯỢT: `vt_me` kiểm tra trước, `vt_export_begin` gọi SAU khi
+  xuất xong (khác kiểu cũ gọi trước) — không đổi SQL; hết lượt thì không giao file. Đăng ký/mua lượt: chuyển `/?dd=1#dangky` / `#mua`, app.js
+  thấy `dd=1` thì đăng nhập/mua xong tự `location.replace('/dao-dien')`; trang AI đạo diễn giữ dữ liệu khách trong `localStorage['vitri.dd.v1']`.
+  Đã thử trên web thật (chưa đăng nhập): quét 1.397 tiện ích, đường đi thật, tên phường, điểm mốc. CHƯA thử: giọng, đăng nhập quay lại,
+  trừ lượt (cần tài khoản thật — nhờ Giang thử). Xuất 720p/30 trên PC ~55 s cho video ~43 s; chưa đo trên điện thoại.
 
 - 2026-11-03 (Giang: thêm nút "Mở app ngân hàng" vì khách dùng điện thoại không quét được QR trên chính máy mình): `#bankApps` trong `#payQr` (account.js `renderBankApps`, `bankLink`, `onBankClick`) — lưới 8 app phổ biến + "Ngân hàng khác", mỗi nút là `<a target=_blank>` tới `https://dl.vietqr.io/pay?app=<id>&ba=<stk>@<mã NH nhận>&am=&tn=<mã đơn>&bn=&url=<origin>/` (mã NH nhận theo BIN trong `BIN_CODE`, MB = `mb`). Danh sách app + cờ `autofill` lấy từ `api.vietqr.io/v2/android-app-deeplinks` / `ios-app-deeplinks` ngày 3/11 (tự điền: mb, icb, bidv, acb, ocb). Bấm là chép sẵn mã đơn + toast hướng dẫn dán. Mở thẻ mới để trang gốc vẫn poll và bắn `purchase` như cũ; thêm `checkPaid()` gọi ngay khi khách quay lại trang (`visibilitychange`). KHÔNG đổi SQL/đơn/tên sự kiện. Thử bằng Playwright (iPhone 13, Pixel 7, desktop, khách thường + tài khoản test): mở đúng scheme app (`mbbank://`, `intent://…package=com.mbmobile`), poll + màn "Thanh toán thành công" chạy. CHƯA kiểm được phần tự điền: trang dl.vietqr.io gọi `/pay/claim` (có proof-of-work) và trả `{"open":null}` cho máy thử kể cả link mẫu trong tài liệu VietQR → chỉ mở app trơn; phải thử trên điện thoại thật. Vì vậy đang bật CHỈ cho tài khoản test (`BANK_APPS_ALL = false` + `isTestAcct`); Giang thử xong mới đổi `true` cho mọi khách.
 - 2026-11-03 21:05 (Giang thử MB trên điện thoại thật: TỰ ĐIỀN ĐÚNG số tiền + nội dung): MỞ CHO MỌI KHÁCH (`BANK_APPS_ALL = true`). BỎ các app chỉ mở trơn (Vietcombank, Agribank, Techcombank, VPBank…) vì khách phải gõ tay số tài khoản + số tiền, dễ sai và kém hơn lưu ảnh QR rồi quét — chỉ còn 5 app có `autofill` (`BANK_APPS`: MB, VietinBank, BIDV, ACB, OCB; tên ngắn để vừa ô 5 cột trên màn 320–360 px), dòng nhắc "Ngân hàng khác: lưu mã QR bên dưới rồi quét trong app". Ngân hàng NHẬN không có trong `BIN_CODE` thì ẩn cả khung (link không tự điền được). Mới kiểm thật MB; 4 app còn lại theo cờ autofill của VietQR — khách báo lỗi app nào thì bỏ app đó khỏi `BANK_APPS`. Theo dõi: tỉ lệ đơn tạo → trả (1–3/11 chỉ 1/11 đơn) trước/sau 3/11 21:10.
