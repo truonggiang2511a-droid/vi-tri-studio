@@ -563,7 +563,11 @@ export function createDirector3D({ width, height, story }) {
     setBuild(t);
   }
   // Xuất: chờ bản đồ vẽ xong khung này với đủ ô ảnh + dữ liệu (tối đa 20 s/khung khi mạng treo)
+  // điện thoại hết bộ nhớ đồ hoạ (WebGL bị mất) → báo lỗi rõ ngay, không treo chờ từng khung
+  let glLost = false;
+  map.getCanvas().addEventListener('webglcontextlost', () => { glLost = true; });
   function prepare(t) {
+    if (glLost) return Promise.reject(new Error('Máy hết bộ nhớ đồ hoạ khi dựng 3D. Đóng bớt ứng dụng, chọn "Nhanh 720p" rồi xuất lại.'));
     setFrame(t);
     // vẽ ngay (đồng bộ) — đủ ô ảnh + dữ liệu thì xong luôn, khỏi chờ nhịp vẽ của trình duyệt
     map.redraw();
@@ -575,7 +579,7 @@ export function createDirector3D({ width, height, story }) {
       const step = () => {
         if (fin) return;
         map.redraw();
-        if ((map.isStyleLoaded() && map.areTilesLoaded()) || performance.now() - t0 > 20000) { fin = true; map.off('data', kick); res(); return; }
+        if (glLost || (map.isStyleLoaded() && map.areTilesLoaded()) || performance.now() - t0 > 20000) { fin = true; map.off('data', kick); res(); return; }
         timer = setTimeout(step, 40);
       };
       let timer = setTimeout(step, 40);
@@ -1168,9 +1172,11 @@ export function createDirector3D({ width, height, story }) {
       for (const it of order) {
         if (it.a <= 0) continue;
         const g = gVis[it.key], lf = it.d3 ? layout3D : layoutGround;
+        // chữ đang ẩn vì hết chỗ: 0,25 s mới dò lại một lần (dò mọi chỗ mỗi khung làm xuất video chậm gấp đôi)
+        if (g && g.v === 0 && g.tried != null && t >= g.tried && t - g.tried < 0.25) continue;
         // đè chữ / lòi mép → thử dời dọc tuyến, sang đoạn khác của tuyến, rồi thu nhỏ (giữ chỗ đã chọn ở khung trước cho khỏi nhảy)
         const cands = [];
-        for (const sz of [1, 0.75, 0.55, 0.42]) it.rts.forEach((_, pi) => { for (const o of [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2, 3, -3, 4, -4]) cands.push(pi + '|' + o + '|' + sz); });
+        for (const sz of [1, 0.75, 0.55, 0.42]) it.rts.forEach((_, pi) => { for (const o of [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2, 2.5, -2.5, 3, -3, 4, -4, 5, -5, 6, -6]) cands.push(pi + '|' + o + '|' + sz); });
         const steps = {};
         let lay = null, off = '0|0|1', hit = true;
         for (const c of [...new Set([g?.off ?? '0|0|1', ...cands])]) {
@@ -1203,7 +1209,7 @@ export function createDirector3D({ width, height, story }) {
       // không chỗ nào trống (đã thử dời + thu nhỏ + xếp lại): ẩn dần — luật chữ không đè nhau, không lòi ra mép
       const g = gVis[it.key], target = hit ? 0 : 1;
       const v = !g || Math.abs(t - g.t) > 0.5 ? target : g.v + Math.sign(target - g.v) * Math.min(Math.abs(target - g.v), Math.abs(t - g.t) / 0.3);
-      gVis[it.key] = { v, t, off };
+      gVis[it.key] = { v, t, off, tried: hit ? t : null };
       if (it.d3) draw3D(ctx, lay, it.color, it.a * v, it.rise); else drawGround(ctx, lay, it.color, it.a * v);
     }
   }

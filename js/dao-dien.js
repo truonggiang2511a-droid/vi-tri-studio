@@ -14,7 +14,7 @@ import { MAX_PHOTOS, savePhotos, loadPhotoBlobs, shrink, toBitmap } from './dd-p
 import { track } from './track.js';
 
 const $ = id => document.getElementById(id);
-const S = { house: null, scan: null, scanJob: null, routes: {}, anchors: [], infra: null, listing: null, buyer: null, edits: {}, music: 'hung-hon', photos: [] };   // photos: [{ blob, url, bmp }]
+const S = { house: null, scan: null, scanJob: null, routes: {}, anchors: [], infra: null, listing: null, buyer: null, edits: {}, manual: [], music: 'hung-hon', photos: [] };   // photos: [{ blob, url, bmp }]
 const SAVE_KEY = 'vitri.dd.v1';
 
 // ---------- bước chung ----------
@@ -28,7 +28,9 @@ function goStep(n) {
 }
 // Giữ điều khách đã nhập (đi đăng ký ở trang chính rồi quay lại không phải nhập lại)
 function save() {
-  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ coord: $('coord').value, listing: $('listing').value, buyer: S.buyer, brand: $('brand').value, music: S.music })); } catch { /* bỏ qua */ }
+  // + mọi chỉnh sửa (tiện ích, trục đường, lời đọc, màu bìa…) và tiện ích ghim tay: đi đăng ký / mua lượt rồi quay về vẫn còn nguyên
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify({ coord: $('coord').value, listing: $('listing').value, buyer: S.buyer, brand: $('brand').value, music: S.music,
+    edits: S.edits, manual: S.manual, bird: $('bird').checked, tone: $('tone').value })); } catch { /* bỏ qua */ }
 }
 function restore() {
   // từ kiểu cũ bấm "AI đạo diễn" khi đã dán toạ độ: /dao-dien.html?c=… → điền sẵn, sang bước 2
@@ -43,7 +45,10 @@ function restore() {
   }
   if (d) { $('brand').value = d.brand || ''; if (d.music) S.music = d.music; }
   $('coord').value = c || d?.coord || '';
-  if ($('coord').value) step1(true);
+  // chỉnh sửa chỉ giữ khi cùng căn; gắn lại SAU khi nhận vị trí (setHouse làm mới chỉnh sửa khi đổi căn)
+  const keep = d && d.coord === $('coord').value;
+  if (keep) { $('bird').checked = !!d.bird; if (d.tone) $('tone').value = d.tone; }
+  if ($('coord').value) step1(true).then(() => { if (keep && S.house) { S.edits = d.edits || {}; S.manual = d.manual || []; renderPoiPick(); save(); } });
   loadPhotoBlobs().then(async blobs => { for (const b of blobs.slice(0, MAX_PHOTOS)) S.photos.push({ blob: b, url: URL.createObjectURL(b), bmp: await toBitmap(b) }); renderPhotos(); });
 }
 
@@ -72,7 +77,7 @@ async function step1(quiet = false) {
 }
 function setHouse(h) {
   if (S.house && haversineKm(S.house, h) < 0.01) return;
-  S.house = h; S.scan = null; S.routes = {}; S.anchors = []; S.infra = null; S.edits = {};
+  S.house = h; S.scan = null; S.routes = {}; S.anchors = []; S.infra = null; S.edits = {}; S.manual = [];
   startScan();
 }
 // Quét ngay khi có vị trí (chạy nền trong lúc khách dán tin)
@@ -83,6 +88,7 @@ function startScan() {
     const res = await scanArea(h, 5, null, m => { if (S.house === h) st.textContent = '⏳ ' + m; });
     if (S.house !== h) return null;
     S.scan = res;
+    for (const m of S.manual) if (!res.pois.some(p => p.id === m.id)) res.pois.push(m);   // tiện ích khách đã ghim tay (giữ qua tải lại trang)
     st.className = 'scan ok'; st.textContent = `✓ Đã quét ${res.pois.length} tiện ích quanh nhà`;
     renderPoiPick();
     loadRegion(h);
@@ -318,7 +324,7 @@ function setDirty(v) {
   dirty = v; $('redo').hidden = !v; $('stale').hidden = !v; $('exportBox').hidden = v;
   if (v) { stop(); $('play').classList.add('hide'); }
 }
-function edited() { story = currentStory(); renderBoard(); setDirty(true); }
+function edited() { story = currentStory(); renderBoard(); setDirty(true); save(); }
 
 // ✨ AI viết lời (máy chủ /api/script như kiểu cũ: Claude viết + máy bắt số bịa + biên tập). Công thức theo khách:
 // mua để ở → P.A.S (đánh trúng nỗi đau), đầu tư cho thuê → A.I.D.A, kết nối khu vực → chuyên gia đầu tư. Lời dài hơn (long).
@@ -463,7 +469,7 @@ function poiChips(onChange) {
     chip(`${on ? '✓' : '＋'} ${ICON_EMO[CAT3D[p.cat]?.[0]] || '📍'} ${nm} · ${fmtKm(p.km)}`, on ? 'on' : '', () => {
       if (!on && sel.length >= POI_MAX) { alert(`Tối đa ${POI_MAX} tiện ích.`); return; }
       S.edits.order = on ? sel.filter(x => x !== p.id) : [...sel, p.id];
-      onChange();
+      save(); onChange();
     });
   }
   if (near.length > 3) chip(poiMore ? '▴ Thu gọn' : `▾ Xem thêm ${near.length - 3} gợi ý`, 'more', () => { poiMore = !poiMore; story && !$('studio').hidden ? renderBoard() : renderPoiPick(); });   // chỉ mở/thu, không tính là sửa video
@@ -575,12 +581,13 @@ function addPoi(id) {
     if (cur.length >= POI_MAX) { alert(`Tối đa ${POI_MAX} tiện ích — bỏ bớt một tiện ích trước.`); return; }
     S.edits.order = [...cur, id];
   }
-  closeSheet(); afterPoiChange();
+  closeSheet(); save(); afterPoiChange();
 }
 // ghim tiện ích app chưa quét được (như kiểu cũ): thêm vào danh sách quét của căn này rồi chọn luôn
 function addManual(c) {
   const id = 'm' + Date.now().toString(36);
-  S.scan.pois.push({ id, name: c.name, cat: c.cat, kind: 'manual', lat: c.lat, lng: c.lng, km: haversineKm(S.house, c), manual: true });
+  const m = { id, name: c.name, cat: c.cat, kind: 'manual', lat: c.lat, lng: c.lng, km: haversineKm(S.house, c), manual: true };
+  S.scan.pois.push(m); S.manual.push(m);
   addPoi(id);
 }
 function renderPoiList() {
@@ -704,7 +711,9 @@ async function exportVideo(localOnly = false) {
       await rebuild();
     }
     const best = document.querySelector('input[name=q]:checked').value === 'best';
-    const h = best ? 1920 : 1280, w = Math.round(h * 9 / 32) * 2, fps = best && (navigator.hardwareConcurrency || 8) > 4 ? 60 : 30;
+    // máy yếu (RAM ≤ 4 GB hoặc ≤ 4 nhân): 30 hình/giây kể cả bản đẹp — dựng 3D nhẹ một nửa, ít treo máy
+    const weak = (navigator.deviceMemory || 8) <= 4 || (navigator.hardwareConcurrency || 8) <= 4;
+    const h = best ? 1920 : 1280, w = Math.round(h * 9 / 32) * 2, fps = best && !weak ? 60 : 30;
     xd = createDirector3D({ width: w, height: h, story: withVoice(story) });
     await xd.ready;
     const audio = await mixFor(xd);
@@ -732,7 +741,8 @@ async function exportVideo(localOnly = false) {
     } catch { /* không có ảnh bìa vẫn xong video */ }
     window.__lastExport = { blob, sec: (performance.now() - t0) / 1000 };
   } catch (e) {
-    txt.textContent = 'Lỗi: ' + (e.message || e);
+    const best = document.querySelector('input[name=q]:checked')?.value === 'best';
+    txt.textContent = 'Lỗi: ' + (e.message || e) + (best && !/720p/.test(String(e.message)) ? ' Máy yếu thì chọn "Nhanh 720p" rồi xuất lại.' : '');
     window.__lastExport = { error: String(e.stack || e) };
   } finally { xd?.destroy(); btn.disabled = false; }
 }
