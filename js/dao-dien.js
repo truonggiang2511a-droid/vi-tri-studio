@@ -254,6 +254,11 @@ async function runAgent() {
   await routesFor(chosen);
   // ranh vùng quan trọng của tiện ích đã chọn (khu công nghiệp, bệnh viện, đại học, công viên…)
   S.zones = await loadZones(S.scan.pois.filter(p => chosen.includes(p.id))).catch(() => []);
+  // vùng mốc lớn: KCN gần nhà nhất (≤ 6 km) + cảng biển trong điểm mốc vùng — khoanh ranh, in tên trên vùng
+  if (regionJob) await Promise.race([regionJob, tick(6000)]);
+  const kcn = S.scan.pois.filter(p => p.cat === 'kcn' && p.km <= 6 && !chosen.includes(p.id)).sort((a, b) => a.km - b.km).slice(0, 2);
+  const ports = (S.anchors || []).filter(a => a.type === 'port').slice(0, 1).map(a => ({ id: a.id, cat: 'kcn', name: a.name, lat: a.lat, lng: a.lng, km: a.km }));
+  S.landZones = await loadZones([...kcn, ...ports]).catch(() => []);
   setTask(2); await tick(300);
   setTask(3); if (regionJob) await Promise.race([regionJob, tick(6000)]);
   story = currentStory();
@@ -275,7 +280,7 @@ async function routesFor(ids) {
 }
 function storeData() {
   const sc = S.scan || { pois: [] };
-  return { house: S.house, pois: sc.pois, streets: sc.streets, roads: sc.roads, roadsAll: sc.roads, zones: S.zones, build: S.build, airportParts: S.airportParts, routes: S.routes, anchors: S.anchors, infra: S.infra,
+  return { house: S.house, pois: sc.pois, streets: sc.streets, roads: sc.roads, roadsAll: sc.roads, zones: S.zones, build: S.build, airportParts: S.airportParts, routes: S.routes, anchors: S.anchors, infra: S.infra, landZones: S.landZones,
     ward: sc.area?.ward?.name || sc.admin?.commune || '' };
 }
 // mọi câu lời đọc của kịch bản hiện tại (theo thứ tự cảnh)

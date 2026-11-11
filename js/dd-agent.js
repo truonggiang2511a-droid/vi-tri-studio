@@ -145,7 +145,7 @@ export function buildStory(S, L, buyer, edits = {}) {
   })).filter(r => r.ways.length);
   // Vùng quan trọng: ranh khu công nghiệp / bệnh viện / đại học / công viên của tiện ích đã chọn + ranh sân bay khi có cảnh sân bay
   const ringLL = r => { const q = r.map(([la, ln]) => [ln, la]); if (q.length && (q[0][0] !== q.at(-1)[0] || q[0][1] !== q.at(-1)[1])) q.push(q[0]); return q; };
-  const zones = (S.zones || []).filter(z => pois.some(p => p.id === z.poiId)).map(z => ({ id: 'z:' + z.poiId, poiId: z.poiId, cat: z.cat, name: z.name, rings: z.pieces.flatMap(pc => pc.rings.map(ringLL)) }));
+  const zones = (S.zones || []).filter(z => pois.some(p => p.id === z.poiId)).map(z => ({ id: 'z:' + z.poiId, poiId: z.poiId, cat: z.cat, name: zoneName(z.name), rings: z.pieces.flatMap(pc => pc.rings.map(ringLL)) }));
   // (sân bay: ranh đường biên sân bay — chỉ khi có cảnh sân bay)
   // Hạ tầng đang thi công (OpenStreetMap, như app cũ): tối đa 2 tuyến trong 5 km
   const build = (S.build || []).filter(b => b.nearKm <= 5 && !(edits.buildOff || []).includes(b.id)).slice(0, 2).map(b => ({
@@ -207,14 +207,16 @@ export function buildStory(S, L, buyer, edits = {}) {
     pois, anchors, infra, score: lot || buyer === 'vung' || !score.length ? null : score, scoreR, lines,
     cta: `Nhắn tin hẹn đi xem ${kwFull}`, style: styleOf(kind, buyer), bird: !!edits.bird,
     watermark: edits.watermark || '',
-    photos: edits.photos || [], roads, zones: [...zones, ...airportZone(S, infra)], build,
+    photos: edits.photos || [], roads, zones: [...zones, ...airportZone(S, infra, anchors), ...landmarkZones(S, anchors, zones)], build,
     // Ảnh bìa (mẫu Giang chọn 11/11): tên căn/dự án, phường, GIÁ BÁN to, 2 dòng phụ — chữ lấy đúng từ tin đăng; màu tự đổi theo căn
     cover: {
-      title: (L.title || `${KINDS[kind].label}${place ? ' ' + place : ''}`).toUpperCase(),
+      // tin không có giá: ô to ghi diện tích (hoặc tỉnh/thành), không lặp loại nhà / phường đã có ở ô trên
+      // tên đã có phường/xã thì bỏ phần đó (phường/xã đã có ô riêng ngay dưới)
+      title: (stripPlace(L.title || KINDS[kind].label, place) || L.title || KINDS[kind].label).toUpperCase(),
       ward: (place || L.province || '').toUpperCase(),
-      label: L.price ? 'GIÁ BÁN' : 'VỊ TRÍ',
-      big: (L.price || KINDS[kind].label).toUpperCase(),
-      lines: [L.street || L.road, [L.dims || (L.area && `${fmtNum(L.area)}m²`), L.floors || L.level, L.legal].filter(Boolean).slice(0, 2).join('  ·  ')].filter(Boolean),
+      label: L.price ? 'GIÁ BÁN' : (L.dims || L.area) ? 'DIỆN TÍCH' : 'KHU VỰC',
+      big: (L.price || L.dims || (L.area && `${fmtNum(L.area)} m²`) || (L.province && L.province !== place ? L.province : '') || KINDS[kind].label).toUpperCase(),
+      lines: [L.street || L.road, [L.price ? L.dims || (L.area && `${fmtNum(L.area)}m²`) : null, L.floors || L.level, L.legal].filter(Boolean).slice(0, 2).join('  ·  ')].filter(Boolean),
       color: COVER_COLORS[((edits.palette ?? Math.abs(Math.round((S.house.lat * 1e4) + (S.house.lng * 1e4)))) % COVER_COLORS.length + COVER_COLORS.length) % COVER_COLORS.length],
     },
   };
@@ -222,10 +224,28 @@ export function buildStory(S, L, buyer, edits = {}) {
 // Màu nhấn ảnh bìa (tự đổi theo căn, khách bấm "Đổi màu bìa" để xoay vòng)
 export const COVER_COLORS = ['#FF4FA3', '#FF7A1A', '#1E90FF', '#8B5CF6', '#10B981', '#EF4444', '#14B8A6', '#F59E0B'];
 const cap = s => String(s || '').replace(/^\s*\S/, c => c.toUpperCase());
+// tên in trên vùng: ngắn để chữ đủ to ("KCN Vĩnh Lộc 2 - Bến Lức, Long An" → "KCN Vĩnh Lộc 2")
+const zoneName = n => String(n || '').replace(/^khu công nghiệp/i, 'KCN').split(/\s+[-–]\s+|,/)[0].trim();
+// "Nhà phố xã Mỹ Yên" + phường/xã "Xã Mỹ Yên" → "Nhà phố" (ảnh bìa đã có ô phường/xã riêng)
+const stripPlace = (s, place) => place && s.toLowerCase().endsWith(place.toLowerCase()) ? s.slice(0, s.length - place.length).replace(/[\s,–-]+$/, '') : s;
 
 // ranh sân bay (đa giác sân bay từ OpenStreetMap, lấy cùng lúc với đường băng) → vùng hiện trong cảnh sân bay
-function airportZone(S, infra) {
-  if (!infra?.airport || !S.airportParts?.length) return [];
+function airportZone(S, infra, anchors) {
+  if (!S.airportParts?.length) return [];
   const rings = S.airportParts.map(p => { const q = p.pts.map(([la, ln]) => [ln, la]); q.push(q[0]); return q; });
-  return [{ id: 'z:airport', cat: 'airport', name: infra.airport.name, rings }];
+  if (infra?.airport) return [{ id: 'z:airport', cat: 'airport', name: infra.airport.name, rings }];
+  // không có cảnh máy bay: khoanh ranh sân bay trong cảnh điểm mốc "Ra sân bay"
+  const a = anchors.find(x => x.type === 'airport');
+  return a ? [{ id: 'z:airport', cat: 'airport', name: a.name, rings, show: ['anchor:' + a.id] }] : [];
+}
+// Vùng mốc lớn quanh nhà (Giang 11/11: khách phải thấy KCN, cảng, sân bay): KCN gần nhà hiện ở cảnh toàn cảnh trục đường +
+// tổng kết; cảng biển hiện ở cảnh điểm mốc "cảng" của nó. Ranh lấy từ bản đồ (loadZones), không có ranh thì thôi, không vẽ đoán.
+function landmarkZones(S, anchors, zones) {
+  const ringLL = r => { const q = r.map(([la, ln]) => [ln, la]); if (q.length && (q[0][0] !== q.at(-1)[0] || q[0][1] !== q.at(-1)[1])) q.push(q[0]); return q; };
+  return (S.landZones || []).filter(z => !zones.some(x => x.poiId === z.poiId)).map(z => {
+    const anc = (S.anchors || []).find(a => a.id === z.poiId);
+    if (anc && !anchors.some(a => a.id === anc.id)) return null;
+    return { id: 'z:lm:' + z.poiId, cat: anc ? 'port' : z.cat, name: zoneName(z.name), rings: z.pieces.flatMap(pc => pc.rings.map(ringLL)),
+      show: anc ? ['anchor:' + anc.id] : ['roads', 'score'] };
+  }).filter(Boolean);
 }
