@@ -4,6 +4,7 @@
 import { rpc } from './account.js';
 import { speakNumbers, speakPhones } from './vinum.js';
 import { decodeAudioFile } from './export.js';
+import { kvGet, kvPut } from './dd-photos.js';
 
 const TOKEN_KEY = 'vitri.session.v1';
 export const token = () => { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } };
@@ -48,9 +49,16 @@ async function ttsOnce(text, loc, attempt = 0) {
   }
   return res.arrayBuffer();
 }
-// Đọc các câu còn thiếu (tối đa 3 câu cùng lúc), báo tiến độ; trả về Map câu → AudioBuffer
+// Đọc các câu còn thiếu (tối đa 3 câu cùng lúc), báo tiến độ; trả về Map câu → AudioBuffer.
+// Giọng đã đọc lưu trên máy khách (IndexedDB, khoá = giọng|tốc độ|câu): tải lại trang, đi đăng nhập rồi quay lại,
+// bấm dựng lại, đổi thứ tự… đều KHÔNG gọi máy chủ đọc lại — chỉ câu mới / câu đã sửa mới tốn lượt giọng.
 export async function voiceLines(texts, loc, onProgress) {
-  const need = [...new Set(texts.filter(Boolean))].filter(t => !cache.has(keyOf(t)));
+  let need = [...new Set(texts.filter(Boolean))].filter(t => !cache.has(keyOf(t)));
+  await Promise.all(need.map(async t => {
+    const mp3 = await kvGet('voice|' + keyOf(t));
+    if (mp3) { try { cache.set(keyOf(t), await decodeAudioFile(new Blob([mp3]))); } catch { /* hỏng thì đọc lại */ } }
+  }));
+  need = need.filter(t => !cache.has(keyOf(t)));
   let done = 0;
   onProgress?.(0, need.length);
   const queue = need.slice();
@@ -58,7 +66,8 @@ export async function voiceLines(texts, loc, onProgress) {
     while (queue.length) {
       const t = queue.shift();
       const buf = await ttsOnce(speakable(t), loc);
-      cache.set(keyOf(t), await decodeAudioFile(new Blob([buf])));
+      cache.set(keyOf(t), await decodeAudioFile(new Blob([buf.slice(0)])));
+      kvPut('voice|' + keyOf(t), buf);
       onProgress?.(++done, need.length);
     }
   };

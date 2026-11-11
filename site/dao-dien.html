@@ -27,30 +27,39 @@
 
   <!-- Bước 1: toạ độ -->
   <section class="card" id="s1">
-    <h1>Dán vị trí căn nhà</h1>
-    <p class="sub">Toạ độ hoặc link Google Maps. AI tự quét tiện ích, đường đi, sân bay, metro quanh nhà.</p>
+    <h1>Dán vị trí bất động sản</h1>
+    <p class="sub">Toạ độ hoặc link Google Maps. AI tự quét tiện ích, đường đi, sân bay, metro xung quanh.</p>
     <label class="field">
       <input id="coord" inputmode="text" autocomplete="off" placeholder="vd: 10.7285, 106.6185 hoặc link maps.app.goo.gl/…">
     </label>
     <p class="msg" id="coordMsg" role="status"></p>
     <button class="cta" id="go1">Tiếp tục ›</button>
-    <p class="tip">Mẹo: trên Google Maps nhấn giữ vào căn nhà → chép toạ độ hiện ra ở ô tìm kiếm.</p>
+    <p class="tip">Mẹo: trên Google Maps nhấn giữ vào vị trí bất động sản → chép toạ độ hiện ra ở ô tìm kiếm.</p>
   </section>
 
   <!-- Bước 2: tin đăng + khách mua -->
   <section class="card" id="s2" hidden>
-    <h1>Dán thông tin căn</h1>
-    <p class="sub">Dán nguyên tin đăng bạn hay gửi khách. AI tự nhận ra loại nhà, giá, diện tích, pháp lý.</p>
+    <h1>Dán thông tin sản phẩm</h1>
+    <p class="sub">Dán nguyên tin đăng bạn hay gửi khách. AI tự nhận ra loại sản phẩm (nhà, đất, căn hộ…), giá, diện tích, pháp lý.</p>
     <label class="field">
       <textarea id="listing" rows="6" placeholder="vd: Bán nhà hẻm xe hơi An Lạc, 5x20m, 1 trệt 2 lầu, 3PN, sổ hồng riêng, giá 3,2 tỷ…"></textarea>
     </label>
     <div class="understood" id="understood" hidden>
-      <div class="u-head">🤖 AI hiểu căn này là <button class="link" id="editInfo">Sửa</button></div>
+      <div class="u-head">🤖 AI hiểu sản phẩm này là <button class="link" id="editInfo">Sửa</button></div>
       <div class="chips" id="chips"></div>
       <div class="infoform" id="infoform" hidden></div>
     </div>
+    <div class="photos">
+      <div class="ph-head">📷 Ảnh sản phẩm <small>Không bắt buộc · tối đa 12 ảnh · ảnh đầu làm nền ảnh bìa</small></div>
+      <div class="ph-grid" id="phGrid"></div>
+      <input type="file" id="phInput" accept="image/*" multiple hidden>
+    </div>
     <h2>Video dành cho khách nào?</h2>
     <div class="buyers" id="buyers"></div>
+    <div class="poi-pick" id="poiPick" hidden>
+      <h2>Tiện ích gần nhà <small>✓ AI đã chọn · bấm để thêm / bỏ</small></h2>
+      <div class="chips road-chips" id="poiChips"></div>
+    </div>
     <label class="field small">
       <span>Tên thương hiệu hiện mờ trên video <em>(tuỳ chọn)</em></span>
       <input id="brand" maxlength="40" placeholder="vd: Nhà Đất Giang">
@@ -95,12 +104,18 @@
         <details class="edit" id="editBox">
           <summary>✏️ Sửa video <small>thêm, bỏ, đổi thứ tự tiện ích · sửa lời · nhạc</small></summary>
           <div class="meta">
+            <label class="sel">✍️ Kiểu lời <select id="tone"></select></label>
+            <button class="btn2" id="aiWrite" type="button">✨ AI viết lời hay hơn</button>
+          </div>
+          <p class="msg" id="aiMsg" role="status"></p>
+          <div class="meta">
             <label class="sel">🎵 Nhạc nền <select id="music"></select></label>
             <label class="tog"><input type="checkbox" id="bird"> Vẽ đường chim bay</label>
+            <button class="btn2" id="coverColor" type="button">🎨 Đổi màu ảnh bìa</button>
           </div>
           <p class="tip">Kéo ⋮⋮ để đổi thứ tự · chạm vào câu để sửa lời · ✕ để bỏ cảnh</p>
           <ul class="board" id="board"></ul>
-          <button class="add" id="addPoi">＋ Thêm tiện ích</button>
+          <button class="add" id="addPoi">🔍 Tìm hoặc ghim tiện ích chưa có</button>
         </details>
       </div>
     </div>
@@ -111,13 +126,14 @@
 <div class="sheet" id="sheet" hidden>
   <div class="sheet-in" role="dialog" aria-modal="true" aria-label="Thêm tiện ích">
     <div class="sheet-top">
-      <div class="tabs"><button class="on" data-t="list">Danh sách</button><button data-t="map">Chọn trên bản đồ</button></div>
+      <div class="tabs"><button class="on" data-t="list">Danh sách</button><button data-t="map">📌 Ghim trên bản đồ</button></div>
       <button class="x" id="sheetX" aria-label="Đóng">✕</button>
     </div>
     <input class="search" id="poiSearch" placeholder="Tìm tên tiện ích…">
     <div class="poi-list" id="poiList"></div>
     <div class="pick-map" id="pickMap" hidden></div>
-    <p class="tip" id="mapTip" hidden>Chạm vào chấm tiện ích trên bản đồ để thêm vào video.</p>
+    <div id="tapBox" hidden></div>
+    <p class="tip" id="mapTip" hidden>Chạm vào chấm tiện ích để thêm. Tiện ích chưa có chấm: chạm đúng chỗ đó trên ảnh vệ tinh → chọn tên gợi ý hoặc tự đặt tên rồi ghim.</p>
   </div>
 </div>
 

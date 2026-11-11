@@ -67,6 +67,24 @@ export function parseListing(text) {
   else if (/sổ\s*chung/i.test(t)) out.legal = 'Sổ chung';
   else if (/vi\s*bằng/i.test(t)) out.legal = 'Vi bằng';
   else if (/giấy\s*tay/i.test(t)) out.legal = 'Giấy tay';
+  if (/sở\s*hữu\s*lâu\s*dài|lâu\s*dài/i.test(t)) out.legal = out.legal ? `${out.legal} · Sở hữu lâu dài` : 'Sở hữu lâu dài';
+  // Tên căn / dự án cho ảnh bìa: "Dự án Hà Đô Centrosa" > "chung cư/căn hộ X" > dòng đầu tin đăng (bỏ biểu tượng, chữ "Bán")
+  m = t.match(/dự\s*án\s+([^\n,.;:–-]{2,40})/i) || t.match(/(?:chung\s*cư|căn\s*hộ|khu\s*đô\s*thị)\s+([A-ZĐ][^\n,.;:–-]{1,40})/u);
+  if (m) out.title = (/^dự/i.test(m[0]) ? 'Dự án ' : '') + m[1].trim();
+  else {
+    const first = (t.split(/\n/).find(l => /\p{L}/u.test(l)) || '').replace(/[^\p{L}\p{N}\s,./-]/gu, ' ')
+      .replace(/^\s*(cần\s*bán|chính\s*chủ\s*bán|bán\s*gấp|bán)\s+/i, '').split(/[,.;:]/)[0].replace(/\s+/g, ' ').trim();
+    // bỏ phần thông số ("6 x 25 150m2 …") khỏi tên
+    const name = first.replace(/\s+\d.*$/, '').trim();
+    if (name.length >= 4) out.title = name.replace(/^./, s => s.toUpperCase());
+  }
+  // Mặt tiền đường / hẻm cho dòng phụ ảnh bìa: "Mặt tiền Đường 3 Tháng 2"
+  m = t.match(/mặt\s*tiền\s+((?:đường\s+)?[\p{Lu}\d][^\n,.;:]{1,30})/iu);
+  if (m) out.street = 'Mặt tiền ' + m[1].trim().replace(/^đường/i, 'Đường');
+  else if ((m = t.match(/(hẻm\s*xe\s*hơi|hxh|hẻm\s*\d+[^\n,.;:]{0,25}|đường\s+[\p{Lu}\d][^\n,.;:]{1,25})/iu))) {
+    const s = m[1].trim();
+    out.street = /hxh/i.test(s) ? 'Hẻm xe hơi' : (s === s.toUpperCase() ? s.toLowerCase() : s).replace(/^./, c => c.toUpperCase());
+  }
   // Đường trước nhà
   m = t.match(/(hẻm|hxh|đường)\s*(xe\s*hơi|ô\s*tô|oto|\d+(?:[.,]\d+)?\s*m)/i);
   if (m) out.road = (/hxh/i.test(m[1]) ? 'Hẻm xe hơi' : m[0].replace(/\s+/g, ' ').toLowerCase().replace(/^./, s => s.toUpperCase()));
@@ -82,7 +100,7 @@ export function parseListing(text) {
   if (ph) out.phones = ph.map(x => x.replace(/\D/g, ''));
   // Điểm nổi bật: các dòng ngắn bắt đầu bằng gạch/dấu tích không phải thông số đã lấy
   out.highlights = t.split(/\n+/).map(l => l.replace(/^[\s\-–•*✅✔️☑️🔥⭐️👉+]+/u, '').trim())
-    .filter(l => l.length > 8 && l.length < 90 && !/\d\s*(tỷ|triệu|m2|m²)|sổ|https?:|^(lh|liên hệ|hotline|zalo)\b/i.test(l)
+    .filter(l => l.length > 8 && l.length < 90 && !/\d\s*(tỷ|triệu|m2|m²)|sổ|https?:|^(lh|liên hệ|hotline|zalo)\b|^(cần\s*|chính\s*chủ\s*)?bán\b/i.test(l)
       && !/\d{9,}/.test(l.replace(/[\s.-]/g, ''))).slice(0, 4);
   return out;
 }
