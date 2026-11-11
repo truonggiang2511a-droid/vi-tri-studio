@@ -2,6 +2,12 @@
 <html lang="vi">
 <head>
 <meta charset="utf-8">
+<script>
+// 11/11 tối: TẠM ẨN AI đạo diễn với khách (Giang sửa cho ưng rồi mở lại: xoá khối này + bỏ display:none ở nút #ddEntry trong index.html).
+// Giang / máy thử mở bằng link /dao-dien?thu=1 (máy đó nhớ luôn); khách khác vào /dao-dien được đưa về trang chính.
+try { if (/[?&]thu=1/.test(location.search)) localStorage.setItem('vitri.dd.thu', '1'); if (localStorage.getItem('vitri.dd.thu') !== '1') location.replace('/'); }
+catch (e) { location.replace('/'); }
+</script>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0b1220">
