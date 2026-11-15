@@ -87,7 +87,7 @@ Tài khoản thử nội bộ: `giang.test@vitristudio.com` (`no_limits`). Căn 
 | `js/tachnen-entry.js` → `site/tachnen.js` + `mp/selfie_segmenter.tflite` + `site/mp/vision_wasm_internal.*` | Tách nền ảnh sale trên máy khách (MediaPipe Tasks Vision 0.10.21, Apache-2.0), 5/11 — xem nhật ký 5/11 |
 | `js/mau1.js` + `js/mau1-icons.js` + `music/sfx_lk_a2.m4a`/`sfx_lk_b2.m4a` + `music/sfx_key1..6.wav` | Chữ điểm nhấn + icon "mẫu 1" lấy từ Hook Kit (skill batdongsan-editor), 30/10, chỉ admin — xem nhật ký 30/10 |
 | `dao-dien.html` + `dao-dien.css` + `js/dao-dien.js` → `site/dao-dien.*` | **AI đạo diễn** (11/11): chế độ mới cho khách mới, trang riêng `/dao-dien`, kiểu cũ giữ nguyên. Xem nhật ký 11/11 |
-| `js/dd3d.js` (vẽ 3D MapLibre GL + lớp 2D, phụ đề, vùng an toàn), `js/dd-parse.js` (đọc tin đăng), `js/dd-agent.js` (chọn tiện ích, viết lời, nhạc), `js/dd-voice.js` (giọng /api/tts + kiểm tra/trừ lượt) | Bộ máy AI đạo diễn. `js/thu-3d.js` + `thu-3d.html` = trang thử nội bộ, KHÔNG đóng gói vào `site/` |
+| `js/dd3d.js` (vẽ 3D MapLibre GL + lớp 2D, phụ đề, vùng an toàn), `js/dd-old.js` (từ vòng 9: mở đầu 3D + phần sau vẽ bằng bộ vẽ app cũ), `js/dd-parse.js` (đọc tin đăng), `js/dd-agent.js` (chọn tiện ích, viết lời, nhạc), `js/dd-voice.js` (giọng /api/tts + kiểm tra/trừ lượt) | Bộ máy AI đạo diễn. `js/thu-3d.js` + `thu-3d.html` = trang thử nội bộ, KHÔNG đóng gói vào `site/` |
 | `supabase/*.sql` | Bảng + hàm `vt_*` (tài khoản, lượt, đơn, trang, lead, giới hạn làm lại, chống lạm dụng) |
 | `tools/` | `build_poi_tiles.py` (dựng `poi/` từ Overture, chạy hằng tháng), `make_music.py`, `make_sample.py`, `make_sample_voice.py` |
 
@@ -220,6 +220,37 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 ---
 
 ## 5. Nhật ký bài học
+
+- 2026-11-15 vòng 9 (Giang: "AI đạo diễn cho người mới làm nhanh — app cũ vẽ tiện ích quanh nhà, đường lớn, chữ 3D khối tên trục đường kiểu
+  sao thì BÊ Y NGUYÊN; chỉ khác zoom từ trái đất → tỉnh → xã → xuống căn nhà quay 360° cận cảnh"; chọn "Bay tới từng tiện ích" + "Mọi thứ như
+  app cũ"; tên vùng "KCN Cầu Tràm" to quá, tràn ra ngoài vùng; đoạn kết phải có thẻ 3 con số lớn). Phản biện: bộ vẽ app cũ (render.js) không có
+  xoay hướng máy / quả địa cầu nên không làm được mở đầu bằng nó; vẽ lại kiểu app cũ trên MapLibre thì lâu và lệch → GHÉP: (1) `js/dd-old.js`
+  `createHybrid` (cùng giao diện createDirector3D): PHẦN MỞ ĐẦU = dd3d `story.opening` (chỉ cảnh intro + house/lot: quả địa cầu → tỉnh → xã →
+  ghim → lượn TRỌN 360° sát nhà, ≥ 15 s, `rotProg` tăng/giảm tốc êm; bỏ ảnh bìa dd, `cover: null`); chữ/thẻ trên đó là của app cũ qua hàm
+  mới `render.js drawOpening` (thẻ giá mở đầu denvang, tiêu đề, ghim + nhãn "VỊ TRÍ CĂN NHÀ", thẻ thông tin, phụ đề app cũ — `buildCaptions` với
+  giờ giọng dd3d); dd3d bỏ ghim/thẻ/phụ đề/thanh kêu gọi riêng khi có `overlay`. (2) TỪ CẢNH BÁN KÍNH TRỞ ĐI = chính `render.js buildTimeline +
+  render` với cảnh dựng từ dữ liệu Agent (`oldScene`: giống buildScene app cũ mặc định khách mới — vangneon, vetinh, lanluot, nhịp Nhanh, ★ 2
+  trục gần nhà như autoHiRoads, stitch/bridgeWays, điểm mốc có `fx` → máy bay cất cánh / tàu metro như app cũ, zones = loadZones của tiện ích
+  đã chọn, không adminArea/lot/mẫu 1); phần đầu timeline app cũ (intro/house) dựng nhưng bỏ, đồng hồ app cũ `toOld(t) = T0 + (t − A)`, T0 =
+  đầu cảnh overview, A = thời lượng phần mở đầu. (3) CHỖ NỐI: `render.js camPose(tl, T0)` (tâm ngắm ở hàng y = Fy, zoom thang 256 px khung
+  540, nghiêng) → tư thế MapLibre `z = zoom − 1 + log2(width/540)`, `padding.top = 2·(fy·H − H/2)` (dd3d jumpTo có padding khi OPEN), hướng 0
+  (vòng lượn kết thúc đúng 360°; mở đầu bay xuống với bearing 0); 1,9 s cuối vòng lượn máy về đúng tư thế đó rồi giữ 0,45 s (`XF`), khung app cũ
+  hoà lên trên (overlay vẽ render cũ vào canvas phụ, alpha tăng). Đo: ghim + nhãn hai khung trùng chỗ, độ sáng ngang nhau (ảnh vệ tinh phần mở
+  đầu chỉnh `raster-saturation 0.26 / contrast 0.1` cho gần nền "Vệ tinh rõ nét"). (4) Lời: dd-agent engine 'old' (mặc định; `edits.flow =
+  'radar'` = radar vòng 8 toàn 3D) thêm `lines.overview` ("Trong bán kính R km có đủ…", R = nhỏ nhất 1/2/3/5 km ôm hết tiện ích — `story.oldR`),
+  `lines.rd[]` (mỗi trục 1 câu, khoá sửa `rd:<id>`), `lines.summary` (= câu 3 con số `sumLine`, thiếu số liệu thì câu kiểu app cũ); anchors có
+  cả sân bay ≤ 60 phút (không còn cảnh sân bay/metro/cao tốc riêng — `infra = null`). Giọng app cũ theo vkey: overview · region (các câu điểm
+  mốc đọc nối nhau cách 0,18 s trong 1 cảnh) · infra (build) · road:<id> · poi:<id> · summary · outro (cta) · photos; chưa có giọng thì nhịp ước
+  3,1 chữ/s như dd3d. Âm thanh = giọng/SFX dd3d phần mở đầu + `sfxEvents(old)` dời giờ. Bảng phân cảnh + AI viết lời (aiPayload) theo đúng thứ tự
+  cảnh app cũ (bán kính → kết nối vùng → hạ tầng → từng trục → từng tiện ích → tổng kết → kết → ảnh); ẩn ô "Mẫu thẻ tiện ích". (5) Đoạn kết:
+  `dd3d.js drawStats` (tách từ statsCard, dùng chung) vẽ thẻ 3 con số lớn trên cùng suốt cảnh tổng kết app cũ (bảng tiện ích cũ vẫn ở dưới).
+  (6) Xem trước: phần mở đầu vẽ theo nhịp bản đồ (dd3d live + overlay), phần app cũ vẽ ngay trong setFrame (TileCache riêng, khoá ArcGIS từ
+  /api/config như app cũ); xuất: `tileFeeder(old, sc, cache, t0)` (thêm tham số t0, mặc định 0 = như cũ) tải ô từ chỗ nối, ô ImageBitmap,
+  `preferSession(true)` + `warmSession()` (phiên bản đồ như app cũ), chỉnh màu PHONE_GRADE cả video. (7) Tên vùng (radar 3D): bỏ kéo dài đường
+  chữ tới 2,4 km; chữ dài tối đa 80% bề ngang/dọc vùng (`path.maxM` trong layout3D), chữ < 10 px thì không in (không tràn ra ngoài vùng).
+  App cũ: render.js chỉ THÊM 2 hàm đọc (esbuild bỏ khỏi site/app.js), export.js thêm tham số mặc định → không commit site/app.js (chỉ khác chỗ
+  ngắt dòng). Đo căn thử Bình Chánh (chưa giọng): mở đầu 30,7 s (intro 15,7 có quả địa cầu + lượn 15 s), cả video ~100 s. Thử: `/tmp/vt/dd_run9.py`
+  (frameSource), `dd_prev.py` (xem trước setFrame), `dd_full.py` (AI viết lời + giọng GIẢ qua pg.route + xuất MP4 720p localOnly → ffprobe).
 
 - 2026-11-15 vòng 8 (Giang: radar chỉ có chấm tròn, muốn MỖI chấm có tên; máy xoay chậm thấy hết; ≥ 10 tiện ích, khu ít thì quét ít;
   các cảnh bay tới từng tiện ích phía sau thừa → trong lúc quét cứ 0,5–1 s hiện một tiện ích; vùng quan trọng (KCN…) nổi ranh kèm tên

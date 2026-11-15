@@ -79,10 +79,11 @@ export async function mixAudio({ music, voice, voiceSegs = [], sfx = null, durat
 const TILE_AHEAD = 1.2;    // giây tải trước
 const TILE_STEP = 0.2;     // bước lấy mẫu thời gian khi tải trước / chọn ô giữ lại
 const TILE_WAIT = 25000;   // mạng treo: chờ tối đa chừng này cho một khung rồi vẽ bằng ô cha như bản cũ
-export function tileFeeder(tl, scale, cache) {
+// t0: thời điểm đầu tiên sẽ vẽ (AI đạo diễn chỉ vẽ timeline app cũ từ cảnh bán kính trở đi → không tải ô của cảnh đã bỏ)
+export function tileFeeder(tl, scale, cache, t0 = 0) {
   const keyOf = k => cache.key(k[0], k[1], k[2]);
   const parentOf = k => [k[0] - 1, k[1] >> 1, k[2] >> 1];
-  let preT = 0, dropT = -Infinity;
+  let preT = t0, dropT = -Infinity;
   const keepSet = t => {
     const keep = new Set();
     const t1 = Math.min(tl.duration, t + TILE_AHEAD + TILE_STEP);

@@ -1190,6 +1190,40 @@ export function coverTime(tl) {
   return h ? h.t0 + Math.min(2.5, (h.t1 - h.t0) * 0.6) : Math.min(1, tl.duration);
 }
 
+// ---------- AI đạo diễn (15/11 vòng 9, Giang): mở đầu 3D (quả địa cầu → tỉnh → xã → lượn 360° quanh nhà) do dd3d.js vẽ,
+// từ cảnh bán kính trở đi vẽ Y NHƯ APP CŨ bằng chính timeline này (js/dd-old.js). Hai hàm dưới chỉ ĐỌC timeline, app cũ không gọi.
+// Tư thế máy quay app cũ ở thời điểm t: tâm ngắm (lat/lng nằm ở hàng y = fy·LH trên màn hình), zoom (thang 256 px trên khung logic), nghiêng
+export function camPose(tl, t) {
+  const cam = camAt(tl, t), P = proj(cam.pitch, tl.LW, tl.LH);
+  return { lat: cam.lat, lng: cam.lng, zoom: cam.zoom, pitch: P.pitch, fy: P.Fy / tl.LH };
+}
+// Lớp chữ / thẻ kiểu app cũ vẽ lên khung 3D của phần mở đầu: thẻ giá mở đầu, tiêu đề, ghim nhà + nhãn "VỊ TRÍ …", thẻ thông tin,
+// phụ đề (caps = danh sách {t0,t1,text} theo đồng hồ phần mở đầu), dòng nguồn. pin = { x, y, s, dropT } theo toạ độ khung logic.
+export function drawOpening(ctx, tl, t, { scale = 1, pin = null, labelA = 0, infoA = 0, titleA = 0, caps = null } = {}) {
+  OCC = null; OCC_CTX = null;
+  useStyle(tl.scene.style);
+  const { LW, LH, safe, scene } = tl;
+  ctx.save();
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  if (pin) drawHousePin(ctx, pin.x, pin.y, pin.dropT, t, pin.s ?? 1);
+  drawTitle(ctx, tl, scene.title, scene.titleSub, titleA, 0);
+  if (pin) labelCard(ctx, pin.x, pin.y - 60 * (pin.s ?? 1), scene.label, scene.sub, labelA, LW, safe);
+  const ib = infoA > 0 ? infoBox(tl, 'bottom', null) : null;
+  drawInfo(ctx, ib, infoA);
+  drawHook(ctx, tl, t);
+  const cap = caps ? caps.find(x => t >= x.t0 && t < x.t1) : null;
+  if (cap) {
+    const L = captionLayout(ctx, tl, cap, { top: ib && infoA > 0.05 ? ib.y : Infinity, rightPanel: 0 });
+    drawCaption(ctx, L, Math.min(clamp01((t - cap.t0) / 0.12), clamp01((cap.t1 - t) / 0.12)), t);
+  }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 3;
+  ctx.fillStyle = 'rgba(255,255,255,0.72)';
+  ctx.font = `500 8.5px ${FONT}`;
+  ctx.fillText(ATTRIBUTION, LW / 2, LH - 6);
+  ctx.restore();
+}
+
 function makeHook(scene, roads, pois) {
   const info = infoData(scene);
   // Đường khách tự vẽ không dùng cho thẻ mở đầu (tránh khẳng định "Mặt tiền …" từ nét vẽ tay)
