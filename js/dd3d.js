@@ -435,6 +435,69 @@ function planeAt(rw, u) {
   return { pt: [rw.a[0] + (rw.b[0] - rw.a[0]) * f, rw.a[1] + (rw.b[1] - rw.a[1]) * f], alt, dir: bearingGeo(rw.a, rw.b) };
 }
 
+// Phụ đề AI đạo diễn (cụm ~3 từ bật vào, chữ trắng bóng đậm, số liệu vàng) — dùng chung cho dd3d và đoạn vẽ kiểu app cũ (dd-old.js,
+// vòng 9: Giang "phụ đề giữ nguyên như lúc nãy"). c = một cụm của capChunks; maxBase: đáy chữ không thấp hơn (né thẻ ở đáy khung)
+const CAP_GOLD = '#FFD54A';
+export function drawCap3D(ctx, c, t, width, height, maxBase = Infinity) {
+  const k = width / W0;
+  const band = { x0: SAFE.x * width, x1: width - SAFE.r * width };
+  let size = 0.075 * width;
+  ctx.save();
+  ctx.font = `800 ${size}px ${FONT}`;
+  const sp = () => ctx.measureText(' ').width;
+  let tw = c.words.reduce((s2, w) => s2 + ctx.measureText(w.w).width, 0) + sp() * (c.words.length - 1);
+  const maxW = band.x1 - band.x0 - 8 * k;
+  if (tw > maxW) { size *= maxW / tw; ctx.font = `800 ${size}px ${FONT}`; tw = c.words.reduce((s2, w) => s2 + ctx.measureText(w.w).width, 0) + sp() * (c.words.length - 1); }
+  const base = Math.min(height * CAP_Y + size * 0.35, maxBase);
+  let x = (band.x0 + band.x1) / 2 - tw / 2;
+  ctx.textBaseline = 'alphabetic';
+  c.words.forEach((w, i) => {
+    const wd = ctx.measureText(w.w).width, lt = t - c.t0 - i * 0.07;
+    if (lt >= 0) {
+      const q = clamp01(lt / 0.2), c1 = 1.70158, c3 = c1 + 1;
+      const sc = 0.62 + 0.38 * (1 + c3 * Math.pow(q - 1, 3) + c1 * Math.pow(q - 1, 2));
+      const dy = (1 - easeOut(q)) * size * 0.14, cx = x + wd / 2, cy = base - size * 0.35;
+      ctx.save();
+      ctx.globalAlpha = clamp01(lt / 0.06);
+      ctx.translate(cx, cy + dy); ctx.scale(sc, sc); ctx.translate(-cx, -cy);
+      // bóng đậm: 2 lớp bóng (lan rộng + sát chữ) như phụ đề app cũ, thêm viền tối mảnh cho chữ nổi trên ảnh vệ tinh
+      ctx.lineJoin = 'round'; ctx.lineWidth = size * 0.1; ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = size * 0.22; ctx.shadowOffsetY = size * 0.06;
+      ctx.strokeText(w.w, x, base);
+      ctx.fillStyle = w.g ? CAP_GOLD : '#FFFFFF';
+      ctx.shadowColor = 'rgba(0,0,0,0.62)'; ctx.shadowBlur = size * 0.1; ctx.shadowOffsetY = size * 0.055;
+      ctx.fillText(w.w, x, base);
+      ctx.restore();
+    }
+    x += wd + sp();
+  });
+  ctx.restore();
+}
+// Ghim vàng giọt nước (nhãn vị trí bất động sản của AI đạo diễn) — dùng chung cho dd3d và đoạn vẽ kiểu app cũ (dd-old.js)
+export function drawGoldPin(ctx, x, y, s, icon) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  ctx.beginPath(); ctx.moveTo(0, 0);
+  ctx.bezierCurveTo(-6, -12, -20, -19, -20, -33); ctx.arc(0, -33, 20, Math.PI, 0, false); ctx.bezierCurveTo(20, -19, 6, -12, 0, 0); ctx.closePath();
+  const g = ctx.createLinearGradient(-20, -53, 20, 0);
+  g.addColorStop(0, '#FFF1B8'); g.addColorStop(0.35, '#F5C451'); g.addColorStop(0.7, '#D49A1E'); g.addColorStop(1, '#8A5A0B');
+  ctx.shadowColor = 'rgba(245,196,81,.75)'; ctx.shadowBlur = 22;
+  ctx.fillStyle = g; ctx.fill();
+  ctx.shadowColor = 'transparent'; ctx.lineWidth = 2.2; ctx.strokeStyle = 'rgba(255,248,220,.95)'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(0, -33, 12.5, 0, 7); ctx.fillStyle = '#141c2e'; ctx.fill();
+  ctx.lineWidth = 1.4; ctx.strokeStyle = 'rgba(245,196,81,.9)'; ctx.stroke();
+  drawIcon(ctx, icon || 'house', 0, -33, 15, '#F5C451');
+  ctx.restore();
+}
+// vòng sóng vàng quanh chân ghim nằm trên mặt đất (squash = độ dẹt theo góc nghiêng)
+export function goldRings(ctx, x, y, t, k, squash) {
+  for (const off of [0, 0.5]) {
+    const q = ((t / 1.8) + off) % 1;
+    ctx.beginPath(); ctx.ellipse(x, y, (8 + q * 42) * k, (8 + q * 42) * squash * k, 0, 0, 7);
+    ctx.strokeStyle = `rgba(245,196,81,${0.8 * (1 - q)})`; ctx.lineWidth = 2.4 * k; ctx.stroke();
+  }
+  ctx.beginPath(); ctx.ellipse(x, y + 1 * k, 11 * k, 4 * k, 0, 0, 7); ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fill();
+}
+
 // Thẻ tổng kết 3 con số lớn (số chạy từ 0): dùng chung cho cảnh tổng kết 3D và đoạn kết vẽ kiểu app cũ (dd-old.js, vòng 9 — Giang:
 // "đoạn kết phải có thẻ như thế này"). y = mép trên thẻ (mặc định dưới vùng an toàn phía trên), khung width × height px.
 export function drawStats(ctx, S3, a, grow, width, height, y = null) {
@@ -1189,45 +1252,13 @@ export function createDirector3D({ width, height, story, overlay = null }) {
   }
   // Phụ đề kiểu app cũ: mỗi lúc một cụm ngắn ở giữa vùng an toàn (≈ 72% chiều cao), chữ 800 trắng / từ khoá vàng,
   // bóng đậm; từng từ bật ra (phóng 0,62 → vượt nhẹ → 1, nhích lên) nối nhau 0,07 s
-  const CAP_GOLD = '#FFD54A';
-  function caption(ctx, s, t) {
+  function caption(ctx, s, t, maxBase = Infinity) {
     const caps = s.caps || [];
     let c = null;
     for (const x of caps) if (t >= x.t0 - 0.02) c = x;
     // cụm cuối không treo mãi khi cảnh dài hơn lời (cảnh ảnh 12 ảnh × 3 s): tắt sau khi đọc xong 1,2 s
     if (!c || t > s.t1 - 0.12 || (c === caps[caps.length - 1] && t > c.t1 + 1.2)) return;
-    const band = { x0: SAFE.x * width, x1: width - SAFE.r * width };
-    let size = 0.075 * width;
-    ctx.save();
-    ctx.font = `800 ${size}px ${FONT}`;
-    const sp = () => ctx.measureText(' ').width;
-    let tw = c.words.reduce((s2, w) => s2 + ctx.measureText(w.w).width, 0) + sp() * (c.words.length - 1);
-    const maxW = band.x1 - band.x0 - 8 * k;
-    if (tw > maxW) { size *= maxW / tw; ctx.font = `800 ${size}px ${FONT}`; tw = c.words.reduce((s2, w) => s2 + ctx.measureText(w.w).width, 0) + sp() * (c.words.length - 1); }
-    const base = height * CAP_Y + size * 0.35;
-    let x = (band.x0 + band.x1) / 2 - tw / 2;
-    ctx.textBaseline = 'alphabetic';
-    c.words.forEach((w, i) => {
-      const wd = ctx.measureText(w.w).width, lt = t - c.t0 - i * 0.07;
-      if (lt >= 0) {
-        const q = clamp01(lt / 0.2), c1 = 1.70158, c3 = c1 + 1;
-        const sc = 0.62 + 0.38 * (1 + c3 * Math.pow(q - 1, 3) + c1 * Math.pow(q - 1, 2));
-        const dy = (1 - easeOut(q)) * size * 0.14, cx = x + wd / 2, cy = base - size * 0.35;
-        ctx.save();
-        ctx.globalAlpha = clamp01(lt / 0.06);
-        ctx.translate(cx, cy + dy); ctx.scale(sc, sc); ctx.translate(-cx, -cy);
-        // bóng đậm: 2 lớp bóng (lan rộng + sát chữ) như phụ đề app cũ, thêm viền tối mảnh cho chữ nổi trên ảnh vệ tinh
-        ctx.lineJoin = 'round'; ctx.lineWidth = size * 0.1; ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-        ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = size * 0.22; ctx.shadowOffsetY = size * 0.06;
-        ctx.strokeText(w.w, x, base);
-        ctx.fillStyle = w.g ? CAP_GOLD : '#FFFFFF';
-        ctx.shadowColor = 'rgba(0,0,0,0.62)'; ctx.shadowBlur = size * 0.1; ctx.shadowOffsetY = size * 0.055;
-        ctx.fillText(w.w, x, base);
-        ctx.restore();
-      }
-      x += wd + sp();
-    });
-    ctx.restore();
+    drawCap3D(ctx, c, t, width, height, maxBase);
   }
   // thẻ trên cùng: nằm dưới vùng che phía trên (tên tài khoản / tab của nền tảng)
   const PANEL_Y = () => SAFE.top * height + 8 * k;
@@ -1294,20 +1325,7 @@ export function createDirector3D({ width, height, story, overlay = null }) {
   // Ghim vị trí căn nhà: giọt nước vàng kim (chuyển sắc), viền sáng, ô tròn tối có biểu tượng nhà vàng; rơi xuống nảy nhẹ
   // lúc khối nhà dựng (5,2 s) + 2 vòng sóng vàng nằm nghiêng trên mặt đất
   const PIN_DROP = PIN_T;
-  function goldPin(ctx, x, y, s, icon) {
-    ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
-    ctx.beginPath(); ctx.moveTo(0, 0);
-    ctx.bezierCurveTo(-6, -12, -20, -19, -20, -33); ctx.arc(0, -33, 20, Math.PI, 0, false); ctx.bezierCurveTo(20, -19, 6, -12, 0, 0); ctx.closePath();
-    const g = ctx.createLinearGradient(-20, -53, 20, 0);
-    g.addColorStop(0, '#FFF1B8'); g.addColorStop(0.35, '#F5C451'); g.addColorStop(0.7, '#D49A1E'); g.addColorStop(1, '#8A5A0B');
-    ctx.shadowColor = 'rgba(245,196,81,.75)'; ctx.shadowBlur = 22;
-    ctx.fillStyle = g; ctx.fill();
-    ctx.shadowColor = 'transparent'; ctx.lineWidth = 2.2; ctx.strokeStyle = 'rgba(255,248,220,.95)'; ctx.stroke();
-    ctx.beginPath(); ctx.arc(0, -33, 12.5, 0, 7); ctx.fillStyle = '#141c2e'; ctx.fill();
-    ctx.lineWidth = 1.4; ctx.strokeStyle = 'rgba(245,196,81,.9)'; ctx.stroke();
-    drawIcon(ctx, icon || 'house', 0, -33, 15, '#F5C451');
-    ctx.restore();
-  }
+  const goldPin = drawGoldPin;
   function pin(ctx, t) {
     const [x, y] = proj(H);
     const u = t - PIN_DROP;
@@ -1971,7 +1989,7 @@ export function createDirector3D({ width, height, story, overlay = null }) {
     (story.pois || []).forEach((p, i) => { if ((pr['r' + i] ?? 0) >= 1 || orbShown(i, t)) poiPin(ctx, p.at, p.cat); });
     (story.anchors || []).forEach((a, i) => { if ((pr['a' + i] ?? 0) >= 1 && (s.kind === 'anchor' || s.kind === 'cta')) poiPin(ctx, a.at, a.type); });
     if (story.lot && (s.kind === 'intro' || s.kind === 'lot')) lotOverlay(ctx, s.kind === 'lot' ? 1 : clamp01((t - PIN_T - 0.2) / 0.6), s.kind === 'lot');
-    if (!overlay && !(story.lot && s.kind === 'lot')) pin(ctx, t);
+    if (!(story.lot && s.kind === 'lot')) pin(ctx, t);
     ring(ctx, s.kind === 'score' && !story.radar ? clamp01((t - s.t0) / 1.2) : s.kind === 'cta' && story.score ? 1 - clamp01((t - s.t0) / 0.8) : 0);
     if (s.kind === 'radar') radarFx(ctx, t, s);
     if (s.kind === 'score' && story.radar) radarFx(ctx, t, s, false);
@@ -1980,7 +1998,7 @@ export function createDirector3D({ width, height, story, overlay = null }) {
     for (const l of labs) drawLabel(ctx, l);
     if (s.kind === 'intro') areaName(ctx, t);
     // vòng 9: chữ / thẻ / ghim / phụ đề kiểu app cũ do dd-old.js vẽ (render.js drawOpening)
-    if (overlay) { overlay(ctx, t, { proj, kind: s.kind, scene: s, pinT: PIN_T }); return; }
+    if (overlay) { const o = overlay(ctx, t, { proj, kind: s.kind, scene: s, pinT: PIN_T }); caption(ctx, s, t, o?.capBase ?? Infinity); o?.after?.(); return; }
     // thẻ + phụ đề
     if (s.kind === 'house') infoCard(ctx, Math.min((t - s.t0) / 0.45, (s.t1 - t) / 0.35), story.info.price, story.info.chips);
     if (s.kind === 'lot') infoCard(ctx, Math.min((t - s.t0 - 0.5) / 0.45, (s.t1 - t) / 0.35), story.lot.label, story.lot.chips || []);

@@ -8,10 +8,10 @@
 //  · Chỗ nối: 1,9 s cuối vòng lượn máy 3D về đúng tư thế máy quay app cũ ở đầu cảnh bán kính (camPose: tâm, zoom, nghiêng, hướng Bắc),
 //    giữ yên XF giây và hoà hình sang khung app cũ (hai khung gần như trùng nhau).
 // App cũ (app.js) không gọi file này; render.js chỉ thêm 2 hàm đọc (camPose, drawOpening).
-import { buildTimeline, render, TileCache, camPose, drawOpening, buildCaptions, FORMATS } from './render.js';
+import { buildTimeline, render, TileCache, camPose, drawOpening, FORMATS } from './render.js';
 import { tileFeeder } from './export.js';
 import { sfxEvents } from './sfx.js';
-import { createDirector3D, sfxEvents3D, drawStats } from './dd3d.js';
+import { createDirector3D, sfxEvents3D, drawStats, drawCap3D, capChunks, drawGoldPin, goldRings } from './dd3d.js';
 import { localFrame, stitchWays, bridgeWays } from './data.js';
 
 const FMT = 'v', LW = FORMATS[FMT].LW;
@@ -58,6 +58,14 @@ export function oldScene(src, story) {
     style: 'vangneon', base: 'vetinh', flow: 'lanluot', lot: null, lotLabel: { text: '', area: '' }, plan: null,
     streets: src.streets || null, adminArea: null, roadWidth: '', showStreets: true, sweep: false, noSummary: false,
     roadTheme: 'auto', hiTheme: 'vang', lotStyle: 'phatsang', lotColor: 'auto', lotDims: 'off', routeTheme: 'vang', roadLabelFace: 'line',
+    // vòng 9 (Giang: "nhãn vị trí đổi thành nhãn cũ — nhãn vàng gold lúc nãy"): ghim vàng giọt nước + sóng vàng của AI đạo diễn thay ghim đỏ
+    // + nhãn "VỊ TRÍ CĂN NHÀ" của app cũ (cỡ theo khung 405 của dd3d → ×540/405 trên khung logic 540 của app cũ)
+    noHouseLabel: true,
+    drawPin: (ctx, x, y, s, t, pitch, rings = true) => {
+      const k = (540 / 405) * s;
+      if (rings) goldRings(ctx, x, y, t, k, Math.max(0.35, Math.cos(pitch * Math.PI / 180)));
+      drawGoldPin(ctx, x, y, k, kind === 'datnen' || kind === 'nhavuon' ? 'pin' : kind === 'canho' ? 'city' : 'house');
+    },
   };
 }
 
@@ -84,10 +92,24 @@ export function createHybrid({ width, height, story, src, voiceOf }) {
   const scene = oldScene(src, story);
   const texts = oldTexts(story, scene);
   const durOf = h => voiceOf(h)?.duration || est(h);
-  const vd = {}, caps = {};
-  for (const [k, arr] of Object.entries(texts)) { vd[k] = arr.reduce((s, h) => s + durOf(h), 0) + GAP * (arr.length - 1); caps[k] = arr.map(plain).join(' '); }
-  const old = buildTimeline(scene, FMT, { voice: vd, captions: caps });
+  const vd = {};
+  for (const [k, arr] of Object.entries(texts)) vd[k] = arr.reduce((s, h) => s + durOf(h), 0) + GAP * (arr.length - 1);
+  // phụ đề: KHÔNG dùng phụ đề app cũ (Giang: giữ phụ đề như lúc nãy) — vẽ phụ đề AI đạo diễn (capChunks + drawCap3D) theo giờ giọng
+  const old = buildTimeline(scene, FMT, { voice: vd });
   const ov = old.overview, T0 = ov.t0;
+  const capGroups = [];   // [{ t1 (hết cảnh, giờ app cũ), chunks }]
+  for (const ph of old.phases) {
+    const arr = ph.vkey && texts[ph.vkey];
+    if (!arr || ph.t0 < T0 - 1e-6) continue;
+    let at = ph.t0 + 0.3;
+    for (const h of arr) { capGroups.push({ t1: ph.t1, chunks: capChunks(h, at, durOf(h)) }); at += durOf(h) + GAP; }
+  }
+  const capAt = to => {
+    let g = null, c = null;
+    for (const G of capGroups) for (const x of G.chunks) if (to >= x.t0 - 0.02 && (!c || x.t0 >= c.t0)) { c = x; g = G; }
+    if (!c || to > g.t1 - 0.12 || (c === g.chunks.at(-1) && to > c.t1 + 1.2)) return null;
+    return c;
+  };
   // tư thế máy app cũ ở đầu cảnh bán kính → tư thế MapLibre (thang 512 px, khung thật width px; tâm ngắm ở hàng fy nhờ padding trên)
   const P = camPose(old, T0);
   const seam = { c: [P.lng, P.lat], z: P.zoom - 1 + Math.log2(sc), p: P.pitch, b: 0, pad: Math.max(0, 2 * (P.fy * height - height / 2)) };
@@ -108,14 +130,7 @@ export function createHybrid({ width, height, story, src, voiceOf }) {
   const sfx = [...sfxEvents3D(dd.tl), ...sfxEvents(old).filter(e => e.t >= T0 - 0.05).map(e => ({ ...e, t: e.t - T0 + A }))]
     .filter(e => e.t >= 0 && e.t < duration);
 
-  // phụ đề phần mở đầu theo đúng kiểu app cũ (cụm ngắn, nền thẻ của phong cách), giờ theo giọng của dd3d
   const ddSc = dd.tl.scenes, hs = ddSc.find(s => s.kind === 'house' || s.kind === 'lot');
-  const fake = ddSc.filter(s => s.kind === 'intro' || s === hs).map(s => {
-    const start = s.vo ? s.vo.t : s.t0 + 0.7;
-    return { type: s.kind === 'intro' ? 'intro' : 'house', vkey: s.kind === 'intro' ? 'intro' : 'house', t0: start - (s.kind === 'intro' ? 0.5 : 0.3) };
-  });
-  const Lo = story.lines, hl = story.lot ? Lo.lot : Lo.house;
-  const openCaps = buildCaptions(fake, { intro: plain(Lo.intro), house: plain(hl) }, { intro: durOf(Lo.intro), house: durOf(hl) }, FMT);
 
   const cache = new TileCache(() => { dirty = true; kick(); });
   let liveCtx = null, lastT = 0, dirty = false, exporting = false, raf = 0;
@@ -126,26 +141,30 @@ export function createHybrid({ width, height, story, src, voiceOf }) {
   const drawOld = (ctx, t, request) => {
     const to = Math.max(old.house.t0, toOld(t));
     render(ctx, old, to, { cache, scale: sc, request });
+    const c = capAt(to);
+    if (c) {
+      const kk = width / 405, top = old._capTop;
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); drawCap3D(ctx, c, to, width, height, isFinite(top) ? top * sc - 12 * kk : Infinity); ctx.restore();
+    }
     if (sm && S3.length >= 2 && to > sm.t0 + 0.5 && to < ou.t0 + 0.5) {
       const a = Math.min(1, (to - sm.t0 - 0.5) / 0.4, (ou.t0 + 0.5 - to) / 0.4);
       ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); drawStats(ctx, S3, a, to - sm.t0 - 0.5, width, height); ctx.restore();
     }
   };
   function overlay(ctx, t, api) {
-    const [hx, hy] = api.proj([src.house.lng, src.house.lat]);
-    const pin = t > api.pinT - 2.4 ? { x: hx / sc, y: hy / sc, s: 1, dropT: (t - (api.pinT - 0.35)) / 0.75 } : null;
     const tStart = old.hookEnd ? old.hookEnd - 0.2 : 0.3;
     const titleA = Math.max(0, Math.min(1, (t - tStart) / 0.6, (A + 0.5 - t) / 0.6));
-    const labelA = hs ? Math.max(0, Math.min(1, (t - hs.t0 - 0.5) / 0.45)) : 0;
     const infoA = hs ? Math.max(0, Math.min(1, (t - hs.t0 - 0.6) / 0.45, (A + 0.3 - t) / 0.4)) : 0;
-    drawOpening(ctx, old, t, { scale: sc, pin, labelA, infoA, titleA, caps: openCaps });
-    // hoà hình sang khung app cũ (máy 3D đã đứng đúng tư thế app cũ)
+    // ghim vàng + phụ đề: dd3d tự vẽ (như lúc nãy); ở đây chỉ thẻ giá mở đầu, tiêu đề, thẻ thông tin kiểu app cũ
+    const { infoTop } = drawOpening(ctx, old, t, { scale: sc, pin: null, labelA: 0, infoA, titleA, caps: null });
+    // hoà hình sang khung app cũ (máy 3D đã đứng đúng tư thế app cũ) — vẽ sau phụ đề của dd3d
     const w = (t - (A - XF)) / XF;
-    if (w > 0) {
+    const after = w > 0 ? () => {
       octx.setTransform(1, 0, 0, 1, 0, 0);
       drawOld(octx, t, !exporting);
       ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = Math.min(1, w); ctx.drawImage(oc, 0, 0); ctx.restore();
-    }
+    } : null;
+    return { capBase: isFinite(infoTop) ? infoTop * sc - 12 * (width / 405) : Infinity, after };
   }
   // xem trước: phần mở đầu vẽ theo nhịp bản đồ 3D (dd3d live), phần app cũ vẽ ngay; ô ảnh app cũ tải xong thì vẽ lại khung đang đứng
   function kick() {

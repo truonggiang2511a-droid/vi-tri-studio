@@ -1211,6 +1211,7 @@ export function drawOpening(ctx, tl, t, { scale = 1, pin = null, labelA = 0, inf
   const ib = infoA > 0 ? infoBox(tl, 'bottom', null) : null;
   drawInfo(ctx, ib, infoA);
   drawHook(ctx, tl, t);
+  const infoTop = ib && infoA > 0.05 ? ib.y : Infinity;
   const cap = caps ? caps.find(x => t >= x.t0 && t < x.t1) : null;
   if (cap) {
     const L = captionLayout(ctx, tl, cap, { top: ib && infoA > 0.05 ? ib.y : Infinity, rightPanel: 0 });
@@ -1222,6 +1223,7 @@ export function drawOpening(ctx, tl, t, { scale = 1, pin = null, labelA = 0, inf
   ctx.font = `500 8.5px ${FONT}`;
   ctx.fillText(ATTRIBUTION, LW / 2, LH - 6);
   ctx.restore();
+  return { infoTop };
 }
 
 function makeHook(scene, roads, pois) {
@@ -5508,7 +5510,8 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false, cover = 
   const pv = tl.provPh, pinBoost = pv ? 1 + 0.35 * fadeWin(t, pv.t0, ho.t0 + 0.6, 0.6, 0.8) : 1;
   tl._pin = null;
   if (t > it0.t0 + it0.hold + (it0.t1 - it0.t0 - it0.hold) * 0.6 || dropT > 0) {
-    drawHousePin(ctx, hs.x, hs.y, dropT, t, depthScale(hs.w) * pinBoost);
+    // AI đạo diễn (vòng 9): ghim vàng của AI đạo diễn thay ghim đỏ (scene.drawPin — app cũ không đặt, giữ nguyên)
+    if (scene.drawPin) scene.drawPin(ctx, hs.x, hs.y, depthScale(hs.w) * pinBoost, t, P.pitch); else drawHousePin(ctx, hs.x, hs.y, dropT, t, depthScale(hs.w) * pinBoost);
     tl._pin = { x: hs.x, y: hs.y, s: depthScale(hs.w) * pinBoost };   // mẫu 1: cụm điểm nhấn không đứng đè ghim nhà
   }
 
@@ -5531,6 +5534,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false, cover = 
   // 31/10 (Giang gửi ảnh khổ vuông/ngang: giá "5 tỷ" cuối video đè lên nhãn "VỊ TRÍ BIỆT THỰ"): cụm chữ mẫu 1 đứng cố định,
   // máy quay lia làm nhãn ghim trôi vào → nhãn ghim NHƯỜNG: chạm cụm chữ đang hiện hoặc thẻ thông tin ở trên cùng (cảnh kết)
   // thì mờ đi 0,25 s, hết chạm thì hiện lại. Không chạm gì → giống hệt bản cũ.
+  if (scene.noHouseLabel) houseCardA = 0;   // AI đạo diễn: không có nhãn "VỊ TRÍ …" (ghim vàng đã là nhãn vị trí)
   if (houseCardA > 0.01) {
     const lb = labelCardBox(ctx, hs.x, hs.y - 60 * depthScale(hs.w), scene.label, scene.sub, LW, safe);
     const hit = r => r && lb.x < r.x + r.w && lb.x + lb.w > r.x && lb.y < r.y + r.h && lb.y + lb.h > r.y;
@@ -5582,6 +5586,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false, cover = 
     occ.top = Math.min(occ.top, bottom - cta.h - 8);
   }
   // Ảnh bìa (cover): không vẽ phụ đề lời đọc — ảnh bìa chỉ giữ thẻ mở đầu của phong cách
+  tl._capTop = occ.top;   // AI đạo diễn vẽ phụ đề riêng: đáy phụ đề phải trên mép này (thẻ đang chiếm đáy khung)
   let cap = cover ? null : captionAt(tl, t);
   const capL = cap ? captionLayout(ctx, tl, cap, occ) : null;
   const capA = cap ? (cap.m1 ? clamp01((cap.t1 - t) / 0.1) : Math.min(clamp01((t - cap.t0) / 0.12), clamp01((cap.t1 - t) / 0.12))) : 0;
@@ -5655,7 +5660,7 @@ export function render(ctx, tl, t, { cache, scale = 1, request = false, cover = 
             const tb = drawTrain(ctx, S, P, v, X, w, on * clamp01(w / 0.08) * planeVis(tl, i, t, 0.3));
             const pin = tl._pin;
             if (tb && pin && tb.x1 > pin.x - 34 * pin.s && tb.x0 < pin.x + 34 * pin.s && tb.y1 > pin.y - 80 * pin.s && tb.y0 < pin.y + 10 * pin.s)
-              drawHousePin(ctx, pin.x, pin.y, 1, t, pin.s, false);
+              if (scene.drawPin) scene.drawPin(ctx, pin.x, pin.y, pin.s, t, P.pitch, false); else drawHousePin(ctx, pin.x, pin.y, 1, t, pin.s, false);
             // nét chấm nhà → điểm gần nhất trên tuyến metro + "Tuyến metro cách nhà … m" (khoảng cách thật tới đường ray)
             const ca = on * clamp01((w - 0.1) / 0.15) * clamp01((1.25 - w) / 0.2);
             if (ca > 0.01 && X.near && X.near.km < 1.5) {

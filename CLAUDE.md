@@ -248,6 +248,11 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
   /api/config như app cũ); xuất: `tileFeeder(old, sc, cache, t0)` (thêm tham số t0, mặc định 0 = như cũ) tải ô từ chỗ nối, ô ImageBitmap,
   `preferSession(true)` + `warmSession()` (phiên bản đồ như app cũ), chỉnh màu PHONE_GRADE cả video. (7) Tên vùng (radar 3D): bỏ kéo dài đường
   chữ tới 2,4 km; chữ dài tối đa 80% bề ngang/dọc vùng (`path.maxM` trong layout3D), chữ < 10 px thì không in (không tràn ra ngoài vùng).
+  (8) 21:58 Giang: "nhãn vị trí đổi thành nhãn vàng gold lúc nãy, phụ đề giữ nguyên như lúc nãy không đổi giống app cũ" → cả video dùng GHIM
+  VÀNG giọt nước + sóng vàng của AI đạo diễn (dd3d `drawGoldPin`/`goldRings`; phần app cũ qua `scene.drawPin`, ×540/405), BỎ nhãn
+  "VỊ TRÍ CĂN NHÀ" (`scene.noHouseLabel`); phụ đề AI đạo diễn (cụm ~3 từ, chữ trắng bóng đậm, số vàng — dd3d `drawCap3D` + `capChunks`) cho cả
+  phần app cũ (timeline app cũ dựng KHÔNG có captions), đáy phụ đề né thẻ ở đáy (`tl._capTop` = occ.top render ghi mỗi khung; mở đầu né thẻ
+  thông tin qua `drawOpening` trả `infoTop`). Các cờ scene mới app cũ không đặt → app cũ không đổi.
   App cũ: render.js chỉ THÊM 2 hàm đọc (esbuild bỏ khỏi site/app.js), export.js thêm tham số mặc định → không commit site/app.js (chỉ khác chỗ
   ngắt dòng). Đo căn thử Bình Chánh (chưa giọng): mở đầu 30,7 s (intro 15,7 có quả địa cầu + lượn 15 s), cả video ~100 s. Thử: `/tmp/vt/dd_run9.py`
   (frameSource), `dd_prev.py` (xem trước setFrame), `dd_full.py` (AI viết lời + giọng GIẢ qua pg.route + xuất MP4 720p localOnly → ffprobe).
