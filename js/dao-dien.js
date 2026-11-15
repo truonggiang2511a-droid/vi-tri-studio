@@ -1030,7 +1030,7 @@ async function makePage() {
 // ---------- gắn sự kiện ----------
 $('full').onchange = () => { S.edits.full = $('full').checked; edited(); };
 $('globe').onchange = () => { S.edits.globe = $('globe').checked ? undefined : false; edited(); };
-$('flow').onchange = () => { S.edits.flow = $('flow').value === 'radar' ? 'radar' : undefined; edited(); };
+$('flow').onchange = () => { S.edits.flow = $('flow').value === 'lanluot' ? 'lanluot' : undefined; edited(); };
 // mẫu thẻ tiện ích: không đổi lời → dựng lại ngay, không cần đọc lại giọng
 $('labelStyle').onchange = () => { S.edits.labelStyle = $('labelStyle').value; save(); if (dirty) edited(); else rebuild(true); };
 $('ctaMode').onchange = () => { S.edits.ctaMode = $('ctaMode').value; edited(); };

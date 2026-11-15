@@ -253,6 +253,8 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
   "VỊ TRÍ CĂN NHÀ" (`scene.noHouseLabel`); phụ đề AI đạo diễn (cụm ~3 từ, chữ trắng bóng đậm, số vàng — dd3d `drawCap3D` + `capChunks`) cho cả
   phần app cũ (timeline app cũ dựng KHÔNG có captions), đáy phụ đề né thẻ ở đáy (`tl._capTop` = occ.top render ghi mỗi khung; mở đầu né thẻ
   thông tin qua `drawOpening` trả `infoTop`). Các cờ scene mới app cũ không đặt → app cũ không đổi.
+  (9) 22:11 Giang: "Radar quét quanh nhà" (vòng 8, toàn 3D) là MẶC ĐỊNH của AI đạo diễn ("chế độ này ok ổn"); kiểu ghép app cũ
+  (dd-old.js) thành lựa chọn thứ 2 "Bay tới từng tiện ích — vẽ như app cũ" (`edits.flow = 'lanluot'`). Ô `#flow` xếp radar lên đầu.
   App cũ: render.js chỉ THÊM 2 hàm đọc (esbuild bỏ khỏi site/app.js), export.js thêm tham số mặc định → không commit site/app.js (chỉ khác chỗ
   ngắt dòng). Đo căn thử Bình Chánh (chưa giọng): mở đầu 30,7 s (intro 15,7 có quả địa cầu + lượn 15 s), cả video ~100 s. Thử: `/tmp/vt/dd_run9.py`
   (frameSource), `dd_prev.py` (xem trước setFrame), `dd_full.py` (AI viết lời + giọng GIẢ qua pg.route + xuất MP4 720p localOnly → ffprobe).

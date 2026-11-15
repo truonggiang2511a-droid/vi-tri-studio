@@ -114,7 +114,8 @@ export function buildStory(S, L, buyer, edits = {}) {
   // 15/11 vòng 9 (Giang: "app cũ vẽ tiện ích, đường lớn kiểu sao thì bê y nguyên"): MẶC ĐỊNH = mở đầu 3D (quả địa cầu → tỉnh → xã → lượn
   // 360° sát nhà) + từ cảnh bán kính trở đi vẽ BẰNG BỘ VẼ APP CŨ (js/dd-old.js, engine 'old'): bay tới từng tiện ích, từng trục đường lớn…
   // Radar vòng 8 còn là lựa chọn (edits.flow = 'radar', vẽ toàn bộ bằng dd3d).
-  const flowPick = edits.flow === 'radar' ? 'radar' : 'lanluot';
+  // 15/11 22:11 Giang: RADAR là MẶC ĐỊNH ("chế độ này ok ổn"); "Bay tới từng tiện ích — vẽ như app cũ" = edits.flow 'lanluot' (js/dd-old.js)
+  const flowPick = edits.flow === 'lanluot' ? 'lanluot' : 'radar';
   const OLD = flowPick !== 'radar';
   const vong = false;
   const max = vong ? (buyer === 'vung' ? 3 : kind === 'datnen' || kind === 'nhavuon' ? 4 : 6)
