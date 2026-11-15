@@ -221,6 +221,23 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 ## 5. Nhật ký bài học
 
+- 2026-11-15 vòng 10 (22:21 Giang: đoạn cận cảnh căn nhà phải lượn HẾT 1 vòng, chưa lùi ra sớm; lời đoạn này + các đoạn khác quá ít, chưa hay).
+  (1) dd3d cảnh house/lot (kiểu Radar, toàn 3D): tối thiểu 10 → 15 s, máy lượn ĐÚNG 360° trong cả cảnh (`rotProg`, tăng/giảm tốc êm), GIỮ CẬN suốt
+  vòng (bỏ kiểu lùi ra từ 22% cảnh của vòng 7); kiểu ghép app cũ vốn đã lượn đủ vòng. (2) Lời mẫu Agent đoạn căn nhà (`houseText` trong dd-agent.js,
+  thay câu [1] của `TPL` + expertHouse/saleHouse): kể như dẫn khách đi một vòng — câu mở theo phong cách → nằm ở đường nào → kích thước, diện tích →
+  kết cấu, phòng ngủ, WC, hướng (+ "đủ chỗ cho cả gia đình" / "cho thuê nguyên căn hoặc từng phòng" theo khách) → pháp lý → "Điểm cộng:" 1–2 dòng
+  điểm nổi bật CHÍNH môi giới viết trong tin (`L.highlights`, bỏ dòng trùng thông số) → đơn giá/m² (nhà đầu tư, chuyên gia) → câu chuyển sang xung
+  quanh; tối đa `MAXW` 72 chữ (≈ 19 s giọng thật — đo giọng Chirp HD căn mẫu ~3,7 chữ/giây; xem trước chưa giọng ước 3,1 chữ/giây nên dài hơn),
+  quá thì bớt dần theo thứ tự trong code. Tin chỉ ghi "hẻm xe hơi" → "nằm trong hẻm xe hơi, sát đường <tên đường quét được < 120 m>"; tin ghi
+  "đường 8m" (bề rộng, không phải tên) → không nói "nằm ngay Đường 8m" (`genericSt`). Tin đăng ít thông tin thì lời ngắn hơn (KHÔNG bịa thêm).
+  (3) Câu các cảnh khác thêm 1 vế ngắn, chỉ từ dữ liệu: trục đường theo TÊN (cao tốc / quốc lộ / tỉnh lộ / đại lộ), trung tâm (điểm mốc trung tâm
+  đầu tiên, ≤ 60 phút) theo khách, radar: sau tên + khoảng cách thêm ích lợi theo loại (lần đầu mỗi loại; ≤ 1,5 km mới nói "gần nhà"/"đưa đón con").
+  (4) AI viết lời: `LONG` (lib/script.js, chỉ AI đạo diễn gửi `long`) house/lot 36 → 62 chữ, thêm radar 70 (trước KHÔNG có khoá radar → chỉ 24 chữ,
+  không đủ kể 5 tiện ích → câu bị bắt lỗi quá dài / bị bỏ về lời mẫu), overview, summary, rd; mô tả cảnh house gửi AI ghi rõ 45–60 chữ + thứ tự kể.
+  Đo căn thử Bình Chánh, tin có 2 dòng điểm nổi bật (chưa giọng): cảnh căn nhà 13,3 → 24 s (giọng thật ~20 s), cả video 99 → 114 s. Giọng đọc của
+  AI đạo diễn vẫn là giọng HD Nữ như app cũ ('nu-nam' → Chirp 3 HD khi TTS_PROVIDER=google). Thử: `/tmp/vt/lines.mjs` (in lời 3 kiểu tin × 3 khách
+  × 5 phong cách từ S.json dump bằng `dd_dumpS.py`), `dd_run9.py r12` (radar) + `dd_run9.py h12 '<toạ độ>' lanluot` (kiểu app cũ), 0 lỗi trang.
+
 - 2026-11-15 vòng 9 (Giang: "AI đạo diễn cho người mới làm nhanh — app cũ vẽ tiện ích quanh nhà, đường lớn, chữ 3D khối tên trục đường kiểu
   sao thì BÊ Y NGUYÊN; chỉ khác zoom từ trái đất → tỉnh → xã → xuống căn nhà quay 360° cận cảnh"; chọn "Bay tới từng tiện ích" + "Mọi thứ như
   app cũ"; tên vùng "KCN Cầu Tràm" to quá, tràn ra ngoài vùng; đoạn kết phải có thẻ 3 con số lớn). Phản biện: bộ vẽ app cũ (render.js) không có

@@ -250,7 +250,9 @@ export function buildStory(S, L, buyer, edits = {}) {
     : infra?.metro ? `ga metro ${infra.metro.nearName} chỉ cách <b>${km(infra.metro.nearKm)}</b>` : infra?.road ? `<b>${infra.road.name}</b> chỉ cách <b>${km(infra.road.km)}</b>` : '';
   const ctrHook = center ? `về trung tâm chỉ <b>${center.min} phút</b>` : '';
   const near1 = p0 ? `${p0name} chỉ ${p0d}` : '';
-  const street = L.street || (f?.name ? `đường ${f.name}` : '');
+  // tin chỉ ghi bề rộng ("đường 8m", "hẻm 6m") thì KHÔNG phải tên đường → không nói "nằm ngay Đường 8m"; bề rộng đọc riêng ở đoạn căn nhà
+  const genericSt = /^(đường|hẻm|ngõ|kiệt)\s*(xe\s*hơi\s*)?\d+([.,]\d+)?\s*m\b/i.test(L.street || '');
+  const street = (!genericSt && L.street) || (f?.name ? `đường ${f.name}` : '');
   const at = street ? `ngay ${street.replace(/^Mặt tiền/, 'mặt tiền')}` : '';
   const lotKind = kind === 'datnen' || kind === 'nhavuon';
   const specs = (lotKind ? [L.dims && `<b>${L.dims}</b>`, L.area && `diện tích <b>${fmtNum(L.area)} m²</b>`, L.w && `mặt tiền <b>${fmtNum(L.w)} m</b>`, !at && f?.name && `quay ra <b>${f.name}</b>`, L.road && L.road.toLowerCase(), L.thoCu && L.thoCu.toLowerCase()]
@@ -298,13 +300,53 @@ export function buildStory(S, L, buyer, edits = {}) {
       vung: [`${P || K}${legal ? `, ${legal}` : ''}${infraHook ? `, ${infraHook}` : ctrHook ? `, ${ctrHook}` : ''}.`],
     },
   };
-  const expertHouse = `Thông số: ${[specs, legal, PPM && `đơn giá khoảng ${PPM}`, at].filter(Boolean).join(', ')}.`;
-  const saleHouse = J(specs && `${cap(specs)}.`, (at || legal) && `${cap([at, legal].filter(Boolean).join(', '))}.`, 'Thông tin rõ ràng, hẹn xem ngay trong tuần.');
   const tp = TPL[tone][buyer] || TPL[tone].o;
   const intro = J(lead, cap(tp[0]));
-  const houseText = tone === 'chuyen-gia' ? expertHouse : tone === 'chot-sale' ? saleHouse : tp[1];
+  // ---- Lời đoạn máy lượn TRỌN 360° cận cảnh căn nhà (15/11 22:21, Giang: lời quá ít, máy chưa lượn hết vòng đã hết lời) ----
+  // Kể lần lượt như đang dẫn khách đi một vòng: mở → nằm ở đường nào → kích thước, diện tích → kết cấu, phòng → pháp lý → điểm cộng
+  // trong tin đăng → (nhà đầu tư) đơn giá → câu chuyển sang xung quanh. ~45–60 chữ ≈ 15–19 s = đủ 1 vòng.
+  // CHỈ thông tin thật (tin đăng + tên đường trước nhà quét được): tin đăng ít thông tin thì lời ngắn hơn, KHÔNG bịa thêm.
+  const houseText = (() => {
+    const rw0 = L.road || (genericSt ? L.street : ''), roadW = rw0 && !(street || '').toLowerCase().includes(rw0.toLowerCase()) ? rw0.toLowerCase() : '';
+    const sz = [L.dims && `kích thước <b>${L.dims}</b>`, L.area && `diện tích <b>${fmtNum(L.area)} m²</b>`, lotKind && L.w && `mặt tiền <b>${fmtNum(L.w)} m</b>`,
+      lotKind && L.thoCu && L.thoCu.toLowerCase(), lotKind && L.facing && L.facing.toLowerCase()].filter(Boolean);
+    const st = lotKind ? [] : [L.floors && `kết cấu ${L.floors}`, L.level && `căn ở ${L.level.toLowerCase()}`, L.beds && `<b>${L.beds} phòng ngủ</b>`,
+      L.baths && `${L.baths} nhà vệ sinh`, L.facing && L.facing.toLowerCase(), !lotKind && L.thoCu && L.thoCu.toLowerCase()];
+    const stx = st.filter(Boolean);
+    const fit = !lotKind && L.beds >= 2 ? (buyer === 'thue' ? ', cho thuê nguyên căn hoặc từng phòng đều được' : buyer === 'o' ? ', đủ chỗ cho cả gia đình' : '') : '';
+    // điểm cộng chính môi giới viết trong tin (bỏ dòng trùng thông số đã đọc), tối đa 2
+    const hl = (L.highlights || []).map(h => String(h).replace(/\p{Extended_Pictographic}/gu, '').replace(/[.!;:,\s]+$/u, '').trim())
+      .filter(h => h.length >= 8 && !/(trệt|lầu|tầng|phòng\s*ngủ|\bpn\b|\bwc\b|toilet|hướng|\d+\s*x\s*\d+)/i.test(h)).slice(0, 2);
+    const open = { pas: `Cùng nhìn cận cảnh một vòng quanh ${kwFull} này.`, aida: `Nhìn cận cảnh một vòng quanh ${kwFull}.`,
+      'ke-chuyen': `Giờ cùng dạo một vòng quanh ${kwFull}.`, 'chuyen-gia': `Cận cảnh ${kwFull} và các thông số chính.`, 'chot-sale': `Cận cảnh ${kwFull} ngay bây giờ.` }[tone] || '';
+    // tin chỉ ghi "hẻm xe hơi" (không tên) mà quét được đường có tên sát nhà (< 120 m) → "nằm trong hẻm xe hơi, sát đường X"
+    const sideName = f?.name || roadFront?.name;   // đường có tên sát nhà (< 120 m): đường quanh nhà quét được, không có thì trục lớn ngay trước nhà
+    const alley = /^hẻm/i.test(L.street || '') && sideName && !/\d|đường|\bđ\./i.test(L.street) ? `${K} nằm trong ${L.street.toLowerCase()}, sát đường <b>${sideName}</b>.` : '';
+    // tin chỉ ghi bề rộng ("đường 8m") + đường có tên quét được sát nhà: 2 câu riêng (không khẳng định đường 8m chính là đường đó)
+    const sideW = genericSt && f?.name && roadW ? `${K} nằm sát đường <b>${f.name}</b>. ${cap(roadW)} ngay trước ${kw}.` : '';
+    const where = alley || sideW || (at ? (tone === 'ke-chuyen' ? `Mở cửa là ${street.replace(/^Mặt tiền/, 'mặt tiền')}${roadW ? `, ${roadW}` : ''}.` : `${K} nằm ${at}${roadW ? `, ${roadW}` : ''}.`)
+      : roadW ? `${cap(roadW)} ngay trước ${kw}.` : '');
+    const size = sz.length ? (tone === 'chuyen-gia' ? `Thông số: ${sz.join(', ')}.` : `${K} có ${sz.join(', ')}.`) : '';
+    const struct = stx.length ? `${cap(stx.join(', '))}${fit}.` : '';
+    const leg = legalOk ? `${cap(legal)}, giấy tờ rõ ràng, an tâm sang tên.` : legal ? `Pháp lý: ${legal}.` : '';
+    const plus = hl.length ? `${tone === 'ke-chuyen' ? 'Thêm nữa' : 'Điểm cộng'}: ${hl.join('; ')}.` : '';
+    const ppmS = PPM && (buyer === 'vung' || tone === 'chuyen-gia') ? `Tính ra đơn giá khoảng ${PPM}.` : '';
+    const next = tone === 'chot-sale' ? 'Thông tin rõ ràng, hẹn xem ngay trong tuần.' : `Giờ cùng xem xung quanh ${kw} có gì.`;
+    let parts = [open, where, size, struct, leg, plus, ppmS, next];
+    const words = xs => xs.filter(Boolean).join(' ').replace(/<[^>]+>/g, '').split(/\s+/).filter(Boolean).length;
+    // quá dài (> 72 chữ ≈ 19 s giọng thật ~3,7 chữ/giây) thì bớt dần: đơn giá → điểm cộng thứ 2 → câu chuyển → câu mở ngắn lại → đuôi câu pháp lý → đuôi câu phòng
+    const MAXW = 72;
+    if (words(parts) > MAXW) parts[6] = '';
+    if (words(parts) > MAXW && hl.length > 1) parts[5] = `${tone === 'ke-chuyen' ? 'Thêm nữa' : 'Điểm cộng'}: ${hl[0]}.`;
+    if (words(parts) > MAXW) parts[7] = '';
+    if (words(parts) > MAXW) parts[0] = `Cận cảnh một vòng quanh ${kwFull}.`;
+    if (words(parts) > MAXW && legalOk) parts[4] = `${cap(legal)}, giấy tờ rõ ràng.`;
+    if (words(parts) > MAXW && fit) parts[3] = `${cap(stx.join(', '))}.`;
+    // không có thông tin gì về căn ngoài câu mở + câu chuyển → để trống (máy vẫn lượn, nghe nhạc)
+    return parts.slice(1, 7).some(Boolean) ? J(...parts) : '';
+  })();
   const ctaLead = tone === 'chuyen-gia' ? 'Cần bảng thông số đầy đủ?' : tone === 'chot-sale' ? 'Xem sớm để không lỡ.' : tp[2] || '';
-  const houseLine = houseText && houseText !== 'Thông số: .' ? houseText : '';
+  const houseLine = houseText || '';
   const lotLine = houseLine;
   // Gom cụm (bản ngắn, ≥ 3 tiện ích): tiện ích đầu (mạnh nhất theo khách) có cảnh riêng, còn lại MỘT cảnh — ghim bật lần lượt.
   // 15/11 vòng 6 (Giang: chỗ tiện ích vẽ nhanh quá, muốn nhịp + cách hiện thẻ như app cũ): TẮT gom cụm — mỗi tiện ích một cảnh
@@ -405,8 +447,21 @@ export function buildStory(S, L, buyer, edits = {}) {
     words: rPts.map(p => p.named ? shortName(p.name) : null),
   } : null;
   // lời radar: 1 câu tổng + kể các tiện ích mạnh nhất theo ĐÚNG thứ tự tia quét đi qua (nhãn bật đúng lúc giọng nói tên)
+  // 15/11 22:21 (Giang: lời ít, chưa hay): sau tên + khoảng cách thêm 1 vế ích lợi NGẮN theo loại (lần đầu mỗi loại, không lặp) — tên vẫn
+  // đứng đầu câu nên nhãn radar vẫn bật đúng lúc giọng nói tên (dd3d tìm tên trong câu)
+  const whyUsed = new Set();
+  const poiWhy = p => {
+    const c = p.cat === 'truong' && RX.daihoc.test(p.name) ? 'daihoc' : p.cat;
+    if (whyUsed.has(c)) return '';
+    const near = p.km <= 1.5;
+    const w = { truong: buyer === 'o' && near ? 'đưa đón con nhẹ nhàng' : '', daihoc: '', cho: near ? 'đi chợ mỗi ngày tiện' : 'mua sắm thuận tiện',
+      yte: near ? 'khám bệnh ngay gần nhà' : 'khám chữa bệnh thuận tiện', congvien: 'cuối tuần đi dạo',
+      nganhang: 'giao dịch thuận tiện', hanhchinh: 'làm giấy tờ gần', kcn: 'đi làm gần' }[c] || '';
+    if (w) whyUsed.add(c);
+    return w ? `, ${w}` : '';
+  };
   const radarLine = radar ? `Quét bán kính <b>${fmtNum(rR)} km</b> quanh nhà: <b>${radar.n} tiện ích</b> tiêu biểu.`
-    + rPts.filter(p => p.named).map(p => ` ${cap(shortName(p.name))}, <b>${rdist(p)}</b>.`).join('') : '';
+    + rPts.filter(p => p.named).map(p => ` ${cap(shortName(p.name))}, <b>${rdist(p)}</b>${poiWhy(p)}.`).join('') : '';
   // Tổng kết (vòng 7: cảnh riêng trước lời kêu gọi, mọi bản): đọc đúng 3 con số lớn đang hiện trên hình
   const st3 = stats.slice(0, 3), inR = st3.filter(x => x.sub === `trong ${scoreR} km`), unitV = x => x.unit.replace(' & ', ' và ');
   const sumLine = st3.length >= 2 ? `Tóm lại: ${[inR.length ? `trong ${scoreR} km có ${inR.map(x => `<b>${x.n} ${unitV(x)}</b>`).join(', ')}` : '',
@@ -420,8 +475,11 @@ export function buildStory(S, L, buyer, edits = {}) {
   const olist = ocats.length > 1 ? ocats.slice(0, -1).join(', ') + ' và ' + ocats.at(-1) : ocats[0];
   const overviewLine = olist ? `Trong bán kính <b>${fmtNum(oldR)} km</b> có đủ ${olist}${roads.length ? `, cùng <b>${roads.length} trục đường lớn</b>` : ''}.`
     : roads.length ? `Cùng xem <b>${roads.length} trục đường lớn</b> quanh ${kw}.` : `Cùng xem xung quanh ${kw} có gì nhé.`;
-  const rdLines = roads.map((r, j) => r.id === roadFront?.id ? `Nằm ngay <b>${r.name}</b>.`
-    : `${j === (roadFront ? 1 : 0) ? 'Từ nhà ra' : 'Ra'} <b>${r.name}</b> ${j === (roadFront ? 1 : 0) ? 'chỉ khoảng' : 'khoảng'} <b>${r.min} phút</b>.`);
+  // 15/11 22:21: thêm vế cho biết trục đó là gì (theo TÊN trục — cao tốc / quốc lộ / tỉnh lộ / đại lộ), không đoán gì thêm
+  const roadWhy = r => /cao\s*tốc/i.test(r.name) ? ', lên cao tốc đi các tỉnh thuận tiện' : /quốc\s*lộ|^ql\s?\d/i.test(r.name) ? ', trục quốc lộ nối các tỉnh'
+    : /tỉnh\s*lộ|^đt\s?\d|^tl\s?\d/i.test(r.name) ? ', trục tỉnh lộ của khu vực' : /đại\s*lộ|xa\s*lộ/i.test(r.name) ? ', trục giao thông lớn của thành phố' : '';
+  const rdLines = roads.map((r, j) => r.id === roadFront?.id ? `Nằm ngay <b>${r.name}</b>${roadWhy(r)}.`
+    : `${j === (roadFront ? 1 : 0) ? 'Từ nhà ra' : 'Ra'} <b>${r.name}</b> ${j === (roadFront ? 1 : 0) ? 'chỉ khoảng' : 'khoảng'} <b>${r.min} phút</b>${roadWhy(r)}.`);
   // tổng kết (vòng 9, Giang: đoạn kết có thẻ 3 con số lớn): đọc đúng 3 con số trên thẻ; không đủ số liệu thì câu kiểu app cũ
   const summaryLine = sumLine ? sumLine : buyer === 'thue' ? `Tất cả chỉ trong bán kính <b>${fmtNum(oldR)} km</b>, ở tiện, đi làm đi học đều gần.`
     : `Tất cả chỉ trong bán kính <b>${fmtNum(oldR)} km</b> quanh ${kind === 'canho' ? 'căn hộ' : 'nhà'}, sống tiện, đi lại dễ.`;
@@ -430,7 +488,7 @@ export function buildStory(S, L, buyer, edits = {}) {
     radar: radarLine, house: houseLine ? cap(houseLine) : '', lot: lotLine ? cap(lotLine) : '',
     poi: pois.map((p, i) => poiLine(p, buyer, pois.slice(0, i).filter(q => q.cat === 'truong').length)),   // 'Sáng đưa con đi học' cho trường xuất hiện đầu tiên
     // kết nối vùng: số phút ô tô theo đường đi thật
-    anchor: anchors.map(a => a.type === 'center' ? `Về ${a.name} chỉ khoảng <b>${a.min} phút</b> ô tô, quãng đường <b>${fmtNum(a.km)} km</b>.`
+    anchor: anchors.map((a, i) => a.type === 'center' ? `Về ${a.name} chỉ khoảng <b>${a.min} phút</b> ô tô, quãng đường <b>${fmtNum(a.km)} km</b>${a.min <= 60 && anchors.findIndex(x => x.type === 'center') === i ? (buyer === 'thue' ? ', người thuê đi làm trung tâm thuận tiện' : buyer === 'vung' ? ', kết nối về lõi đô thị thuận tiện' : ', đi làm, mua sắm, giải trí đều thuận tiện') : ''}.`
       : a.type === 'airport' ? `Ra ${a.name} khoảng <b>${a.min} phút</b>, đi công tác, về quê đều thuận tiện.`
         : `${cap(a.type === 'port' ? a.name : 'Tới ' + a.name)} cách <b>${fmtNum(a.km)} km</b>, khoảng <b>${a.min} phút</b> ô tô.`),
     score: sumLine,

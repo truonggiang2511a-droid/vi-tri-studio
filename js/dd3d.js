@@ -269,7 +269,8 @@ export function buildTimeline(story) {
     if (story.lot) add('lot', 15, v.lot); else add('house', 15, v.house);
     return { scenes, duration: t, shift: SH, aOff: AO, globe: G > 0, area: AREA, pinT, photoT: PT, ctaMid: null, barFrom: Infinity, voiceSegs: scenes.filter(s => s.vo).map(s => s.vo) };
   }
-  if (story.lot) add('lot', 10, v.lot); else add('house', 10, v.house);
+  // 15/11 22:21 (Giang): máy lượn TRỌN 1 vòng 360° CẬN CẢNH căn nhà, không lùi ra sớm → tối thiểu 15 s (≤ 24°/giây), lời dài thì lượn chậm lại
+  if (story.lot) add('lot', 15, v.lot); else add('house', 15, v.house);
   // 15/11 vòng 7 (Giang): thứ tự câu chuyện = căn nhà → KẾT NỐI VÙNG (trung tâm, sân bay, cảng, metro, cao tốc) → trục đường lớn
   // quanh nhà → radar + tiện ích quanh nhà → hạ tầng đang thi công → tổng kết → kêu gọi
   (story.anchors || []).forEach((a, i) => add('anchor', 5.2, v.anchor?.[i], { i }));
@@ -757,7 +758,7 @@ export function createDirector3D({ width, height, story, overlay = null }) {
         else ease(0.6 + SH, 5, { c: H, z: story.lot ? 18.6 : 17.3, p: 62, b: OPEN ? 0 : -25 });
       } else if (s.kind === 'house' || s.kind === 'lot') {
         // máy lượn TRỌN 360° quanh căn trong cảnh (lời dài → lượn chậm hơn), nhịp zoom nhẹ cho khỏi đơ
-        const lot = s.kind === 'lot', z0 = lot ? 19.2 : 17.9, p0 = lot ? 56 : 63, T = Math.max(15, d);
+        const lot = s.kind === 'lot', z0 = lot ? 19.2 : 17.9, p0 = lot ? 56 : 63;
         if (OPEN) {
           // vòng 9: cận sát nhà, lượn ĐỦ 360° (tăng/giảm tốc êm hai đầu), 1,9 s cuối máy về ĐÚNG tư thế đầu cảnh bán kính của app cũ
           // (story.opening.seam, hướng Bắc lên) rồi giữ yên 0,45 s để hoà hình sang phần vẽ kiểu app cũ
@@ -771,13 +772,12 @@ export function createDirector3D({ width, height, story, overlay = null }) {
           });
           continue;
         }
-        // 15/11 vòng 7 (Giang: lượn 360° thấy rõ các trục đường lớn + tên đường): cận căn nhà ~30% đầu cảnh rồi lùi dần ra tới cỡ thấy
-        // trục lớn gần nhất (≤ 1,2 km), vẫn lượn quanh căn — tên trục in dẹt trên mặt đường (groundLabels). Lô đất giữ cận (số mét cạnh lô).
-        const nearR = Math.max(0, ...(story.roads || []).filter(r => r.near && r.km <= 1.2).slice(0, 3).map(r => kmBetween(H, r.near)));
-        const zW = lot || !nearR ? z0 : Math.max(14.8, Math.min(z0 - 0.7, fitCam(circleKm(H, nearR * 1.1 + 0.15, 24), 0, p0).z - 0.25));
+        // 15/11 22:21 (Giang: "phải bay hết vòng căn nhà, đủ 1 vòng cận cảnh, chưa lùi ra sớm"): lượn ĐÚNG 360° trong cả cảnh (tăng/giảm tốc
+        // êm hai đầu như vòng 9), giữ cận suốt vòng — bỏ kiểu lùi ra từ 22% cảnh của vòng 7; cảnh sau tự bay ra từ tư thế cuối vòng.
+        // Nhịp zoom thở nhẹ ±0,22 cho khỏi đơ. Tên đường trước nhà vẫn in trên mặt đường (groundLabels) vì máy đang cận.
         follow(s.t0, d, (t, from) => {
-          const u = t - s.t0, wide = zW < z0 ? EASE(clamp01((u - 0.22 * d) / (0.3 * d))) : 0;
-          const tgt = { c: H, z: lerp(z0, zW, wide) + 0.25 * Math.sin(Math.PI * u / T), p: p0 - 14 * wide, b: from.b + 360 * u / T };
+          const u = t - s.t0, rot = 360 * rotProg(u, d, Math.min(2.2, d / 4));
+          const tgt = { c: H, z: z0 + 0.22 * Math.sin(Math.PI * u / d), p: p0, b: from.b + rot };
           const e = EASE(clamp01(u / 1.4));
           return e >= 1 ? tgt : mixCam(from, tgt, e);
         });
