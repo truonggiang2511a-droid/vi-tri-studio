@@ -108,7 +108,11 @@ export function buildStory(S, L, buyer, edits = {}) {
   const full = !!edits.full;
   // Kiểu hiện tiện ích (15/11): 'lanluot' (mặc định) bay tới từng tiện ích, vẽ đường đi; 'vong' máy lượn 360° góc xa, tiện ích chỉ
   // bật nhãn lên (không vẽ đường đi) — line chỉ còn ở trục đường lớn và đường đi lên trung tâm / sân bay / ga / cảng
-  const vong = edits.flow === 'vong';
+  // 15/11 vòng 8 (Giang): mặc định RADAR — một cảnh máy xoay chậm quanh nhà, tia quét tới đâu tiện ích ở đó hiện chấm + tên (≥ 10 điểm
+  // nếu khu có), thay cho các cảnh bay tới từng tiện ích phía sau (Giang thấy thừa). "Bay tới từng tiện ích" (vẽ đường đi) còn là lựa
+  // chọn (edits.flow = 'lanluot'). Kiểu "Lượn 360° góc xa" cũ ('vong') gộp vào radar.
+  const flowPick = edits.flow === 'lanluot' ? 'lanluot' : 'radar';
+  const vong = false;
   const max = vong ? (buyer === 'vung' ? 3 : kind === 'datnen' || kind === 'nhavuon' ? 4 : 6)
     : buyer === 'vung' ? 2 : kind === 'datnen' || kind === 'nhavuon' ? 3 : full ? 5 : 4;
   // tiện ích: Agent chọn → khách bỏ / thêm / đổi thứ tự
@@ -213,7 +217,7 @@ export function buildStory(S, L, buyer, edits = {}) {
     ? { name: String(f.name), pts: f.pts.map(([la, ln]) => [ln, la]) } : null;
   // Vùng quan trọng: ranh khu công nghiệp / bệnh viện / đại học / công viên của tiện ích đã chọn + ranh sân bay khi có cảnh sân bay
   const ringLL = r => { const q = r.map(([la, ln]) => [ln, la]); if (q.length && (q[0][0] !== q.at(-1)[0] || q[0][1] !== q.at(-1)[1])) q.push(q[0]); return q; };
-  const zones = (S.zones || []).filter(z => pois.some(p => p.id === z.poiId)).map(z => ({ id: 'z:' + z.poiId, poiId: z.poiId, cat: z.cat, name: zoneName(z.name), rings: z.pieces.flatMap(pc => pc.rings.map(ringLL)) }));
+  const zones = (S.zones || []).filter(z => pois.some(p => p.id === z.poiId) || (flowPick === 'radar' && (S.pois || []).some(p => p.id === z.poiId && p.km <= 5))).map(z => ({ id: 'z:' + z.poiId, poiId: z.poiId, cat: z.cat, name: zoneName(z.name), rings: z.pieces.flatMap(pc => pc.rings.map(ringLL)) }));
   // (sân bay: ranh đường biên sân bay — chỉ khi có cảnh sân bay)
   // Hạ tầng đang thi công (OpenStreetMap, như app cũ): tối đa 2 tuyến trong 5 km
   // hạ tầng đang thi công (đường / cao tốc OSM + metro đang xây — METRO_BUILD) trong 5 km: luôn vào video (15/11, Giang: bị thiếu)
@@ -335,9 +339,66 @@ export function buildStory(S, L, buyer, edits = {}) {
   else if (heroStat && !stats.includes(heroStat)) stats.push(heroStat);
   // Radar (15/11 vòng 7, Giang: thêm radar quét cho thu hút): cảnh quét bán kính scoreR trước phần tiện ích — tia quét đi qua tới đâu,
   // tiện ích thật (đã quét) ở đó sáng lên; đếm đúng số điểm trên hình
-  const RADAR_CAT = new Set(['truong', 'cho', 'yte', 'congvien', 'nganhang', 'hanhchinh']);
-  const rPts = (S.pois || []).filter(p => RADAR_CAT.has(p.cat) && p.km <= scoreR).sort((a, b) => a.km - b.km).slice(0, 60);
-  const radar = !vong && rPts.length >= 3 ? { r: scoreR, n: rPts.length, pts: rPts.map(p => ({ at: [p.lng, p.lat], cat: p.cat })) } : null;
+  // bán kính: nhỏ nhất trong 1 / 1,5 / 2 / 3 km có ≥ 10 tiện ích (khu ít tiện ích thì quét ít điểm — cảnh ngắn lại), nới thêm cho 2 tiện ích
+  // mạnh nhất lọt vòng (tối đa 5 km); tối đa RADAR_MAX điểm, xen kẽ theo nhóm (không 10 điểm cùng là trường), tên trùng chỉ lấy 1
+  const RADAR_CAT = ['truong', 'cho', 'yte', 'congvien', 'nganhang', 'hanhchinh', 'khudothi', 'kcn'], RADAR_MAX = 12;
+  const elig = (S.pois || []).filter(p => RADAR_CAT.includes(p.cat));
+  let rR = [1, 1.5, 2, 3].find(r => elig.filter(p => p.km <= r).length >= 10) || 3;
+  rR = Math.max(rR, Math.min(5, Math.ceil(Math.max(0, ...pois.slice(0, 2).map(p => p.km)) * 2) / 2));
+  const nameKey = p => shortName(p.name).toLowerCase().normalize('NFC');
+  const named = pois.filter(p => p.km <= rR).slice(0, 5), seen = new Set(named.map(nameKey)), picked = [];
+  const byCat = Object.fromEntries(RADAR_CAT.map(c => [c, elig.filter(p => p.cat === c && p.km <= rR && !named.some(q => q.id === p.id)).sort((a, b) => a.km - b.km)]));
+  for (let more = true; more && named.length + picked.length < RADAR_MAX;) {
+    more = false;
+    for (const c of RADAR_CAT) {
+      while (byCat[c].length && seen.has(nameKey(byCat[c][0]))) byCat[c].shift();
+      const p = byCat[c].shift();
+      if (!p) continue;
+      more = true; seen.add(nameKey(p)); picked.push(p);
+      if (named.length + picked.length >= RADAR_MAX) break;
+    }
+  }
+  const angOf = p => (Math.atan2((p.lng - S.house.lng) * Math.cos(S.house.lat * Math.PI / 180), p.lat - S.house.lat) * 180 / Math.PI + 360) % 360;
+  const rdist = p => p.km >= 1 && mins(p) ? `${mins(p)} phút` : km(p.km);
+  // tên trên nhãn radar (vòng 8b, Giang: nhãn dài quá): biểu tượng đã cho biết loại → tên gọn ≤ 18 ký tự. Ưu tiên chữ đầy đủ dễ đọc
+  // (khán giả lớn tuổi): "Mầm non Hoa Hồng"; còn dài thì viết tắt kiểu bản đồ (TH, THCS, ĐH, BV, NH…); vẫn dài thì bỏ bớt từ cuối
+  const TAG_MAX = 18;
+  const tag = n => {
+    const base = shortName(n).replace(/\s+(chi\s+nhánh|CN|phòng\s+giao\s+dịch|PGD)(\s.*)?$/i, '').replace(/\s+/g, ' ').trim();
+    const soft = base.replace(/^Trường\s+(Mầm\s*non|Mẫu\s*giáo|Tiểu\s*học)\s+/i, (_, x) => cap(x.toLowerCase()) + ' ')
+      .replace(/^(Ủy|Uỷ)\s*ban\s+nhân\s+dân/i, 'UBND').replace(/Y\s*học\s*cổ\s*truyền/i, 'YHCT').replace(/^Khu\s+dân\s+cư\s+/i, 'KDC ')
+      .replace(/^Khu\s+công\s+nghiệp\s+/i, 'KCN ').replace(/^Trường\s+(Trung\s+học\s+cơ\s+sở)\s+/i, 'THCS ').replace(/^Trường\s+(Trung\s+học\s+phổ\s+thông)\s+/i, 'THPT ')
+      .replace(/^Trường\s+(THCS|THPT)\s+/i, '$1 ').replace(/\s+/g, ' ').trim();
+    if (soft.length <= TAG_MAX) return soft;
+    const hard = soft.replace(/^Mầm non\s+/i, 'MN ').replace(/^Tiểu học\s+/i, 'TH ').replace(/^Trường\s+Đại\s+học\s+/i, 'ĐH ').replace(/^Trường\s+Cao\s+đẳng\s+/i, 'CĐ ')
+      .replace(/^Bệnh\s+viện\s+/i, 'BV ').replace(/^Ngân\s+hàng\s+/i, 'NH ').replace(/^Phòng\s+khám\s+/i, 'PK ').replace(/^Phòng\s+chẩn\s+trị\s+/i, 'PK ')
+      .replace(/^Bưu\s+điện\s+văn\s+hóa\s+xã/i, 'Bưu điện VHX').replace(/^Siêu\s+thị\s+/i, 'ST ').replace(/^Trung\s+tâm\s+/i, 'TT ');
+    if (hard.length <= TAG_MAX) return hard;
+    const ws = hard.split(' '); let c = 1;
+    while (c < ws.length && ws.slice(0, c + 1).join(' ').length <= TAG_MAX) c++;
+    // không để sót 1 chữ của tên riêng bị cắt ("Bưu điện VHX Tân" → "Bưu điện VHX", "VietinBank Bình" → "VietinBank")
+    const upper = w => /^\p{Lu}/u.test(w);
+    if (c < ws.length && c >= 2 && upper(ws[c]) && upper(ws[c - 1]) && !/^[\p{Lu}\d]{2,}$/u.test(ws[c - 1])) c--;   // bỏ 1 từ mồ côi của tên dở dang
+    return ws.slice(0, c).join(' ');
+  };
+  // chữ in hoa cả từ trong dữ liệu ("Chợ CÁ BIỂN") → viết hoa chữ đầu, trừ chữ viết tắt (UBND, THCS, KDC…)
+  const ABBR = /^(UBND|THCS|THPT|KDC|KCN|VHX|YHCT|MN|TH|NH|BV|PK|ĐH|CĐ|CB|TT|ST|TP|HCM|ATM|BIDV|ACB|VPBANK|TPBANK|MB|SHB|OCB|VIB|HDBANK|SCB|MSB|ABBANK|SEABANK|LPBANK)$/i;
+  // (cả chữ hoa lẫn lộn kiểu "BiỂN": quá nửa số chữ sau chữ đầu là chữ hoa thì coi là chữ in hoa)
+  const tidy = s => String(s || '').normalize('NFC').split(' ').map(w => {
+    if (w.length < 2 || ABBR.test(w) || (w.length === 2 && !/[^\x00-\x7F]/.test(w))) return w;
+    const rest = [...w.slice(1)], up = rest.filter(c => c !== c.toLowerCase()).length;
+    return up && up >= Math.ceil(rest.length / 2) ? w[0] + w.slice(1).toLowerCase() : w;
+  }).join(' ');
+  const rPts = [...named.map(p => ({ ...p, named: true })), ...picked.map(p => ({ id: p.id, name: p.name, cat: p.cat, km: p.km, min: null, at: [p.lng, p.lat] }))]
+    .map(p => ({ ...p, ang: angOf({ lat: p.at[1], lng: p.at[0] }) })).sort((a, b) => a.ang - b.ang);
+  const radar = flowPick === 'radar' && rPts.length >= 3 ? {
+    r: rR, n: rPts.length,
+    pts: rPts.map(p => ({ id: p.id, at: p.at, cat: p.cat, ang: p.ang, named: !!p.named, label: `${tag(tidy(p.name))} · ${rdist(p)}` })),
+    words: rPts.map(p => p.named ? shortName(p.name) : null),
+  } : null;
+  // lời radar: 1 câu tổng + kể các tiện ích mạnh nhất theo ĐÚNG thứ tự tia quét đi qua (nhãn bật đúng lúc giọng nói tên)
+  const radarLine = radar ? `Quét bán kính <b>${fmtNum(rR)} km</b> quanh nhà: <b>${radar.n} tiện ích</b> tiêu biểu.`
+    + rPts.filter(p => p.named).map(p => ` ${cap(shortName(p.name))}, <b>${rdist(p)}</b>.`).join('') : '';
   // Tổng kết (vòng 7: cảnh riêng trước lời kêu gọi, mọi bản): đọc đúng 3 con số lớn đang hiện trên hình
   const st3 = stats.slice(0, 3), inR = st3.filter(x => x.sub === `trong ${scoreR} km`), unitV = x => x.unit.replace(' & ', ' và ');
   const sumLine = st3.length >= 2 ? `Tóm lại: ${[inR.length ? `trong ${scoreR} km có ${inR.map(x => `<b>${x.n} ${unitV(x)}</b>`).join(', ')}` : '',
@@ -345,7 +406,7 @@ export function buildStory(S, L, buyer, edits = {}) {
     + (buyer === 'thue' ? ' Người thuê ở đây sống tiện, đi đâu cũng gần.' : buyer === 'vung' ? ' Một vị trí kết nối đủ đầy.' : ' Mọi nhu cầu hằng ngày đều trong tầm tay.') : '';
   const lines = {
     intro,
-    radar: radar ? `Quét bán kính <b>${scoreR} km</b> quanh nhà: <b>${radar.n} tiện ích</b> sinh hoạt hằng ngày.` : '', house: houseLine ? cap(houseLine) : '', lot: lotLine ? cap(lotLine) : '',
+    radar: radarLine, house: houseLine ? cap(houseLine) : '', lot: lotLine ? cap(lotLine) : '',
     poi: pois.map((p, i) => poiLine(p, buyer, pois.slice(0, i).filter(q => q.cat === 'truong').length)),   // 'Sáng đưa con đi học' cho trường xuất hiện đầu tiên
     // kết nối vùng: số phút ô tô theo đường đi thật
     anchor: anchors.map(a => a.type === 'center' ? `Về ${a.name} chỉ khoảng <b>${a.min} phút</b> ô tô, quãng đường <b>${fmtNum(a.km)} km</b>.`
@@ -381,7 +442,7 @@ export function buildStory(S, L, buyer, edits = {}) {
     house: H, info: { price: L.price || KINDS[kind].label, chips: infoChips(L) }, footprint, lot,
     pois, anchors, infra, score: sumLine ? score : null, scoreR, stats: stats.slice(0, 3), lines, radar, frontStreet,
     // vòng 7 (Giang): tổng kết là cảnh riêng ngay trước lời kêu gọi (mọi bản) — không gộp 3 con số vào cảnh kết nữa
-    full, cluster, orbit, flow: vong ? 'vong' : 'lanluot', statsInCta: false, ctaKey, ctaMode, cta: ctaAsk, area,
+    full, cluster, orbit, flow: radar ? 'radar' : 'lanluot', statsInCta: false, ctaKey, ctaMode, cta: ctaAsk, area,
     // mở đầu từ quả địa cầu bay xuống tỉnh (mặc định bật, khách tắt ở "Sửa video")
     globe: edits.globe !== false,
     labelStyle: ['trang', 'kinh', 'mau'].includes(edits.labelStyle) ? edits.labelStyle : 'trang', ctaSub: `để nhận thông tin chi tiết`, ctaLong: `${ctaAsk} nhận thông tin`,

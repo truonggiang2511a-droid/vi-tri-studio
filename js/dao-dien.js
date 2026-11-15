@@ -254,10 +254,11 @@ async function runAgent() {
   if (!S.scan) { if (!S.scanJob) startScan(); await S.scanJob; }
   if (!S.scan) { $('tasks').lastChild.after(Object.assign(document.createElement('li'), { textContent: 'Quét chưa được, kiểm tra mạng rồi bấm lại.' })); return; }
   setTask(1);
-  const chosen = buildStory(storeData(), S.listing, S.buyer, S.edits).pois.map(p => p.id);
+  const st0 = buildStory(storeData(), S.listing, S.buyer, S.edits), chosen = st0.pois.map(p => p.id);
   await routesFor(chosen);
-  // ranh vùng quan trọng của tiện ích đã chọn (khu công nghiệp, bệnh viện, đại học, công viên…)
-  S.zones = await loadZones(S.scan.pois.filter(p => chosen.includes(p.id))).catch(() => []);
+  // ranh vùng quan trọng của tiện ích đã chọn + tiện ích trong vòng radar (khu công nghiệp, bệnh viện, đại học, công viên…, tối đa 3)
+  const zIds = new Set([...chosen, ...(st0.radar?.pts || []).map(p => p.id)]);
+  S.zones = await loadZones(S.scan.pois.filter(p => zIds.has(p.id))).catch(() => []);
   // vùng mốc lớn: KCN gần nhà nhất (≤ 6 km) + cảng biển trong điểm mốc vùng — khoanh ranh, in tên trên vùng
   if (regionJob) await Promise.race([regionJob, tick(6000)]);
   const kcn = S.scan.pois.filter(p => p.cat === 'kcn' && p.km <= 6 && !chosen.includes(p.id)).sort((a, b) => a.km - b.km).slice(0, 2);
@@ -298,7 +299,8 @@ function storeData() {
 // mọi câu lời đọc của kịch bản hiện tại (theo thứ tự cảnh)
 // bản ngắn: tiện ích trong cảnh gom cụm không đọc câu riêng (chỉ đọc 1 câu cụm) → không tốn giọng cho câu không dùng
 // lượn 360°: chỉ đọc 1 câu cho cả cảnh, không đọc câu riêng từng tiện ích
-const poiLinesUsed = st => (st.orbit ? [] : st.lines.poi.filter((_, i) => !st.cluster?.idx.includes(i)));
+// radar (mặc định từ vòng 8) / lượn 360°: không có cảnh riêng từng tiện ích → không đọc câu tiện ích lẻ (không tốn giọng)
+const poiLinesUsed = st => (st.orbit || st.flow === 'radar' ? [] : st.lines.poi.filter((_, i) => !st.cluster?.idx.includes(i)));
 const allLines = st => { const L = st.lines; return [L.intro, st.lot ? L.lot : L.house, L.roads, st.radar ? L.radar : null, L.build, L.photos, ...poiLinesUsed(st), st.cluster ? L.cluster : null, st.orbit ? L.orbit : null, ...L.anchor, L.airport, L.metro, L.road, st.score && !st.statsInCta ? L.score : null, L.cta].filter(Boolean); };
 // Giọng: đã đăng nhập thì AI đọc các câu CÒN THIẾU (câu cũ dùng lại); chưa đăng nhập thì để trống, báo đăng ký
 let voiceErr = '';
@@ -414,9 +416,11 @@ function aiPayload(st, L) {
   // vòng 7: trục đường hiện TỪNG trục một đúng lúc giọng nói tên → mỗi trục MỘT câu ngắn, đúng thứ tự, gọi đúng tên trong "ten"
   if (st.roads.length) put('roads', 'roads', { canh: 'Các trục đường lớn quanh nhà hiện LẦN LƯỢT từng trục (máy bay tới trục, đường đi thật từ nhà ra trục chạy ra kèm số phút). Mỗi trục MỘT câu ngắn theo ĐÚNG thứ tự danh sách, gọi đúng tên trong "ten": trục cach_nha dưới 120 m là nằm ngay trục đó, trục khác nói từ nhà ra bao nhiêu phút (dùng đúng phut_xe)',
     duong: st.roads.map(r => ({ ten: r.name, cach_nha: fmtKm(r.km), phut_xe: r.km < 0.12 ? null : r.min })) });
-  if (st.radar) put('radar', 'radar', { canh: `Radar quét vòng bán kính ${st.radar.r} km quanh nhà, tiện ích sáng lên khi tia quét qua. 1 câu ngắn: trong bán kính này có bao nhiêu tiện ích sinh hoạt (dùng đúng so_tien_ich)`, ban_kinh_km: st.radar.r, so_tien_ich: st.radar.n });
+  // vòng 8: radar = cả phần tiện ích; nhãn tiện ích bật đúng lúc giọng nói TÊN (dd3d tìm tên trong câu) → AI kể đúng tên ngắn, đúng thứ tự
+  if (st.radar) put('radar', 'radar', { canh: `MỘT cảnh radar: máy xoay chậm, tia quét vòng bán kính ${String(st.radar.r).replace('.', ',')} km quanh nhà, tiện ích hiện lần lượt kèm tên. Câu 1 rất ngắn: trong bán kính này có so_tien_ich tiện ích tiêu biểu. Sau đó kể LẦN LƯỢT các tiện ích trong doc_ten theo ĐÚNG thứ tự, gọi đúng tên ngắn trong "ten" (không đổi tên) kèm số phút hoặc khoảng cách, mỗi tiện ích một câu ngắn, có thể gắn với nỗi lo của khách (noi_lo_khach_hang)`,
+    ban_kinh_km: st.radar.r, so_tien_ich: st.radar.n, doc_ten: st.radar.pts.map((p, i) => p.named ? { ten: st.radar.words[i], cach: p.label.split(' · ')[1] } : null).filter(Boolean) });
   const inCl = i => st.cluster?.idx.includes(i);
-  if (!st.orbit) st.pois.forEach((p, i) => { if (!inCl(i)) put('poi:' + p.id, 'poi:' + p.id, { canh: 'Tiện ích: đường đi thật từ nhà sáng lên', ten: p.name, cach: fmtKm(p.km), phut_xe_may: mm(p) }); });
+  if (!st.orbit && st.flow !== 'radar') st.pois.forEach((p, i) => { if (!inCl(i)) put('poi:' + p.id, 'poi:' + p.id, { canh: 'Tiện ích: đường đi thật từ nhà sáng lên', ten: p.name, cach: fmtKm(p.km), phut_xe_may: mm(p) }); });
   // vòng 6: nhãn bật đúng lúc giọng đọc nói TÊN tiện ích (dd3d tìm tên trong câu) → AI phải kể từng tiện ích bằng đúng tên ngắn, đúng thứ tự
   if (st.orbit) put('poi:vong', 'orbit', { canh: 'MỘT cảnh máy lượn 360 độ góc xa quanh nhà, các tiện ích lần lượt hiện nhãn lên (không vẽ đường đi). Mở bằng 1 câu rất ngắn, rồi kể LẦN LƯỢT TỪNG tiện ích theo đúng thứ tự danh sách, gọi đúng tên ngắn trong "ten" (không đổi tên) kèm số phút hoặc khoảng cách, mỗi tiện ích một câu ngắn',
     ban_kinh: fmtKm(st.orbit.r), tien_ich: st.orbit.idx.map(i => ({ ten: shortName(st.pois[i].name), cach: fmtKm(st.pois[i].km), phut_xe_may: mm(st.pois[i]) })) });
@@ -582,11 +586,16 @@ function renderBoard() {
     }
     b.append(sceneCard({ key: 'roads', title: `🛣 Trục đường lớn · ${sel.length} trục, hiện từng trục (tối đa 5)`, text: L.roads, extra: ex }));
   }
-  if (story.radar) b.append(sceneCard({ key: 'radar', title: `📡 Radar quét bán kính ${story.radar.r} km · ${story.radar.n} tiện ích`, text: L.radar }));
-  b.append(sceneCard({ key: 'poipick', title: `📍 Tiện ích gần nhà · ${story.pois.length} đã chọn (tối đa ${POI_MAX})`, sub: ' · bấm ＋ để thêm', text: '', extra: poiChips(edited) }));
+  // vòng 8: radar = cả phần tiện ích (mỗi chấm một nhãn tên). Tiện ích khách chọn / ghim ở thẻ dưới = tiện ích được ĐỌC TÊN trong lời
+  if (story.radar) {
+    const ex = document.createElement('div'); ex.className = 'chips road-chips';
+    for (const p of story.radar.pts) ex.append(Object.assign(document.createElement('span'), { className: 'rchip' + (p.named ? ' on' : ''), textContent: `${ICON_EMO[CAT3D[p.cat]?.[0]] || '📍'} ${p.label}` }));
+    b.append(sceneCard({ key: 'radar', title: `📡 Radar quét bán kính ${String(story.radar.r).replace('.', ',')} km · ${story.radar.n} tiện ích`, sub: ' · tô vàng = có đọc tên', text: L.radar, extra: ex }));
+  }
+  b.append(sceneCard({ key: 'poipick', title: story.radar ? `📍 Tiện ích được đọc tên · ${Math.min(5, story.pois.length)} (tối đa 5)` : `📍 Tiện ích gần nhà · ${story.pois.length} đã chọn (tối đa ${POI_MAX})`, sub: ' · bấm ＋ để thêm', text: '', extra: poiChips(edited) }));
   b.lastChild.querySelector('textarea')?.remove();
   const sub = p => ' · ' + (p.min ? `${Math.round(p.min)} phút · ` : '') + fmtKm(p.km);
-  if (!story.orbit) story.pois.forEach((p, i) => { if (!story.cluster?.idx.includes(i)) b.append(sceneCard({ key: 'poi:' + p.id, title: p.name, sub: sub(p), text: L.poi[i], cat: p.cat, drag: true, removable: true })); });
+  if (!story.orbit && story.flow !== 'radar') story.pois.forEach((p, i) => { if (!story.cluster?.idx.includes(i)) b.append(sceneCard({ key: 'poi:' + p.id, title: p.name, sub: sub(p), text: L.poi[i], cat: p.cat, drag: true, removable: true })); });
   // lượn 360°: mọi tiện ích trong 1 cảnh, nhãn bật lần lượt theo lời đọc (bỏ / thêm tiện ích ở thẻ "Tiện ích gần nhà")
   if (story.orbit) {
     const ex = document.createElement('div'); ex.className = 'chips road-chips';
@@ -977,7 +986,7 @@ async function makePage() {
 // ---------- gắn sự kiện ----------
 $('full').onchange = () => { S.edits.full = $('full').checked; edited(); };
 $('globe').onchange = () => { S.edits.globe = $('globe').checked ? undefined : false; edited(); };
-$('flow').onchange = () => { S.edits.flow = $('flow').value === 'vong' ? 'vong' : undefined; edited(); };
+$('flow').onchange = () => { S.edits.flow = $('flow').value === 'lanluot' ? 'lanluot' : undefined; edited(); };
 // mẫu thẻ tiện ích: không đổi lời → dựng lại ngay, không cần đọc lại giọng
 $('labelStyle').onchange = () => { S.edits.labelStyle = $('labelStyle').value; save(); if (dirty) edited(); else rebuild(true); };
 $('ctaMode').onchange = () => { S.edits.ctaMode = $('ctaMode').value; edited(); };

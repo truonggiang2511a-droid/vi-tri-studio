@@ -221,6 +221,36 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 ## 5. Nhật ký bài học
 
+- 2026-11-15 vòng 8 (Giang: radar chỉ có chấm tròn, muốn MỖI chấm có tên; máy xoay chậm thấy hết; ≥ 10 tiện ích, khu ít thì quét ít;
+  các cảnh bay tới từng tiện ích phía sau thừa → trong lúc quét cứ 0,5–1 s hiện một tiện ích; vùng quan trọng (KCN…) nổi ranh kèm tên
+  ngay khi vào radar rồi giữ; chữ mặt đất chỉ MỘT kiểu 3D dẹt khối; sau đó: nhãn dài quá → gọn, chuyên nghiệp). (1) **Radar là mặc định**
+  (`story.flow = 'radar'`, ô `#flow` "Radar quét quanh nhà"; "Bay tới từng tiện ích" = `edits.flow = 'lanluot'`; kiểu "Lượn 360°" cũ
+  `vong` gộp vào radar, code orbit trong dd3d còn nhưng không dùng). Radar mode: KHÔNG có cảnh `poi` riêng, không tạo line `r*`, không
+  đọc câu tiện ích lẻ (`poiLinesUsed`). (2) **Chọn điểm** (dd-agent.js): bán kính nhỏ nhất trong 1 / 1,5 / 2 / 3 km có ≥ 10 tiện ích
+  (`RADAR_CAT` trường, chợ, y tế, công viên, ngân hàng, hành chính, khu đô thị, KCN), nới cho 2 tiện ích mạnh nhất lọt vòng (≤ 5 km);
+  tối đa `RADAR_MAX` 12, tối đa 5 tiện ích chính (`pois`) là điểm ĐƯỢC ĐỌC TÊN (`named`), còn lại xen kẽ theo nhóm, tên trùng bỏ; xếp
+  theo HƯỚNG (`ang` tính từ Bắc theo chiều kim đồng hồ). Lời: "Quét bán kính 2 km quanh nhà: 12 tiện ích tiêu biểu." + kể các điểm
+  named theo đúng thứ tự tia quét. (3) **Nhịp** (dd3d buildTimeline): mốc điểm named = lúc giọng nói tên (tìm tên đầy đủ, không thấy thì
+  tên gọn trên nhãn), điểm khác nội suy giữa 2 mốc / cách nhau `RADAR_GAP` 0,75 s, tối thiểu `RADAR_MINGAP` 0,5 s; thiếu chỗ thì cảnh dài
+  thêm (`s.t1 += over`). Tia quét (`beamAt`) tới ĐÚNG hướng điểm j đúng lúc j hiện, giữa 2 điểm quay đều; máy nhìn gần thẳng xuống
+  (nghiêng 24°, khung ôm trọn vòng), xoay 1,5°/s. SFX mỗi điểm 1 tick, điểm named 1 ding. Thẻ đếm hiện từ điểm đầu tiên. (4) **Nhãn
+  radar kiểu bản đồ vệ tinh** (vòng 8b): mỗi tiện ích = biểu tượng tròn màu theo loại (`RB` 10,5 px×k, gợn sóng lúc tia chạm), chữ
+  trắng Be Vietnam 800 viền tối đặt SÁT biểu tượng ở 1 trong 8 phía (ưu tiên phía ra xa nhà, canh lề theo phía), dòng 2 khoảng cách vàng;
+  không thẻ nền, không đường dẫn (bản thẻ trắng + đường dẫn Giang thấy dài, rối). `placeRadar`: nhãn đã hiện giữ nguyên phía (đặt
+  trước), nhãn mới nhất tìm chỗ trống, hết chỗ hẳn mới chiếm chỗ nhãn cũ → nhãn cũ mờ rồi hiện lại phía khác; né biểu tượng các tiện ích
+  khác. Tên gọn `tag()` ≤ 18 ký tự: ưu tiên chữ đầy đủ ("Mầm non Hoa Hồng"), dài mới viết tắt (TH, THPT, UBND, NH, BV, PK…), bỏ
+  "chi nhánh / PGD…", không để sót 1 chữ của tên riêng bị cắt ("VietinBank Bình" → "VietinBank"), chữ in hoa / hoa lẫn lộn ("Chợ CÁ BiỂN")
+  → viết hoa chữ đầu (`tidy`, trừ chữ viết tắt `ABBR`, chữ 2 ký tự không dấu như "KP" giữ nguyên). Khu tiện ích tụ
+  sát nhau thì không đủ chỗ hiện cùng lúc mọi tên — mỗi tên hiện rõ lúc tia tới, nhãn cũ chật thì mờ (đã báo Giang). (5) **Vùng quan
+  trọng**: từ `radar.t0 + 0,6` mọi vùng (vùng của tiện ích chính + tiện ích trong radar + KCN / cảng mốc) bật, khối nổi dâng 0 → 90 m
+  (`zRise`, `setPaintProperty` fill-extrusion-height), tên in 3D dẹt trên vùng (pri 2 trong radar), giữ tới hết video (trừ ảnh); bỏ nhãn
+  ghim vùng từ radar trở đi. runAgent tải ranh vùng cho cả điểm radar (`loadZones` tối đa 3). (6) **Chữ mặt đất một kiểu**: xoá
+  `layoutGround/drawGround`, mọi chữ (tên trục, đường trước nhà, vùng, hạ tầng) dùng `layout3D/draw3D` (`rise` mặc định 1). Lúc lượn quanh
+  nhà chữ 3D thẳng dài dễ lòi khung → tên trục ở cảnh căn nhà cỡ 19 (đường trước nhà 18), kéo dãn tối đa 1,2 (`stMax`, mặc định 1,7). (7) Tổng kết
+  (radar mode): vòng + tia quét + chấm các tiện ích trong vòng `scoreR` (không nhãn). AI viết lời: đoạn radar nhận `doc_ten`
+  (tên đầy đủ + khoảng cách, đúng thứ tự), không còn đoạn `poi:*`. Đo căn thử Bình Chánh (chưa giọng): 99 s (vòng 7: 109 s), radar 15,8 s
+  với 12 điểm. Thử: `/tmp/vt/dd_run.py` (đối số flow 'lanluot' cho kiểu bay tới từng tiện ích), `tagt.mjs` (in tên gọn).
+
 - 2026-11-15 vòng 7 (Giang gửi ảnh cảnh trục đường rối — 2 thẻ "3 phút · 1,4 km" chồng nhau + thẻ KCN; muốn: ≥ 3 trục gần nhất hiện TỪNG
   trục một như app cũ, tên đường in dẹt bám tuyến lúc lượn 360° quanh nhà, mở đầu thấy TRỌN ranh tỉnh nổi lên + lia nhẹ, radar quét, chế độ
   zoom từ quả địa cầu, thứ tự: tỉnh → xã → căn → kết nối vùng → trục đường → tiện ích → hạ tầng đang thi công → tổng kết → kêu gọi; chỉ file
