@@ -221,6 +221,20 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 ## 5. Nhật ký bài học
 
+- 2026-11-15 vòng 11 (22:54 Giang: app cũ hết vòng cận cảnh thì lùi ra trung cảnh, lia nhẹ rồi mới tới kết nối vùng; AI đạo diễn từ cận cảnh bay
+  quay vòng rất chóng mặt + lỗi bản đồ; sân bay bị vẽ 2 lần → bỏ hiệu ứng máy bay cất cánh; khối 3D nhảy lung tung, lúc to quá → thể hiện như
+  app cũ). (1) dd3d cảnh house/lot (kiểu Radar): thêm `HOUSE_MID` 4,2 s không lời cuối cảnh (`s.mid`, buildTimeline cộng vào t1) — hết vòng 360°
+  cận cảnh thì lùi ra trung cảnh (z 15,7, nghiêng 48°) + lia nhẹ tới hướng Bắc (`b0 + (360 − b0 mod 360)`); SFX whoosh nhẹ lúc bắt đầu lùi.
+  (2) Mọi cảnh sau căn nhà giữ HƯỚNG BẮC LÊN như app cũ: anchor/metro/road/roads/build/score bearing 0 (trục đường ±4°), radar 0 rồi xoay chậm
+  như cũ, kết 10°; bỏ `angles()` (đổi góc ±16–34°, cận/lùi) ở các cảnh này, thay bằng `drift()` (đẩy vào ≤ 0,3 zoom + lia ≤ 6°). Cảnh đầu tiên
+  sau căn nhà bay `zoomFirst` (lùi ra trước, lướt tâm sau — nhà không trôi khỏi khung). Metro: khung ôm nhà + tuyến, không lia dọc tuyến nữa.
+  (3) Bỏ cảnh sân bay / máy bay cất cánh: dd-agent `delete infra.airport` (ô "Máy bay cất cánh" trong bảng Đường lớn · sân bay ẩn); hybrid
+  `hybridSrc` gỡ `fx` của điểm mốc sân bay (phần vẽ kiểu app cũ không còn máy bay + ranh sân bay). Kết nối vùng cả 2 kiểu = trung tâm + sân bay
+  gần nhất ≤ 60 phút (không có thì cảng / điểm khác), khách "sinh lời" thêm cảng ≤ 45 phút. (4) TẮT mọi khối 3D (fill-extrusion): nhà OSM `bld`,
+  khối căn nhà `house`, đoàn tàu `train`, khối tỉnh `prov-x` (cao 2,5–14 km), khối xã `ward-x`, khối vùng `zones-x` — để `visibility: 'none'`
+  (lớp còn để setPaintProperty không lỗi); còn phủ màu phẳng + viền phát sáng + ghim vàng như app cũ. Đo căn thử (chưa giọng): video ~114–116 s,
+  0 lỗi trang cả 2 kiểu. Thử: `dd_run9.py` thêm env `BUYER` (o/thue/vung).
+
 - 2026-11-15 vòng 10 (22:21 Giang: đoạn cận cảnh căn nhà phải lượn HẾT 1 vòng, chưa lùi ra sớm; lời đoạn này + các đoạn khác quá ít, chưa hay).
   (1) dd3d cảnh house/lot (kiểu Radar, toàn 3D): tối thiểu 10 → 15 s, máy lượn ĐÚNG 360° trong cả cảnh (`rotProg`, tăng/giảm tốc êm), GIỮ CẬN suốt
   vòng (bỏ kiểu lùi ra từ 22% cảnh của vòng 7); kiểu ghép app cũ vốn đã lượn đủ vòng. (2) Lời mẫu Agent đoạn căn nhà (`houseText` trong dd-agent.js,

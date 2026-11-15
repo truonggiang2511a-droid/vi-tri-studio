@@ -141,6 +141,9 @@ export function buildStory(S, L, buyer, edits = {}) {
   if (!Object.keys(infra).length || OLD) infra = null;
   if (!OLD) for (const k of edits.infraAdd || []) if (I[k]) (infra ||= {})[k] = I[k];   // khách tự thêm (ô "Đường lớn · sân bay")
   if (infra) for (const k of edits.infraOff || []) delete infra[k];
+  // 15/11 22:54 (Giang: sân bay bị vẽ 2 lần, bỏ hiệu ứng máy bay cất cánh): KHÔNG còn cảnh sân bay riêng — sân bay chỉ là 1 điểm mốc
+  // trong kết nối vùng (đường đi thật + số phút) như app cũ
+  if (infra) delete infra.airport;
   if (infra && !Object.keys(infra).length) infra = null;
   // cảnh sân bay: kèm đường đi thật từ nhà lên sân bay (lấy từ điểm mốc sân bay cùng tên) → khách thấy cả quãng đường, không chỉ cận cảnh
   if (infra?.airport) {
@@ -154,9 +157,10 @@ export function buildStory(S, L, buyer, edits = {}) {
   // bản ngắn: mua để ở / cho thuê chỉ 1 điểm mốc (trung tâm nếu ≤ 45 phút, không thì sân bay / cảng)
   // app cũ (vòng 9): về trung tâm + ra sân bay gần nhất (≤ 60 phút, có máy bay cất cánh) — không có sân bay thì cảng
   const ap60 = avail.find(a => a.type === 'airport' && a.min <= 60);
-  let anc = OLD ? (buyer === 'vung' ? avail.slice(0, 3) : [ctr, ap60 || far].filter((a, i, A) => a && A.indexOf(a) === i))
-    : buyer === 'vung' ? avail.slice(0, full ? 3 : 2)
-    : full ? [ctr, far].filter(Boolean) : [ctr && ctr.min <= 45 ? ctr : far || ctr].filter(Boolean);
+  // 15/11 22:54 (Giang: kết nối vùng như app cũ — trung tâm, sân bay, cảng biển; không còn cảnh máy bay riêng): cả 2 kiểu vẽ dùng chung
+  // trung tâm + sân bay gần nhất ≤ 60 phút (không có thì cảng / điểm khác); khách "đầu tư sinh lời" thêm cảng ≤ 45 phút
+  const port = avail.find(a => a.type === 'port' && a.min <= 45);
+  let anc = (buyer === 'vung' ? [ctr, ap60 || far, port] : [ctr, ap60 || far]).filter((a, i, A) => a && A.indexOf(a) === i);
   // khách tự thêm điểm mốc (sân bay, ga, cảng, trung tâm khác) — kể cả điểm xa hơn 70 phút
   for (const id of edits.anchorsAdd || []) {
     const a = (S.anchors || []).find(x => x.id === id);
@@ -489,7 +493,7 @@ export function buildStory(S, L, buyer, edits = {}) {
     poi: pois.map((p, i) => poiLine(p, buyer, pois.slice(0, i).filter(q => q.cat === 'truong').length)),   // 'Sáng đưa con đi học' cho trường xuất hiện đầu tiên
     // kết nối vùng: số phút ô tô theo đường đi thật
     anchor: anchors.map((a, i) => a.type === 'center' ? `Về ${a.name} chỉ khoảng <b>${a.min} phút</b> ô tô, quãng đường <b>${fmtNum(a.km)} km</b>${a.min <= 60 && anchors.findIndex(x => x.type === 'center') === i ? (buyer === 'thue' ? ', người thuê đi làm trung tâm thuận tiện' : buyer === 'vung' ? ', kết nối về lõi đô thị thuận tiện' : ', đi làm, mua sắm, giải trí đều thuận tiện') : ''}.`
-      : a.type === 'airport' ? `Ra ${a.name} khoảng <b>${a.min} phút</b>, đi công tác, về quê đều thuận tiện.`
+      : a.type === 'airport' ? `Ra ${a.name} khoảng <b>${a.min} phút</b>, bay đi công tác, về quê nhanh gọn.`
         : `${cap(a.type === 'port' ? a.name : 'Tới ' + a.name)} cách <b>${fmtNum(a.km)} km</b>, khoảng <b>${a.min} phút</b> ô tô.`),
     score: sumLine,
     airport: infra?.airport && `${infra.airport.name}: <b>${fmtNum(infra.airport.km)} km</b>, khoảng <b>${infra.airport.min} phút</b>, bay đi mọi miền.`,

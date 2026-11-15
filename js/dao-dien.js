@@ -315,8 +315,9 @@ const allLines = st => {
   return [L.intro, st.lot ? L.lot : L.house, L.roads, st.radar ? L.radar : null, L.build, L.photos, ...poiLinesUsed(st), st.cluster ? L.cluster : null, st.orbit ? L.orbit : null, ...L.anchor, L.airport, L.metro, L.road, st.score && !st.statsInCta ? L.score : null, L.cta].filter(Boolean);
 };
 // dữ liệu quét thật cho phần vẽ kiểu app cũ (dd-old.js)
+// 15/11 22:54 (Giang: bỏ hiệu ứng máy bay cất cánh): điểm mốc sân bay không mang fx → phần vẽ kiểu app cũ chỉ vẽ đường đi + thẻ như app cũ mặc định
 const hybridSrc = () => ({ house: S.house, pois: S.scan?.pois || [], routes: S.routes, roads: S.scan?.roads || [], streets: S.scan?.streets || null, admin: S.scan?.admin || null,
-  ward: storeData().ward, anchors: S.anchors || [], build: S.build || [], zones: S.zones || [], listing: S.listing || {}, brand: $('brand').value.trim() });
+  ward: storeData().ward, anchors: (S.anchors || []).map(a => a.type === 'airport' ? { ...a, fx: null } : a), build: S.build || [], zones: S.zones || [], listing: S.listing || {}, brand: $('brand').value.trim() });
 // đạo diễn theo kiểu đã chọn: mặc định mở đầu 3D + phần sau vẽ như app cũ; radar = toàn bộ 3D (dd3d)
 const makeDirector = (width, height, st) => st.engine === 'old'
   ? createHybrid({ width, height, story: withVoice(st), src: hybridSrc(), voiceOf })
@@ -762,7 +763,8 @@ function renderBigList() {
   // cảnh hạ tầng
   const I = S.infra || {}, inf = st.infra || {};
   if (I.airport || I.metro || I.road || S.build?.length) grp('🚀 Cảnh hạ tầng nổi bật');
-  if (I.airport) row('✈️', `Máy bay cất cánh · ${I.airport.name}`, `${I.airport.min} phút`, !!inf.airport, () => toggle('infraOff', 'infraAdd', 'airport', !!inf.airport, 9, 0));
+  // 15/11 22:54 (Giang): bỏ cảnh máy bay cất cánh → không cho bật lại ở đây (sân bay vẫn chọn được như điểm mốc ở trên)
+  if (false && I.airport) row('✈️', `Máy bay cất cánh · ${I.airport.name}`, `${I.airport.min} phút`, !!inf.airport, () => toggle('infraOff', 'infraAdd', 'airport', !!inf.airport, 9, 0));
   if (I.metro) row('🚇', I.metro.name, I.metro.sub, !!inf.metro, () => toggle('infraOff', 'infraAdd', 'metro', !!inf.metro, 9, 0));
   if (I.road) row('🛣', `Cảnh cao tốc · ${I.road.name}`, `cách nhà ${fmtKm(I.road.km)}`, !!inf.road, () => toggle('infraOff', 'infraAdd', 'road', !!inf.road, 9, 0));
   if (S.build?.length) row('🚧', `Đang thi công · ${S.build[0].label}`, `cách nhà ${fmtKm(S.build[0].nearKm)}`, st.build.length > 0, () => {
