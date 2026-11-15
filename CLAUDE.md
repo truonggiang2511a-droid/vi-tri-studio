@@ -221,6 +221,43 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 ## 5. Nhật ký bài học
 
+- 2026-11-15 vòng 7 (Giang gửi ảnh cảnh trục đường rối — 2 thẻ "3 phút · 1,4 km" chồng nhau + thẻ KCN; muốn: ≥ 3 trục gần nhất hiện TỪNG
+  trục một như app cũ, tên đường in dẹt bám tuyến lúc lượn 360° quanh nhà, mở đầu thấy TRỌN ranh tỉnh nổi lên + lia nhẹ, radar quét, chế độ
+  zoom từ quả địa cầu, thứ tự: tỉnh → xã → căn → kết nối vùng → trục đường → tiện ích → hạ tầng đang thi công → tổng kết → kêu gọi; chỉ file
+  AI đạo diễn, kiểu cũ không đụng). (1) **Trục đường** (dd-agent.js): luôn 3 trục (cả bản ngắn) = trục cấp ≥ 1 gần nhà nhất trước, thiếu thì
+  `autoPickRoads` rồi đường có tên ≤ 1,2 km; khách thêm tới 5. Thứ tự = trục ngay trước nhà (< 120 m) rồi ít phút nhất, màu gán sau khi xếp
+  (so sánh bằng `id` — đối tượng đã chép lại). Lời: MỖI trục một câu ("Nằm ngay X." / "Từ nhà ra Y chỉ khoảng N phút." / "Ra Z khoảng N phút.").
+  dd3d: cảnh `roads` có `beats` (beatsFor theo tên trục, ROAD_SHOT 3 s/trục) + `ovT` (ROAD_OVR 2,8 s lùi toàn cảnh): mỗi trục một cú máy ôm
+  nhà + đoạn trục ≤ km + 0,9 + đường đi từ nhà ra; `rc j` chạy từ beat + 0,5 s, `rd j` sáng từ beat + 0,7 s, thẻ CHỈ của trục đang nói (beat +
+  1,8 s, rút trước trục sau), trục đã nói mờ 0,45, lúc lùi toàn cảnh không thẻ, đủ tên; `roadCur(t)`. KCN mốc (`landmarkZones`) bỏ khỏi cảnh
+  trục đường → hiện ở radar + tổng kết. (2) **Lượn 360° quanh nhà**: cận ~22% cảnh rồi lùi dần (tới 52%) ra cỡ thấy trục lớn gần nhất ≤ 1,2 km
+  (`zW`, ≥ 14,8, nghiêng giảm 14°), trục lớn sáng nhẹ 0,7 (`routeProg` cảnh house), tên trục in PHẲNG từng ký tự bám đường cong (`hrd*`,
+  layoutGround) + tên đường trước nhà nếu không phải trục lớn (`story.frontStreet`, `hfs`). Lô đất giữ cận (số mét cạnh lô). Chữ mặt đất:
+  cỡ theo MÀN HÌNH tính lại mỗi khung `px × zb`, zb = 1 + 0,45·clamp((16,6 − z)/3,6) (lùi xa chữ to ra), chỗ đặt / chiều đọc / độ kéo dãn vẫn
+  khoá (lock `{st, flip}`, bỏ khoá cỡ mét của vòng 6); thêm ứng viên lấy mẫu dọc tuyến ĐANG trong khung (gần giữa khung trước), cỡ thử tới
+  0,52, chữ bị ép bé (đoạn ngắn, < 55%) thì thử đoạn khác; `dbg.why` đếm lý do không đặt được (nul/dir/out/ov). Bài học: điểm gần nhà nhất
+  của trục hay nằm ngoài khung khi máy lượn — dời theo bước cố định 500 m nhảy qua đoạn đang thấy; trục ở nửa dưới khung (máy nghiêng) rơi
+  vào dải phụ đề / vùng che nên không in được — chỉ in khi trục vào dải giữa. (3) **Mở đầu**: `story.globe` (mặc định bật, ô `#globe` "Mở đầu
+  từ quả địa cầu", `edits.globe = false` tắt): MapLibre nâng 4.7.1 → **5.24.1** (gói riêng `site/dao-dien.js` 1,22 → 1,48 MB; app chính
+  không tải), style `projection: {type:'globe'}` + `atmosphere-blend` theo zoom, máy bắt đầu z 2,35 nhìn trái đất rồi bay GLOBE_T 3,6 s xuống
+  khung tỉnh; MapLibre 5 cần `canvasContextAttributes: {preserveDrawingBuffer, antialias}` (giữ khung để chép sang canvas xuất). Mốc mở đầu
+  tính từ `tl.aOff` = SH + GLOBE_T; tỉnh giữ lâu hơn (A_TOWARD 3,6, A_WARD 4,2, A_DOWN 6,6, A_PIN 9,2) + lia nhẹ (+10°, nghiêng 34 → 44).
+  Khung tỉnh = TRỌN mảnh ranh chứa căn, bỏ đỉnh nằm trên cạnh > 6 km (ranh trên biển của tỉnh ven biển là cạnh thẳng dài → không lùi ra cả
+  tam giác biển; `landPts`). Tỉnh nổi khối `prov-x` (fill-extrusion cao ~7% bề ngang tỉnh, 2,5–14 km, 0,42). Khối vàng xã `ward-x` tắt ngay khi
+  bắt đầu bay xuống (trước còn phủ vàng kín màn hình lúc máy xuyên qua). (4) **Thứ tự cảnh**: intro → house/lot → anchor → airport → metro →
+  road → roads → radar → poi/orbit/cluster → build → score → photos → cta (thẻ "Sửa video" + payload AI xếp theo đúng thứ tự). Tuyến cao tốc /
+  metro (`w*`, `m0`) sáng trong cảnh của nó, qua cảnh khác mờ 0,3. (5) **Radar** (`story.radar` khi ≥ 3 tiện ích chính trong scoreR, không
+  dùng cho kiểu lượn 360°): cảnh `radar` RADAR_MIN 6 s trước tiện ích — 3 vòng đồng tâm, tia quét RADAR_SWEEP 2,6 s/vòng từ hướng Bắc theo
+  chiều kim đồng hồ, tiện ích thật sáng + gợn sóng đúng lúc tia qua (`s.hits`, dùng chung cho tiếng tick, tối đa ~12 tiếng), thẻ đếm trên cùng;
+  lời "Quét bán kính X km quanh nhà: N tiện ích sinh hoạt hằng ngày." Tổng kết có vòng + tia quét (không chấm). (6) **Tổng kết** là cảnh riêng
+  mọi bản (`statsInCta: false`), lời đọc đúng 3 con số trên hình ("Tóm lại: trong 1 km có 6 trường học, 2 cơ sở y tế; 36 phút về trung tâm.").
+  (7) **Dân số tỉnh**: `PROV_POP` (dd-agent.js) = số liệu Nghị quyết 202/2025/QH15 Điều 1 khoản 1–23 (23 tỉnh/thành sắp xếp; Tuyên Quang
+  1.865.270 theo bản vbpl.vn — một trang tổng hợp ghi sai 1.731.600); 11 tỉnh giữ nguyên chưa có số → không đọc. `popText()` "hơn 14 triệu",
+  câu mở đầu "Tại TP HCM, nơi có hơn 14 triệu dân, căn nhà này nằm ở …"; AI nhận `dan_so_tinh` + dặn chỉ dùng đúng số này, không bịa dự án /
+  tương lai tỉnh, "khan hiếm" chỉ khi tin đăng có. Đo căn thử Bình Chánh (chưa giọng, nhịp ước theo chữ): 109 s (vòng 6: 85 s) — thêm quả địa
+  cầu 3,6 s, tỉnh +1,2 s, trục đường 6,7 → 12,4 s, radar 6 s, tổng kết ~10 s. Thử: Playwright `/tmp/vt/dd_run.py` (STEP/SHOT/T0/T1), probe
+  `dd_probe.py` (zoom/tâm máy theo t), `sheet.py` ghép ảnh; 0 lỗi trang.
+
 - 2026-11-15 vòng 6 (Giang: "chỗ tiện ích vẽ nhanh quá, thẻ tiện ích đè nhau, lỗi to nhỏ — muốn tốc độ + cách hiện nhãn như app cũ";
   chỉ file AI đạo diễn, kiểu cũ không đụng). Dựng thử căn Bình Chánh ở máy thử, nguyên nhân: line tới tiện ích chạy 1,5 s cố định
   (xong khi máy còn đang bay), cảnh gom cụm đọc 3 tiện ích trong 1 câu ~4 s nên hình nhảy 2,6 s/điểm và thẻ lệch lời (lời nói "trường

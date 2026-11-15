@@ -6,7 +6,7 @@ import { parseCoords, haversineKm } from './geo.js';
 import { scanArea, routeTo, pickHubs, loadHubFx, simplifyLine, CATEGORIES, loadZones, loadInfra, metroBuildNear, placesNear, guessCategory } from './data.js';
 import { HUBS } from './hubs.js';
 import { parseListing, summaryChips, KINDS } from './dd-parse.js';
-import { BUYERS, suggestBuyer, buildStory, MUSIC_LIB, AUTO_TONE } from './dd-agent.js';
+import { BUYERS, suggestBuyer, buildStory, MUSIC_LIB, AUTO_TONE, popText } from './dd-agent.js';
 import { createDirector3D, CAT3D, kmBetween, fmtKm, fmtSub, shortName } from './dd3d.js';
 import { rpc } from './account.js';
 import { SB_URL, SB_KEY } from './sb.js';
@@ -299,7 +299,7 @@ function storeData() {
 // bản ngắn: tiện ích trong cảnh gom cụm không đọc câu riêng (chỉ đọc 1 câu cụm) → không tốn giọng cho câu không dùng
 // lượn 360°: chỉ đọc 1 câu cho cả cảnh, không đọc câu riêng từng tiện ích
 const poiLinesUsed = st => (st.orbit ? [] : st.lines.poi.filter((_, i) => !st.cluster?.idx.includes(i)));
-const allLines = st => { const L = st.lines; return [L.intro, st.lot ? L.lot : L.house, L.roads, L.build, L.photos, ...poiLinesUsed(st), st.cluster ? L.cluster : null, st.orbit ? L.orbit : null, ...L.anchor, L.airport, L.metro, L.road, st.score && !st.statsInCta ? L.score : null, L.cta].filter(Boolean); };
+const allLines = st => { const L = st.lines; return [L.intro, st.lot ? L.lot : L.house, L.roads, st.radar ? L.radar : null, L.build, L.photos, ...poiLinesUsed(st), st.cluster ? L.cluster : null, st.orbit ? L.orbit : null, ...L.anchor, L.airport, L.metro, L.road, st.score && !st.statsInCta ? L.score : null, L.cta].filter(Boolean); };
 // Giọng: đã đăng nhập thì AI đọc các câu CÒN THIẾU (câu cũ dùng lại); chưa đăng nhập thì để trống, báo đăng ký
 let voiceErr = '';
 async function voiceAll(onP) {
@@ -319,7 +319,7 @@ function currentStory() {
 function withVoice(st) {
   const L = st.lines;
   return { ...st, paceByText: true, voice: { intro: voiceOf(L.intro), house: voiceOf(L.house), lot: voiceOf(L.lot), poi: L.poi.map(voiceOf), anchor: L.anchor.map(voiceOf),
-    photos: voiceOf(L.photos), roads: voiceOf(L.roads), build: voiceOf(L.build), airport: voiceOf(L.airport), metro: voiceOf(L.metro), road: voiceOf(L.road), score: voiceOf(L.score), cta: voiceOf(L.cta),
+    photos: voiceOf(L.photos), roads: voiceOf(L.roads), radar: voiceOf(L.radar), build: voiceOf(L.build), airport: voiceOf(L.airport), metro: voiceOf(L.metro), road: voiceOf(L.road), score: voiceOf(L.score), cta: voiceOf(L.cta),
     cluster: voiceOf(L.cluster), orbit: voiceOf(L.orbit) } };
 }
 async function rebuild(autoplay = false) {
@@ -402,10 +402,19 @@ function aiPayload(st, L) {
   // 15/11 (Giang): mở đầu khoanh sáng tỉnh → xã/phường rồi bay xuống ghim; câu móc GIÁ / LỢI ÍCH trước, sau đó nói xã, tỉnh.
   // Cảnh căn nhà: máy lượn 360° quanh nhà, đọc ĐỦ thông tin rồi mới lùi ra tiện ích
   // 15/11 vòng 5 (Giang): câu đầu NÓI VỊ TRÍ trước, đúng thứ tự hình (tỉnh → xã), rồi mới tới câu móc
-  put('intro', 'intro', { canh: 'Mở đầu: bản đồ khoanh sáng tỉnh/thành rồi xã/phường, máy bay xuống ghim bất động sản. Câu 1 NÓI VỊ TRÍ TRƯỚC, đúng thứ tự hình: thuộc tỉnh/thành nào rồi xã/phường nào. Câu 2 là câu móc đánh trúng MỘT nỗi lo trong noi_lo_khach_hang (hoặc GIÁ / LỢI ÍCH mạnh nhất có số liệu thật)' });
-  put('house', st.lot ? 'lot' : 'house', { canh: (st.lot ? 'Máy quay lượn 360 độ quanh lô đất (khoanh ranh lô)' : 'Máy quay lượn 360 độ quanh bất động sản, khối nhà nổi lên') + '. Đọc ĐẦY ĐỦ thông tin có trong dữ liệu: đường trước nhà, kích thước, diện tích, số tầng, phòng ngủ, pháp lý, điểm nổi bật — mỗi thông số là lời giải cho nỗi lo của khách (noi_lo_khach_hang), đúng PHONG CÁCH được yêu cầu' });
-  if (st.roads.length) put('roads', 'roads', { canh: 'Các trục đường lớn quanh nhà lần lượt sáng lên, đường đi thật từ nhà ra từng trục chạy ra kèm số phút. 1–2 câu: từ nhà ra từng trục bao nhiêu phút (dùng đúng phut_xe tương ứng; trục cach_nha dưới 120 m là nằm ngay trục đó) để thấy tổng thể vị trí',
+  // 15/11 vòng 7 (Giang): thứ tự câu chuyện = (quả địa cầu →) tỉnh → xã → căn nhà → kết nối vùng → trục đường lớn → radar + tiện ích
+  // → hạ tầng đang thi công → tổng kết → kêu gọi. Phần tỉnh: nói quy mô tỉnh bằng SỐ LIỆU THẬT (dân số sau sáp nhập), không bịa dự án
+  put('intro', 'intro', { canh: `Mở đầu: ${st.globe ? 'từ quả địa cầu bay xuống, ' : ''}bản đồ khoanh sáng trọn tỉnh/thành (khối nổi) rồi xã/phường, máy bay xuống ghim bất động sản. Câu 1 NÓI VỊ TRÍ TRƯỚC, đúng thứ tự hình: thuộc tỉnh/thành nào${popText(facts.tinh_thanh || st.area?.province?.name) ? ' (kèm dan_so_tinh — chỉ dùng đúng số này, không thêm số khác về tỉnh)' : ''} rồi xã/phường nào. Câu 2 là câu móc đánh trúng MỘT nỗi lo trong noi_lo_khach_hang (hoặc GIÁ / LỢI ÍCH mạnh nhất có số liệu thật)`,
+    ...(popText(facts.tinh_thanh || st.area?.province?.name) ? { dan_so_tinh: `${popText(facts.tinh_thanh || st.area?.province?.name)} dân (sau sắp xếp 2025)` } : {}) });
+  put('house', st.lot ? 'lot' : 'house', { canh: (st.lot ? 'Máy quay lượn 360 độ quanh lô đất (khoanh ranh lô)' : 'Máy quay lượn 360 độ quanh bất động sản, khối nhà nổi lên, tên các trục đường in trên mặt đường') + '. Đọc ĐẦY ĐỦ thông tin có trong dữ liệu: đường trước nhà, kích thước, diện tích, số tầng, phòng ngủ, pháp lý, điểm nổi bật — mỗi thông số là lời giải cho nỗi lo của khách (noi_lo_khach_hang), đúng PHONG CÁCH được yêu cầu. Chỉ nói khan hiếm nếu diem_noi_bat có ý đó' });
+  st.anchors.forEach(a => put('anchor:' + a.id, 'anchor:' + a.id, { canh: 'Kết nối vùng: đường đi thật từ nhà tới điểm mốc', ten: a.name, duong_di_km: a.km, phut_o_to: a.min }));
+  if (st.infra?.airport) put('airport', 'airport', { canh: 'Kết nối vùng: sân bay, máy bay cất cánh', ten: st.infra.airport.name, duong_di_km: st.infra.airport.km, phut_o_to: st.infra.airport.min });
+  if (st.infra?.metro) put('metro', 'metro', { canh: 'Kết nối vùng: tuyến metro', ten: st.infra.metro.name, ga_gan_nhat: st.infra.metro.nearName, ga_cach: fmtKm(st.infra.metro.nearKm) });
+  if (st.infra?.road) put('road', 'road', { canh: 'Kết nối vùng: tuyến cao tốc / đường lớn', ten: st.infra.road.name, cach: fmtKm(st.infra.road.km) });
+  // vòng 7: trục đường hiện TỪNG trục một đúng lúc giọng nói tên → mỗi trục MỘT câu ngắn, đúng thứ tự, gọi đúng tên trong "ten"
+  if (st.roads.length) put('roads', 'roads', { canh: 'Các trục đường lớn quanh nhà hiện LẦN LƯỢT từng trục (máy bay tới trục, đường đi thật từ nhà ra trục chạy ra kèm số phút). Mỗi trục MỘT câu ngắn theo ĐÚNG thứ tự danh sách, gọi đúng tên trong "ten": trục cach_nha dưới 120 m là nằm ngay trục đó, trục khác nói từ nhà ra bao nhiêu phút (dùng đúng phut_xe)',
     duong: st.roads.map(r => ({ ten: r.name, cach_nha: fmtKm(r.km), phut_xe: r.km < 0.12 ? null : r.min })) });
+  if (st.radar) put('radar', 'radar', { canh: `Radar quét vòng bán kính ${st.radar.r} km quanh nhà, tiện ích sáng lên khi tia quét qua. 1 câu ngắn: trong bán kính này có bao nhiêu tiện ích sinh hoạt (dùng đúng so_tien_ich)`, ban_kinh_km: st.radar.r, so_tien_ich: st.radar.n });
   const inCl = i => st.cluster?.idx.includes(i);
   if (!st.orbit) st.pois.forEach((p, i) => { if (!inCl(i)) put('poi:' + p.id, 'poi:' + p.id, { canh: 'Tiện ích: đường đi thật từ nhà sáng lên', ten: p.name, cach: fmtKm(p.km), phut_xe_may: mm(p) }); });
   // vòng 6: nhãn bật đúng lúc giọng đọc nói TÊN tiện ích (dd3d tìm tên trong câu) → AI phải kể từng tiện ích bằng đúng tên ngắn, đúng thứ tự
@@ -413,12 +422,9 @@ function aiPayload(st, L) {
     ban_kinh: fmtKm(st.orbit.r), tien_ich: st.orbit.idx.map(i => ({ ten: shortName(st.pois[i].name), cach: fmtKm(st.pois[i].km), phut_xe_may: mm(st.pois[i]) })) });
   if (st.cluster) put('poi:cum', 'cluster', { canh: 'MỘT cảnh gom nhiều tiện ích quanh nhà, ghim lần lượt bật lên. 1 câu ngắn: trong bán kính bao xa còn có những loại tiện ích nào (nói tên loại như chợ, trạm y tế, công viên; không cần đọc hết tên riêng)',
     ban_kinh: fmtKm(st.cluster.r), tien_ich: st.cluster.idx.map(i => ({ ten: st.pois[i].name, cach: fmtKm(st.pois[i].km) })) });
-  st.anchors.forEach(a => put('anchor:' + a.id, 'anchor:' + a.id, { canh: 'Điểm mốc vùng: đường đi thật', ten: a.name, duong_di_km: a.km, phut_o_to: a.min }));
-  if (st.infra?.airport) put('airport', 'airport', { canh: 'Sân bay, máy bay cất cánh', ten: st.infra.airport.name, duong_di_km: st.infra.airport.km, phut_o_to: st.infra.airport.min });
-  if (st.infra?.metro) put('metro', 'metro', { canh: 'Tuyến metro', ten: st.infra.metro.name, ga_gan_nhat: st.infra.metro.nearName, ga_cach: fmtKm(st.infra.metro.nearKm) });
-  if (st.infra?.road) put('road', 'road', { canh: 'Tuyến cao tốc / đường lớn', ten: st.infra.road.name, cach: fmtKm(st.infra.road.km) });
-  if (st.build.length) put('infra', 'build', { canh: 'Hạ tầng đang thi công gần nhà (nét đứt cam)', tuyen: facts.ha_tang_dang_thi_cong });
-  if (st.score && !st.statsInCta) put('score', 'score', { canh: `Tổng kết: số tiện ích trong bán kính ${st.scoreR || 1} km quanh nhà`, so_lieu: Object.fromEntries(st.score.filter(x => x[1]).map(x => [x[0], x[1]])) });
+  if (st.build.length) put('infra', 'build', { canh: 'Hạ tầng đang thi công gần nhà (nét đứt cam). Không nói năm hoàn thành, không hứa tăng giá', tuyen: facts.ha_tang_dang_thi_cong });
+  if (st.score && !st.statsInCta) put('score', 'score', { canh: 'Tổng kết trước lời kêu gọi: 3 con số lớn hiện trên hình. 1–2 câu đọc đúng 3 con số này rồi chốt giá trị vị trí (không hứa lời lãi)',
+    con_so: st.stats.map(x => `${x.n} ${x.unit} ${x.sub}`) });
   if (st.photos.length) put('photos', 'photos', { canh: 'Bản đồ đã xong, chuyển sang ảnh thực tế: 1 câu mời người xem cùng xem hình ảnh thực tế' });
   const key = st.ctaKey.toLowerCase();
   put('outro', 'cta', { canh: `Kết video: nhắc giá (nếu có) rồi kêu gọi ${st.ctaMode === 'binhluan' ? `BÌNH LUẬN chữ '${key}' hoặc nhắn tin` : `NHẮN TIN chữ '${key}'`} để nhận thông tin chi tiết và hẹn ${xem} (đúng các chữ này). Không đọc số điện thoại.` });
@@ -552,6 +558,12 @@ function renderBoard() {
   b.append(sceneCard({ key: 'intro', title: 'Mở đầu', text: L.intro }));
   if (story.lot) b.append(sceneCard({ key: 'lot', title: story.lot.label, text: L.lot }));
   else b.append(sceneCard({ key: 'house', title: `${KINDS[story.kind].label} · ${story.info.price || ''}`, text: L.house }));
+  // vòng 7: kết nối vùng ngay sau căn nhà (trung tâm, sân bay, cảng, metro, cao tốc) — đúng thứ tự trong video
+  story.anchors.forEach((a, i) => b.append(sceneCard({ key: 'anchor:' + a.id, title: '🧭 ' + a.name, sub: ` · ${a.km} km · ${a.min} phút`, text: L.anchor[i], cat: a.type, drag: true, removable: true })));
+  const inf = story.infra || {};
+  if (inf.airport) b.append(sceneCard({ key: 'airport', title: 'Sân bay · máy bay cất cánh', text: L.airport, cat: 'airport', removable: true }));
+  if (inf.metro) b.append(sceneCard({ key: 'metro', title: 'Metro · tàu chạy dọc tuyến', text: L.metro, cat: 'metro', removable: true }));
+  if (inf.road) b.append(sceneCard({ key: 'road', title: 'Cao tốc', text: L.road, cat: 'road', removable: true }));
   // trục đường lớn: AI chọn 3, khách bấm để thêm (tối đa 5) / bỏ
   const sel = story.roads.map(r => r.id);
   // gợi ý: trục gần nhà + trục xa khách đã thêm ở ô "Đường lớn · sân bay"
@@ -568,8 +580,9 @@ function renderBoard() {
       };
       ex.append(c);
     }
-    b.append(sceneCard({ key: 'roads', title: `🛣 Trục đường lớn · ${sel.length} trục (tối đa 5)`, text: L.roads, extra: ex }));
+    b.append(sceneCard({ key: 'roads', title: `🛣 Trục đường lớn · ${sel.length} trục, hiện từng trục (tối đa 5)`, text: L.roads, extra: ex }));
   }
+  if (story.radar) b.append(sceneCard({ key: 'radar', title: `📡 Radar quét bán kính ${story.radar.r} km · ${story.radar.n} tiện ích`, text: L.radar }));
   b.append(sceneCard({ key: 'poipick', title: `📍 Tiện ích gần nhà · ${story.pois.length} đã chọn (tối đa ${POI_MAX})`, sub: ' · bấm ＋ để thêm', text: '', extra: poiChips(edited) }));
   b.lastChild.querySelector('textarea')?.remove();
   const sub = p => ' · ' + (p.min ? `${Math.round(p.min)} phút · ` : '') + fmtKm(p.km);
@@ -591,13 +604,8 @@ function renderBoard() {
     }
     b.append(sceneCard({ key: 'cluster', title: `📍 Quanh nhà · gom ${story.cluster.idx.length} tiện ích vào 1 cảnh`, sub: ' · bấm tên để đưa lên cảnh riêng', text: L.cluster, extra: ex }));
   }
-  story.anchors.forEach((a, i) => b.append(sceneCard({ key: 'anchor:' + a.id, title: a.name, sub: ` · ${a.km} km · ${a.min} phút`, text: L.anchor[i], cat: a.type, drag: true, removable: true })));
-  const inf = story.infra || {};
   if (story.build?.length) b.append(sceneCard({ key: 'build', title: '🚧 Hạ tầng đang thi công · ' + story.build[0].name, text: L.build, cat: 'road', removable: true }));
-  if (inf.airport) b.append(sceneCard({ key: 'airport', title: 'Sân bay · máy bay cất cánh', text: L.airport, cat: 'airport', removable: true }));
-  if (inf.metro) b.append(sceneCard({ key: 'metro', title: 'Metro · tàu chạy dọc tuyến', text: L.metro, cat: 'metro', removable: true }));
-  if (inf.road) b.append(sceneCard({ key: 'road', title: 'Cao tốc', text: L.road, cat: 'road', removable: true }));
-  if (story.score && !story.statsInCta) b.append(sceneCard({ key: 'score', title: 'Điểm sống quanh nhà · 3 con số lớn', text: L.score }));
+  if (story.score && !story.statsInCta) b.append(sceneCard({ key: 'score', title: '📊 Tổng kết · 3 con số lớn', text: L.score }));
   if (S.photos.length) {
     const ex = document.createElement('div'); ex.className = 'thumbs';
     for (const ph of S.photos.slice(0, 8)) ex.append(Object.assign(document.createElement('img'), { src: ph.url, alt: '' }));
@@ -608,6 +616,7 @@ function renderBoard() {
   enableDrag(b);
   syncTone();
   $('full').checked = !!story.full;
+  $('globe').checked = !!story.globe;
   $('flow').value = story.flow;
   $('labelStyle').value = story.labelStyle;
   $('ctaMode').value = story.ctaMode;
@@ -967,6 +976,7 @@ async function makePage() {
 
 // ---------- gắn sự kiện ----------
 $('full').onchange = () => { S.edits.full = $('full').checked; edited(); };
+$('globe').onchange = () => { S.edits.globe = $('globe').checked ? undefined : false; edited(); };
 $('flow').onchange = () => { S.edits.flow = $('flow').value === 'vong' ? 'vong' : undefined; edited(); };
 // mẫu thẻ tiện ích: không đổi lời → dựng lại ngay, không cần đọc lại giọng
 $('labelStyle').onchange = () => { S.edits.labelStyle = $('labelStyle').value; save(); if (dirty) edited(); else rebuild(true); };
