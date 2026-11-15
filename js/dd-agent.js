@@ -118,6 +118,11 @@ export function buildStory(S, L, buyer, edits = {}) {
   for (const k of edits.infraAdd || []) if (I[k]) (infra ||= {})[k] = I[k];   // khách tự thêm (ô "Đường lớn · sân bay")
   if (infra) for (const k of edits.infraOff || []) delete infra[k];
   if (infra && !Object.keys(infra).length) infra = null;
+  // cảnh sân bay: kèm đường đi thật từ nhà lên sân bay (lấy từ điểm mốc sân bay cùng tên) → khách thấy cả quãng đường, không chỉ cận cảnh
+  if (infra?.airport) {
+    const ap = (S.anchors || []).find(a => a.type === 'airport' && a.name === infra.airport.name);
+    infra.airport = { ...infra.airport, route: ap?.coords?.length > 1 ? ap.coords.map(([la, ln]) => [ln, la]) : null };
+  }
   // Kết nối vùng (đường thật + số phút ô tô): MỌI khách đều có — về trung tâm + ra sân bay (không có thì cảng biển);
   // "Kết nối khu vực" tới 3 điểm. Sân bay đã có cảnh máy bay riêng thì không lặp.
   const avail = (S.anchors || []).filter(a => a.min <= 70 && !(edits.anchorsOff || []).includes(a.id) && !(a.type === 'airport' && infra?.airport));
@@ -154,8 +159,8 @@ export function buildStory(S, L, buyer, edits = {}) {
     province: S.area.province?.rings?.length ? { name: S.area.province.name, rings: ringsLL(S.area.province) } : null,
   } : null;
   const prov = L.province === 'TP.HCM' ? 'Thành phố Hồ Chí Minh' : L.province || area?.province?.name || '';
-  // 15/11 (Giang): mở đầu = câu móc giá/lợi ích + vị trí xã, tỉnh (đúng lúc hình khoanh sáng tỉnh → xã); câu căn nhà đọc ĐỦ thông tin
-  const where = place ? ` Vị trí ở <b>${place}</b>${prov && !place.includes(prov) ? `, ${prov}` : ''}.` : '';
+  // 15/11 vòng 5 (Giang): mở đầu NÓI VỊ TRÍ TRƯỚC, đúng thứ tự hình đang khoanh sáng (tỉnh → xã), rồi mới tới câu móc giá/lợi ích
+  const lead = place ? (prov && !place.includes(prov) ? `Tại <b>${prov}</b>, ${kwOf(kind)} này nằm ở <b>${place}</b>.` : `${cap(kwOf(kind))} này nằm ở <b>${place}</b>.`) : prov ? `${cap(kwOf(kind))} này nằm tại <b>${prov}</b>.` : '';
   // Trục đường lớn: Agent chọn 3 (luật app cũ autoPickRoads), khách thêm tới 5. Chỉ lấy đoạn trong 3,5 km quanh nhà cho nhẹ.
   const near = (pt) => Math.hypot((pt[1] - S.house.lng) * 111.32 * Math.cos(S.house.lat * Math.PI / 180), (pt[0] - S.house.lat) * 110.54);
   // luật app cũ có thể chỉ ra 1–2 trục → bổ sung trục lớn gần nhất (≤ 5 km), rồi đường nhỏ có tên sát nhà, cho đủ 3
@@ -167,11 +172,19 @@ export function buildStory(S, L, buyer, edits = {}) {
     for (const r of byNear) if (ids.length < nR && r.nearKm <= 1.2 && !ids.includes(r.id)) ids.push(r.id);
     return ids;
   })();
-  const roads = roadIds.map(id => (S.roadsAll || []).find(r => r.id === id)).filter(Boolean).slice(0, 5).map((r, j) => ({
-    id: r.id, name: r.label || r.name, km: r.nearKm, color: ROAD_COLORS[j % ROAD_COLORS.length],
-    // trục xa khách tự thêm (cao tốc / quốc lộ cách 5–15 km): lấy đoạn tới cách nhà khoảng cách trục + 1,5 km
-    ways: r.ways.map(w => w.filter(pt => near(pt) <= Math.max(3.5, (r.nearKm || 0) + 1.5)).map(([la, ln]) => [ln, la])).filter(w => w.length > 1),
-  })).filter(r => r.ways.length);
+  const roads = roadIds.map(id => (S.roadsAll || []).find(r => r.id === id)).filter(Boolean).slice(0, 5).map((r, j) => {
+    // điểm trên trục gần nhà nhất + đường đi thật từ nhà ra đó (dao-dien.js roadRoutesFor → S.roadRoutes); chưa có thì ước lượng
+    let best = null;
+    for (const w of r.ways) for (const pt of w) { const d = near(pt); if (!best || d < best.d) best = { d, pt }; }
+    const rr = S.roadRoutes?.[r.id], dkm = rr ? rr.km : (best ? best.d * 1.3 : r.nearKm);
+    return {
+      id: r.id, name: r.label || r.name, km: r.nearKm, color: ROAD_COLORS[j % ROAD_COLORS.length],
+      near: best ? [best.pt[1], best.pt[0]] : null, dkm, min: Math.max(1, Math.round(rr && rr.min > 0 ? Math.min(rr.min, dkm / 25 * 60) : dkm / 28 * 60)),
+      route: rr?.coords?.length > 1 ? rr.coords.map(([la, ln]) => [ln, la]) : null,
+      // trục xa khách tự thêm (cao tốc / quốc lộ cách 5–15 km): lấy đoạn tới cách nhà khoảng cách trục + 1,5 km
+      ways: r.ways.map(w => w.filter(pt => near(pt) <= Math.max(3.5, (r.nearKm || 0) + 1.5)).map(([la, ln]) => [ln, la])).filter(w => w.length > 1),
+    };
+  }).filter(r => r.ways.length);
   // Vùng quan trọng: ranh khu công nghiệp / bệnh viện / đại học / công viên của tiện ích đã chọn + ranh sân bay khi có cảnh sân bay
   const ringLL = r => { const q = r.map(([la, ln]) => [ln, la]); if (q.length && (q[0][0] !== q.at(-1)[0] || q[0][1] !== q.at(-1)[1])) q.push(q[0]); return q; };
   const zones = (S.zones || []).filter(z => pois.some(p => p.id === z.poiId)).map(z => ({ id: 'z:' + z.poiId, poiId: z.poiId, cat: z.cat, name: zoneName(z.name), rings: z.pieces.flatMap(pc => pc.rings.map(ringLL)) }));
@@ -250,7 +263,7 @@ export function buildStory(S, L, buyer, edits = {}) {
   const expertHouse = `Thông số: ${[specs, legal, PPM && `đơn giá khoảng ${PPM}`, at].filter(Boolean).join(', ')}.`;
   const saleHouse = J(specs && `${cap(specs)}.`, (at || legal) && `${cap([at, legal].filter(Boolean).join(', '))}.`, 'Thông tin rõ ràng, hẹn xem ngay trong tuần.');
   const tp = TPL[tone][buyer] || TPL[tone].o;
-  const intro = cap(tp[0]) + where;
+  const intro = J(lead, cap(tp[0]));
   const houseText = tone === 'chuyen-gia' ? expertHouse : tone === 'chot-sale' ? saleHouse : tp[1];
   const ctaLead = tone === 'chuyen-gia' ? 'Cần bảng thông số đầy đủ?' : tone === 'chot-sale' ? 'Xem sớm để không lỡ.' : tp[2] || '';
   const houseLine = houseText && houseText !== 'Thông số: .' ? houseText : '';
@@ -306,7 +319,12 @@ export function buildStory(S, L, buyer, edits = {}) {
     // cảnh ảnh căn nhà: đọc điểm nổi bật CHÍNH môi giới viết trong tin (không có thì câu mời xem chung, không bịa)
     // cảnh ảnh (cuối video): chỉ giới thiệu đây là ảnh thực tế — khớp với mọi ảnh, không tả bịa nội dung từng ảnh
     photos: (edits.photos || []).length ? `Đây là hình ảnh thực tế của ${kwFull}, mời anh chị xem qua.` : '',
-    roads: roads.length ? `${full ? `${buyer === 'o' ? 'Đi làm, đi chơi đều thuận tiện' : 'Giao thông là lợi thế'}: kết nối nhanh các trục lớn` : 'Ra nhanh'} ${roads.map(r => `<b>${r.name}</b>`).join(', ').replace(/, ([^,]*)$/, ' và $1')}.` : '',
+    // từ nhà ra từng trục đường lớn bao nhiêu phút (đường đi thật; trục ngay trước nhà thì nói "nằm ngay") → nhìn tổng thể vị trí
+    roads: roads.length ? (() => {
+      const front = roads.find(r => r.km < 0.12), others = roads.filter(r => r !== front).sort((a, b) => a.min - b.min);
+      const go = others.map((r, j) => `${j ? 'ra' : (front ? 'ra' : 'Từ nhà ra')} <b>${r.name}</b> ${j ? 'khoảng' : 'chỉ khoảng'} <b>${r.min} phút</b>`).join(', ');
+      return `${front ? `Nằm ngay <b>${front.name}</b>${go ? ', ' : '.'}` : ''}${go ? go + '.' : ''}`;
+    })() : '',
     build: build.length ? (build[0].station ? `Tuyến <b>${build[0].name}</b> đang thi công, ${build[0].station} chỉ cách <b>${km(build[0].km)}</b>.`
       : `Hạ tầng đang thi công gần nhà: <b>${build[0].name}</b>, cách <b>${km(build[0].km)}</b>.`)
       + (build[1] ? ` Thêm <b>${build[1].name}</b> cách <b>${km(build[1].km)}</b>.` : '') + (full ? ' Khi xong, khu vực kết nối càng thuận tiện.' : '') : '',
@@ -322,7 +340,8 @@ export function buildStory(S, L, buyer, edits = {}) {
     house: H, info: { price: L.price || KINDS[kind].label, chips: infoChips(L) }, footprint, lot,
     pois, anchors, infra, score: buyer === 'vung' || !score.length ? null : score, scoreR, stats: stats.slice(0, 3), lines,
     // bản ngắn: 3 con số hiện ngay trong cảnh kết (không có cảnh tổng kết riêng, bớt ~5 giây)
-    full, cluster, orbit, flow: vong ? 'vong' : 'lanluot', statsInCta: !full, ctaKey, ctaMode, cta: ctaAsk, area, ctaSub: `để nhận thông tin chi tiết`, ctaLong: `${ctaAsk} nhận thông tin`,
+    full, cluster, orbit, flow: vong ? 'vong' : 'lanluot', statsInCta: !full, ctaKey, ctaMode, cta: ctaAsk, area,
+    labelStyle: ['trang', 'kinh', 'mau'].includes(edits.labelStyle) ? edits.labelStyle : 'trang', ctaSub: `để nhận thông tin chi tiết`, ctaLong: `${ctaAsk} nhận thông tin`,
     style: styleOf(kind, buyer), bird: !!edits.bird,
     watermark: edits.watermark || '',
     // bản ngắn: tối đa 5 ảnh thực tế cuối video
@@ -360,6 +379,7 @@ function ppmOf(price, area) {
   const v = tr / area;
   return `${fmtNum(v >= 10 ? Math.round(v) : Math.round(v * 10) / 10)} triệu/m²`;
 }
+const kwOf = kind => ({ nhapho: 'căn nhà', bietthu: 'căn biệt thự', nhavuon: 'căn nhà vườn', canho: 'căn hộ', datnen: 'lô đất' }[kind] || 'căn nhà');
 // Từ khoá kêu gọi mặc định theo loại (khách sửa được)
 const CTA_KEY = { nhapho: 'XEM NHÀ', bietthu: 'XEM BIỆT THỰ', nhavuon: 'XEM NHÀ VƯỜN', canho: 'XEM CĂN HỘ', datnen: 'XEM ĐẤT' };
 // tên loại ngắn để đọc gộp ("trường mầm non", "chợ", "bệnh viện") — tên riêng đầy đủ đã hiện trên nhãn bản đồ

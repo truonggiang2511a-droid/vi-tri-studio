@@ -158,7 +158,8 @@ const shiftOf = story => story.cover ? COVER_T - 0.8 : 0;
 const photoT = story => story.full === false ? 2.3 : 3.0;   // mỗi ảnh căn nhà ~3 giây (bản ngắn 2,3 giây) → tl.photoT
 // Cảnh gom cụm tiện ích (bản ngắn): mỗi tiện ích: máy lia tới (CL_FLY), line chạy (CL_DRAW), nhãn bật (CL_LBL) — tính từ beat của nó
 const CL_FLY = 2.0, CL_DRAW = 1.4, CL_LBL = 1.3;   // 15/11 vòng 4 (Giang: camera lia chậm lại)
-const ROAD_STEP = 0.9; // mỗi trục đường sáng lên cách nhau
+const ROAD_STEP = 1.3; // mỗi trục đường sáng lên cách nhau (15/11: chậm lại, kèm đường đi từ nhà ra trục)
+const AP_OFF = 3.6;    // cảnh sân bay: AP_OFF giây đầu đường đi từ nhà lên sân bay chạy ra (máy ôm nhà + sân bay), rồi mới bay vào đường băng
 // màu line từng trục đường (neon, như app cũ) — tên đường in dẹt màu vàng
 export const ROAD_COLORS = ['#5EEAF5', '#FF4FA3', '#5BF08A', '#FF8A1F', '#B48CFF'];
 // màu vùng theo loại (khu công nghiệp, sân bay, cảng, bệnh viện, đại học, công viên…)
@@ -265,7 +266,7 @@ export function buildTimeline(story) {
   }
   (story.anchors || []).forEach((a, i) => add('anchor', 5.2, v.anchor?.[i], { i }));
   const inf = story.infra || {};
-  if (inf.airport) add('airport', 7.2, v.airport);
+  if (inf.airport) add('airport', 7.2 + AP_OFF, v.airport);
   if (inf.metro) add('metro', 7, v.metro);
   if (inf.road) add('road', 4.6, v.road);
   if (story.build?.length) add('build', 5.2, v.build);
@@ -315,7 +316,7 @@ export function sfxEvents3D(tl) {
       add(s.t0 + 0.05, 'shimmer', 0.32, draw);
       add(s.t0 + draw, 'ding', 0.3);   // nhãn hiện: chỉ 1 tiếng ding nhẹ (bỏ pop)
     }
-    if (s.kind === 'airport') { add(s.t0, 'whoosh', 0.5, 1.6); add(s.t0 + 1.9, 'jet', 0.75, Math.min(5.5, d - 1.9)); }
+    if (s.kind === 'airport') { add(s.t0, 'whoosh', 0.45, 1.4); add(s.t0 + 0.2, 'shimmer', 0.3, 2.4); add(s.t0 + 2.7, 'ding', 0.3); add(s.t0 + AP_OFF, 'whoosh', 0.5, 1.6); add(s.t0 + AP_OFF + 1.9, 'jet', 0.75, Math.min(5.5, d - AP_OFF - 1.9)); }
     if (s.kind === 'metro') { add(s.t0, 'whoosh', 0.45, 1.4); add(s.t0 + 1.2, 'rail', 0.5, d - 1.6); add(s.t1 - 1.2, 'ding', 0.25); }
     if (s.kind === 'score') { add(s.t0, 'whoosh', 0.55, 1.4); for (let r = 0; r < 5; r++) add(s.t0 + 1.3 + r * 0.14, 'tick', 0.14); }
     if (s.kind === 'cta') { add(s.t0, 'whoosh', 0.5, 1.2); add(s.t0 + 0.45, 'ding', 0.45); }
@@ -343,6 +344,10 @@ export function createDirector3D({ width, height, story }) {
   const ancPaths = (story.anchors || []).map(a => pathOf(routePts(a)));
   const inf = story.infra || {};
   const metroPath = inf.metro ? pathOf(inf.metro.line) : null;
+  // đường đi từ nhà lên sân bay (cảnh sân bay) + từ nhà ra điểm gần nhất của từng trục đường lớn (cảnh trục đường)
+  const apMid = inf.airport ? [(inf.airport.a[0] + inf.airport.b[0]) / 2, (inf.airport.a[1] + inf.airport.b[1]) / 2] : null;
+  const apPath = inf.airport ? pathOf(!bird && inf.airport.route?.length > 1 ? inf.airport.route : [H, apMid]) : null;
+  const rcPaths = (story.roads || []).map(r => r.near && r.km >= 0.12 ? pathOf(!bird && r.route?.length > 1 ? r.route : [H, r.near]) : null);
 
   // ---- bản đồ nằm ngoài màn hình, đúng kích thước khung xuất ----------------------------------------------------
   useSatProtocol();
@@ -383,6 +388,8 @@ export function createDirector3D({ width, height, story }) {
   (story.anchors || []).forEach((a, i) => addRoute('a' + i, ancPaths[i].pts, LINE.mid, 5.5, 20, true));
   if (inf.road) inf.road.ways.forEach((w, j) => addRoute('w' + j, w, CAT3D.road[1], 9, 26));
   if (metroPath) addRoute('m0', metroPath.pts, CAT3D.metro[1], 6, 18);
+  if (apPath) addRoute('ap', apPath.pts, LINE.mid, 5.5, 20, true);
+  rcPaths.forEach((p, j) => { if (p) addRoute('rc' + j, p.pts, LINE.mid, 4.5, 15, true); });
   // trục đường lớn: mỗi trục một màu neon (quầng + thân + lõi trắng), sáng dần dọc tuyến
   const multi = ways => ({ type: 'geojson', lineMetrics: true, data: { type: 'Feature', properties: {}, geometry: { type: 'MultiLineString', coordinates: ways } } });
   (story.roads || []).forEach((r, j) => {
@@ -566,13 +573,17 @@ export function createDirector3D({ width, height, story }) {
         ease(s.t0, fd, base, QUAD);
         angles(s.t0 + fd, s.t1, base, a.at);
       } else if (s.kind === 'airport') {
-        const rw = inf.airport, mid = [(rw.a[0] + rw.b[0]) / 2, (rw.a[1] + rw.b[1]) / 2], side = bearingGeo(rw.a, rw.b) - 55;
-        ease(s.t0, 2.2, { c: mid, z: 14.7, p: 62, b: side });
+        const rw = inf.airport, mid = apMid, side = bearingGeo(rw.a, rw.b) - 55, T0 = s.t0 + AP_OFF;
+        // 15/11 vòng 5 (Giang): trước hết lùi ra thấy CẢ quãng đường từ nhà lên sân bay (đường đi thật chạy ra + số phút), rồi mới bay vào đường băng
+        const step = Math.max(1, Math.floor(apPath.pts.length / 30));
+        ease(s.t0, 2.4, fitCam([H, mid, ...apPath.pts.filter((_, j) => j % step === 0)], bearingDemo(H, mid) - 20, 48), QUAD);
+        ease(s.t0 + 2.4, AP_OFF - 2.4, f => ({ ...f, b: f.b + 6, z: f.z + 0.1 }), LIN);
+        ease(T0, 2.2, { c: mid, z: 14.7, p: 62, b: side });
         // máy quay bám nhẹ theo máy bay sau khi lăn bánh, lùi ra dần cho thấy máy bay lên cao
-        follow(s.t0 + 2.2, d - 2.2, (t, from) => {
-          const u = clamp01((t - s.t0 - 2.2) / (d - 2.2)), pl = planeAt(rw, t - s.t0 - 1.9);
+        follow(T0 + 2.2, d - AP_OFF - 2.2, (t, from) => {
+          const u = clamp01((t - T0 - 2.2) / (d - AP_OFF - 2.2)), pl = planeAt(rw, t - T0 - 1.9);
           const tgt = { c: [lerp(mid[0], pl.pt[0], 0.85), lerp(mid[1], pl.pt[1], 0.85)], z: 14.7 - 1.1 * u, p: 62, b: side + 14 * u };
-          return mixCam(from, tgt, EASE(clamp01((t - s.t0 - 2.2) / 2.5)));
+          return mixCam(from, tgt, EASE(clamp01((t - T0 - 2.2) / 2.5)));
         });
       } else if (s.kind === 'metro') {
         // lướt tới đầu đoạn tuyến rồi lia dọc theo tuyến (hướng nhìn cố định theo chiều tuyến → không xoay giật)
@@ -594,6 +605,7 @@ export function createDirector3D({ width, height, story }) {
         const near = story.roads.flatMap(r => r.ways.flat().filter(p => kmBetween(H, p) <= Math.min(12, Math.max(1.6, (r.km || 0) + 1.2)))).filter((_, j) => j % 2 === 0);
         // khu công nghiệp gần nhà (≤ 4,5 km) cũng lọt khung để khách thấy vùng + tên
         for (const z of zones) if (z.show?.includes('roads')) near.push(...z.rings.flat().filter((p, j) => j % 4 === 0 && kmBetween(H, p) <= 4.5));
+        for (const p of rcPaths) if (p) near.push(...p.pts);   // đường đi từ nhà ra các trục cũng lọt khung
         ease(s.t0, 2.6, fitCam([H, ...near.length ? near : [H]], -10, 52));
         ease(s.t0 + 2.6, d - 2.6, f => ({ ...f, b: f.b + 8 + Math.max(0, d - 6) * 1.5 }), LIN);   // giữ cỡ cảnh để tên trục không trôi khỏi khung
       } else if (s.kind === 'build') {
@@ -622,7 +634,8 @@ export function createDirector3D({ width, height, story }) {
       if (s.kind === 'anchor') out['a' + s.i] = clamp01((t - s.t0) / 2.2);
       if (s.kind === 'road') inf.road.ways.forEach((_, j) => { out['w' + j] = clamp01((t - s.t0 - 0.1) / 2.2); });
       if (s.kind === 'metro') out.m0 = clamp01((t - s.t0 - 0.3) / 1.3);
-      if (s.kind === 'roads') story.roads.forEach((_, j) => { out['rd' + j] = clamp01((t - s.t0 - 1.4 - j * ROAD_STEP) / 1.2); });
+      if (s.kind === 'roads') story.roads.forEach((_, j) => { out['rd' + j] = clamp01((t - s.t0 - 1.4 - j * ROAD_STEP) / 1.2); out['rc' + j] = clamp01((t - s.t0 - 1.0 - j * ROAD_STEP) / 1.2); });
+      if (s.kind === 'airport') out.ap = clamp01((t - s.t0 - 0.2) / 2.4);
     }
     return out;
   }
@@ -669,7 +682,7 @@ export function createDirector3D({ width, height, story }) {
   const lastGrad = {};
   const NONE = 'rgba(0,0,0,0)';
   // line của cảnh đang nói sáng rực; line các cảnh trước mờ xuống (đỡ rối, mỗi lúc chỉ một line nổi bật)
-  const curRoute = t => { const s = sceneAt(t); return s.kind === 'poi' ? ['r' + s.i] : s.kind === 'cluster' ? ['r' + s.idx[clusterCur(s, t)]] : s.kind === 'anchor' ? ['a' + s.i] : []; };
+  const curRoute = t => { const s = sceneAt(t); return s.kind === 'airport' ? ['ap'] : s.kind === 'roads' ? story.roads.map((_, j) => 'rc' + j) : s.kind === 'poi' ? ['r' + s.i] : s.kind === 'cluster' ? ['r' + s.idx[clusterCur(s, t)]] : s.kind === 'anchor' ? ['a' + s.i] : []; };
   // Mở đầu: độ sáng lớp tỉnh / xã theo t (chỉ đặt lại khi đổi giá trị)
   const aK = {};
   const setP = (id, prop, v) => { const r = Math.round(clamp01(v) * 50) / 50, key = id + prop; if (aK[key] === r || !map.getLayer(id)) return; aK[key] = r; map.setPaintProperty(id, prop, r); };
@@ -790,7 +803,7 @@ export function createDirector3D({ width, height, story }) {
   function measureLabel(ctx, it) {
     if (it.compact) {
       const isz = 24 * k; ctx.font = font(800, 13.5);
-      const lines = [fitEllipsis(ctx, shortName(it.name), 0.42 * width)];
+      const lines = [fitEllipsis(ctx, it.full ? it.name : shortName(it.name), 0.42 * width)];
       return { ...it, lines, isz, fs: 13.5, glyph: 16, w: 5 * k + isz + 7 * k + ctx.measureText(lines[0]).width + 10 * k, h: isz + 8 * k };
     }
     const isz = LB.icon * k;
@@ -839,36 +852,52 @@ export function createDirector3D({ width, height, story }) {
     }
     return out;
   }
+  // 3 mẫu thẻ (15/11 vòng 5, Giang: thẻ chưa đẹp, còn nhảy to nhỏ) — khách chọn ở "Mẫu thẻ tiện ích" (story.labelStyle):
+  // trang = thẻ trắng kiểu bản đồ (chữ đậm xanh than, phút đỏ) · kinh = kính tối (chữ trắng, phút vàng) · mau = nền màu theo loại tiện ích.
+  // Thẻ KHÔNG phóng to / thu nhỏ: hiện bằng mờ dần + trượt nhẹ lên → cỡ thẻ luôn cố định; đuôi tam giác + đường chỉ thẳng xuống chấm đỏ.
+  const tint = (hex, f) => { const n = parseInt(hex.slice(1), 16), m = c => Math.round(f < 0 ? c * (1 + f) : c + (255 - c) * f); return `rgb(${m(n >> 16 & 255)},${m(n >> 8 & 255)},${m(n & 255)})`; };
   function drawLabel(ctx, L) {
     const [ic, col] = CAT3D[L.cat] || ['pin', GOLD];
     const e = clamp01(L.a);
     if (e <= 0) return;
-    const [x0, y0, x1, y1] = L.box, w = x1 - x0, h = y1 - y0, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const sty = story.labelStyle || 'trang';
+    const [bx0, by0, bx1, by1] = L.box, up = L.py >= by1;   // up: thẻ nằm trên chấm
+    const dy = (1 - easeOut(clamp01(e / 0.6))) * 10 * k * (up ? 1 : -1);
+    const x0 = bx0, x1 = bx1, y0 = by0 + dy, y1 = by1 + dy, w = x1 - x0, h = y1 - y0, cy = (y0 + y1) / 2;
+    const T = { trang: { bg: 'rgba(255,255,255,0.97)', ink: '#0F172A', sub: '#D62828', edge: null },
+      kinh: { bg: 'rgba(10,16,30,0.86)', ink: '#FFFFFF', sub: '#FFD54A', edge: 'rgba(255,255,255,0.22)' },
+      mau: { bg: col, ink: '#0B1220', sub: tint(col, -0.62), edge: 'rgba(255,255,255,0.6)' } }[sty] || {};
     ctx.save();
-    ctx.globalAlpha = clamp01(e / 0.4);
-    // đường chỉ thẳng đứng từ thẻ xuống chấm vị trí đỏ (thẻ bị kẹp ở mép khung thì chân đường chỉ trượt trong thẻ, chấm vẫn đúng chỗ)
-    const sx = Math.max(x0 + 12 * k, Math.min(x1 - 12 * k, L.px)), sy = L.py < y0 ? y0 : y1;
+    ctx.globalAlpha = clamp01(e / 0.5);
+    // đường chỉ thẳng đứng xuống chấm đỏ (thẻ bị kẹp ở mép khung thì chân đường chỉ trượt trong thẻ, chấm vẫn đúng chỗ)
+    const sx = Math.max(x0 + 14 * k, Math.min(x1 - 14 * k, L.px)), tl2 = (L.compact ? 5 : 7) * k, sy = up ? y1 + tl2 : y0 - tl2;
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 4 * k;
-    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(L.px, L.py); ctx.lineWidth = (L.compact ? 1.8 : 2.4) * k; ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.stroke();
+    ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 4 * k;
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(L.px, L.py); ctx.lineWidth = (L.compact ? 1.6 : 2.2) * k; ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.stroke();
     ctx.shadowColor = 'rgba(255,59,48,.8)'; ctx.shadowBlur = 10 * k;
     ctx.beginPath(); ctx.arc(L.px, L.py, (L.compact ? 5 : 6.5) * k, 0, 7); ctx.fillStyle = '#FF3B30'; ctx.fill();
     ctx.shadowColor = 'transparent'; ctx.lineWidth = 2 * k; ctx.strokeStyle = '#FFFFFF'; ctx.stroke();
     ctx.restore();
-    const sc = 0.35 + 0.65 * POP(e);
-    ctx.translate(cx, cy); ctx.scale(sc, sc); ctx.translate(-cx, -cy);
-    rrect(ctx, x0, y0, w, h, (L.compact ? 10 : 13) * k);
-    ctx.shadowColor = 'rgba(0,0,0,.56)'; ctx.shadowBlur = 18 * k; ctx.shadowOffsetY = 6 * k;
-    ctx.fillStyle = 'rgba(11,18,32,.92)'; ctx.fill();
-    ctx.shadowColor = 'transparent'; ctx.lineWidth = (L.compact ? 1.5 : 2) * k; ctx.strokeStyle = col; ctx.stroke();
-    const isz = L.isz, ix = x0 + (L.compact ? 4 : 6) * k, iy = cy - isz / 2;
-    rrect(ctx, ix, iy, isz, isz, (L.compact ? 7 : 9) * k); ctx.fillStyle = col; ctx.fill();
-    drawIcon(ctx, ic, ix + isz / 2, iy + isz / 2, L.glyph * k, '#0b1220');
-    const tx = ix + isz + (L.compact ? 7 : 9) * k;
+    // thân thẻ + đuôi tam giác liền khối
+    const r = (L.compact ? 9 : 12) * k;
+    ctx.beginPath(); ctx.roundRect(x0, y0, w, h, r);
+    if (up) { ctx.moveTo(sx - tl2, y1 - 0.5); ctx.lineTo(sx, y1 + tl2); ctx.lineTo(sx + tl2, y1 - 0.5); } else { ctx.moveTo(sx - tl2, y0 + 0.5); ctx.lineTo(sx, y0 - tl2); ctx.lineTo(sx + tl2, y0 + 0.5); }
+    ctx.closePath();
+    ctx.shadowColor = 'rgba(0,0,0,.42)'; ctx.shadowBlur = 16 * k; ctx.shadowOffsetY = 5 * k;
+    if (sty === 'mau') { const g = ctx.createLinearGradient(0, y0, 0, y1); g.addColorStop(0, tint(col, 0.28)); g.addColorStop(1, col); ctx.fillStyle = g; } else ctx.fillStyle = T.bg;
+    ctx.fill();
+    ctx.shadowColor = 'transparent'; ctx.shadowOffsetY = 0;
+    if (T.edge) { ctx.lineWidth = 1.2 * k; ctx.strokeStyle = T.edge; ctx.stroke(); }
+    if (sty === 'trang') { ctx.beginPath(); ctx.roundRect(x0, y0, 4 * k, h, [r, 0, 0, r]); ctx.fillStyle = col; ctx.fill(); }   // gờ màu loại tiện ích bên trái
+    // biểu tượng tròn
+    const isz = L.isz, ix = x0 + (L.compact ? 5 : 8) * k, icx = ix + isz / 2;
+    ctx.beginPath(); ctx.arc(icx, cy, isz / 2, 0, 7); ctx.fillStyle = sty === 'mau' ? '#FFFFFF' : col; ctx.fill();
+    drawIcon(ctx, ic, icx, cy, L.glyph * k, sty === 'mau' ? tint(col, -0.55) : '#0b1220');
+    const tx = ix + isz + (L.compact ? 6 : 8) * k;
     let ty = L.compact ? cy + L.fs * 0.36 * k : y0 + 22 * k;
-    ctx.textBaseline = 'alphabetic'; ctx.fillStyle = '#fff'; ctx.font = font(800, L.fs);
+    ctx.textBaseline = 'alphabetic'; ctx.fillStyle = T.ink; ctx.font = font(800, L.fs);
     for (const ln of L.lines) { ctx.fillText(ln, tx, ty); ty += LB.line * k; }
-    if (L.sub) { ctx.fillStyle = '#FFE08A'; ctx.font = font(700, LB.sub); ctx.fillText(L.sub, tx, ty - LB.line * k + 18 * k); }
+    if (L.sub) { ctx.fillStyle = T.sub; ctx.font = font(800, LB.sub); ctx.fillText(L.sub, tx, ty - LB.line * k + 18 * k); }
     ctx.restore();
   }
   function head(ctx, path, q, col) {   // chấm sáng ở đầu đường đang chạy
@@ -1105,7 +1134,7 @@ export function createDirector3D({ width, height, story }) {
   const PLANE = new Path2D('M50 0C50 4.5 44 5.5 36 5.5L-38 4.5L-50 2L-50 -2L-38 -4.5L36 -5.5C44 -5.5 50 -4.5 50 0Z M12 5L-16 50L-25 50L-10 5Z M12 -5L-16 -50L-25 -50L-10 -5Z M-36 4L-47 19L-52 19L-46 3.5Z M-36 -4L-47 -19L-52 -19L-46 -3.5Z');
   const offM = (pt, m, deg) => { const r = deg * Math.PI / 180; return [pt[0] + m * Math.sin(r) / (111320 * Math.cos(pt[1] * Math.PI / 180)), pt[1] + m * Math.cos(r) / 110540]; };
   function plane(ctx, t, s) {
-    const rw = inf.airport, u = t - s.t0 - 1.9;
+    const rw = inf.airport, u = t - s.t0 - AP_OFF - 1.9;
     if (u < 0) return;
     const P = planeAt(rw, u);
     const g0 = proj(P.pt), g1 = proj(offM(P.pt, 40, P.dir)), g2 = proj(offM(P.pt, 40, P.dir + 90));
@@ -1294,7 +1323,7 @@ export function createDirector3D({ width, height, story }) {
     const flip = c0.a[0] < 0;                        // chữ luôn đọc trái → phải trên màn hình
     const chars = [...String(text).toUpperCase()];
     // tuyến chạy sâu vào màn hình bị phối cảnh ép dẹp → kéo dài chữ theo chiều tuyến (như chữ sơn trên mặt đường thật)
-    const st = Math.max(1, Math.min(3.2, bl / Math.max(1e-6, Math.hypot(...c0.a))));
+    const st = Math.max(1, Math.min(1.7, bl / Math.max(1e-6, Math.hypot(...c0.a))));   // 15/11: kéo dãn tối đa 1,7 (trước 3,2 → chữ phình/co khi máy xoay)
     let ws = chars.map(ch => cw(ctx, ch) * Hm / 100 * st), track = Hm * 0.14 * st;
     let total = ws.reduce((x, y) => x + y, 0) + track * (ws.length - 1);
     if (total > path.len * 0.92) { const f = path.len * 0.92 / total; Hm *= f; track *= f; ws = ws.map(w => w * f); total *= f; }
@@ -1341,7 +1370,7 @@ export function createDirector3D({ width, height, story }) {
     if (bs.P[0] < -width || bs.P[0] > 2 * width || bs.P[1] < -height || bs.P[1] > 2 * height) return null;
     const bl = Math.hypot(...bs.b);
     if (bl < 1e-4) return null;
-    const Hm = Math.min(900, pxH / bl), st = Math.max(1, Math.min(2.6, bl / Math.max(1e-6, Math.hypot(...bs.a))));
+    const Hm = Math.min(900, pxH / bl), st = Math.max(1, Math.min(1.7, bl / Math.max(1e-6, Math.hypot(...bs.a))));
     const sp = Hm * 0.07, tw = [...T].reduce((x, ch) => x + cw(ctx, ch) * Hm / 100 + sp, -sp);
     const deg = dirAt(path, mid, Math.max(20, tw * st * 0.4));
     bs = basis(pt, deg); if (bs.a[0] < 0) bs = basis(pt, deg + 180);   // chữ đọc trái → phải
@@ -1439,7 +1468,7 @@ export function createDirector3D({ width, height, story }) {
       if (tw > maxW) { px *= maxW / tw; ctx.font = `900 ${px}px Montserrat, ${FONT}`; tw = maxW; }
       x = Math.max(SAFE.x * width + tw / 2 + 8 * k, Math.min(width - SAFE.x * width - tw / 2 - 8 * k, x));
       y = Math.max(SAFE.top * height + px, Math.min(height * CAP_Y - 70 * k, y));
-      const sc = 0.85 + 0.15 * POP(clamp01(a));
+      const sc = 0.94 + 0.06 * easeOut(clamp01(a));   // không nảy quá cỡ
       ctx.translate(x, y); ctx.scale(sc, sc);
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
       ctx.lineWidth = px * 0.17; ctx.strokeStyle = 'rgba(0,0,0,.82)'; ctx.shadowColor = 'rgba(0,0,0,.7)'; ctx.shadowBlur = px * 0.4; ctx.strokeText(txt, 0, 0);
@@ -1486,7 +1515,7 @@ export function createDirector3D({ width, height, story }) {
         const g = gVis[it.key], lf = it.d3 ? layout3D : layoutGround;
         // đã có chỗ: GIỮ NGUYÊN chỗ đó trên mặt đất (không nhảy theo từng khung); cỡ chữ vẫn theo màn hình cho dễ đọc.
         // bị che / ra khỏi khung thì chỉ mờ đi
-        if (g?.lock && !(g.hidT != null && t - g.hidT > 1.2)) {   // bị che quá 1,2 s → tìm chỗ khác (mờ đi rồi hiện lại, không nhảy)
+        if (g?.lock && !(g.hidT != null && t - g.hidT > 2.0)) {   // bị che quá 2 s (15/11: trước 1,2 s → đổi chỗ / đổi cỡ liên tục) → tìm chỗ khác (mờ đi rồi hiện lại, không nhảy)
           const { pi, m, sz } = g.lock, rt = it.rts[pi], L2 = rt && lf(ctx, rt.path, m, it.text, it.px * sz);
           if (!L2) continue;
           const bx = L2.boxes || L2.glyphs.map(q => q.box), hit = !(inView(bx) && !overlaps(bx, pl));
@@ -1498,7 +1527,7 @@ export function createDirector3D({ width, height, story }) {
         if (g && g.v === 0 && g.tried != null && t >= g.tried && t - g.tried < 0.25) continue;
         // đè chữ / lòi mép → thử dời dọc tuyến, sang đoạn khác của tuyến, rồi thu nhỏ (giữ chỗ đã chọn ở khung trước cho khỏi nhảy)
         const cands = [];
-        for (const sz of [1, 0.75, 0.55, 0.42]) it.rts.forEach((_, pi) => { for (const o of [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2, 2.5, -2.5, 3, -3, 4, -4, 5, -5, 6, -6]) cands.push(pi + '|' + o + '|' + sz); });
+        for (const sz of [1, 0.82, 0.66]) it.rts.forEach((_, pi) => { for (const o of [0, 0.5, -0.5, 1, -1, 1.5, -1.5, 2, -2, 2.5, -2.5, 3, -3, 4, -4, 5, -5, 6, -6]) cands.push(pi + '|' + o + '|' + sz); });
         const steps = {};
         let lay = null, off = '0|0|1', hit = true, lock = null;
         for (const c of [...new Set([g?.off ?? '0|0|1', ...cands])]) {
@@ -1555,12 +1584,22 @@ export function createDirector3D({ width, height, story }) {
       s.idx.forEach((i, jj) => {
         if (t < s.beats[jj]) return;
         const p = story.pois[i];
-        if (jj === j) items.unshift({ key: 'p' + i, at: p.at, cat: p.cat, name: p.name, sub: sub(p), a: (t - s.beats[jj]) / 0.45 });
-        else items.push({ key: 'p' + i, compact: true, optional: true, at: p.at, cat: p.cat, name: p.name, a: 1 });
+        if (jj === j) { items.unshift({ key: 'p' + i, at: p.at, cat: p.cat, name: p.name, sub: sub(p), a: (t - s.beats[jj]) / 0.45 }); return; }
+        // vừa nói sang điểm sau: thẻ đầy đủ mờ dần đi trong lúc nhãn gọn hiện dần lên (chuyển êm, không "nhảy" cỡ)
+        const x = jj + 1 < s.idx.length ? clamp01((t - s.beats[jj + 1]) / 0.4) : 1;
+        if (x < 1) items.push({ key: 'p' + i, at: p.at, cat: p.cat, name: p.name, sub: sub(p), a: 1 - x, optional: true });
+        items.push({ key: 'c' + i, compact: true, optional: true, at: p.at, cat: p.cat, name: p.name, a: x });
       });
     }
+    // trục đường lớn: thẻ nhỏ "N phút · X km" ở chỗ đường đi từ nhà chạm vào trục (đúng lúc đường đi tới nơi)
+    if (s.kind === 'roads') story.roads.forEach((r, j) => {
+      if (!rcPaths[j]) return;
+      const t1 = s.t0 + 1.0 + j * ROAD_STEP + 1.2;
+      if (t >= t1) items.push({ key: 'rc' + j, compact: true, full: true, at: r.near, cat: 'road', name: `${r.min} phút · ${fmtKm(r.dkm)}`, a: (t - t1) / 0.4 });
+    });
     if (s.kind === 'anchor' && t >= s.t0 + 2.2) { const a = story.anchors[s.i]; items.push({ key: 'a' + s.i, at: a.at, cat: a.type, name: a.name, sub: sub(a), a: (t - s.t0 - 2.2) / 0.45 }); }
-    if (s.kind === 'airport') { const rw = inf.airport; items.push({ key: 'air', full: true, at: [(rw.a[0] + rw.b[0]) / 2, (rw.a[1] + rw.b[1]) / 2], cat: 'airport', name: rw.name, sub: fmtSub(rw, false), a: (t - s.t0 - 2.2) / 0.45 }); }
+    // sân bay: thẻ hiện khi đường đi từ nhà chạy tới nơi (phút · km theo đường thật), giữ suốt lúc máy bay cất cánh
+    if (s.kind === 'airport' && t >= s.t0 + 2.6) { const rw = inf.airport; items.push({ key: 'air', full: true, at: apMid, cat: 'airport', name: rw.name, sub: fmtSub(rw, false), a: (t - s.t0 - 2.6) / 0.45 }); }
     if (s.kind === 'metro') items.push({ key: 'metro', full: true, at: inf.metro.stations[Math.min(2, inf.metro.stations.length - 1)][1], cat: 'metro', name: inf.metro.name, sub: inf.metro.sub, a: (t - s.t0 - 1.6) / 0.45 });
     if (s.kind === 'road' && t >= s.t0 + 2.2) items.push({ key: 'road', full: true, at: roadNear, cat: 'road', name: inf.road.name, sub: `cách nhà ${fmtKm(inf.road.km)}`, a: (t - s.t0 - 2.2) / 0.45 });
     if (s.kind === 'build' && buildText[0]) {
@@ -1582,6 +1621,8 @@ export function createDirector3D({ width, height, story }) {
     groundLabels(ctx, t, s, labs.map(l => l.box));
     (story.pois || []).forEach((p, i) => head(ctx, poiPaths[i], pr['r' + i] ?? 0, GOLD));
     (story.anchors || []).forEach((a, i) => head(ctx, ancPaths[i], pr['a' + i] ?? 0, GOLD));
+    if (apPath) head(ctx, apPath, pr.ap ?? 0, GOLD);
+    rcPaths.forEach((p, j) => { if (p) head(ctx, p, pr['rc' + j] ?? 0, GOLD); });
     // ghim nhỏ viền vàng ở các tiện ích đã tới (line tới nơi)
     (story.pois || []).forEach((p, i) => { if ((pr['r' + i] ?? 0) >= 1 || orbShown(i, t)) poiPin(ctx, p.at, p.cat); });
     (story.anchors || []).forEach((a, i) => { if ((pr['a' + i] ?? 0) >= 1 && (s.kind === 'anchor' || s.kind === 'cta')) poiPin(ctx, a.at, a.type); });

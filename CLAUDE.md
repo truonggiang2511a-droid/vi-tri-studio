@@ -221,6 +221,19 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 ## 5. Nhật ký bài học
 
+- 2026-11-15 vòng 5 (Giang xem bản d7badd9): (1) **Mở đầu nói vị trí trước** (đúng lúc hình khoanh tỉnh → xã): "Tại <tỉnh>, <căn> này nằm ở <xã>." rồi mới
+  tới câu móc theo phong cách (`lead` + `TPL`); AI nhận mô tả cảnh tương ứng. (2) **Sân bay**: `infra.airport.route` = đường đi thật của điểm mốc sân bay cùng
+  tên; cảnh sân bay dài thêm `AP_OFF` 3,6 s — máy lùi ra ôm nhà + sân bay, line `ap` chạy ra, thẻ "Sân bay … · phút · km", rồi mới bay vào đường băng cho máy
+  bay cất cánh (mọi mốc cũ trong cảnh lùi AP_OFF). (3) **Trục đường lớn**: điểm gần nhà nhất trên từng trục (`roads[].near`) + đường đi thật từ nhà ra đó
+  (`roadRoutesFor` → `S.roadRoutes`, gọi lúc Agent dựng và lúc "Tạo lại video"; không có thì ước lượng ×1,3 / 28 km/h) → line `rc*` chạy ra cùng lúc trục sáng
+  (ROAD_STEP 1,3 s), thẻ nhỏ "N phút · X km" ở chỗ chạm trục; lời "Nằm ngay <trục trước nhà>, ra <trục> chỉ khoảng N phút, …". (4) **Thẻ tiện ích 3 mẫu**
+  (`story.labelStyle`, ô "🏷 Mẫu thẻ tiện ích", đổi không cần đọc lại giọng): Thẻ trắng (mặc định, kiểu bản đồ: chữ xanh than, phút đỏ, gờ màu loại), Thẻ kính
+  tối, Thẻ màu theo loại; biểu tượng tròn, đuôi tam giác liền thẻ, đường chỉ thẳng xuống chấm đỏ. **Bỏ hiệu ứng nảy phóng to** (POP vượt ~1,1 rồi co lại = "nhảy
+  to nhỏ") → mờ dần + trượt nhẹ 10 px, cỡ thẻ cố định; lượn 360°: thẻ đầy đủ mờ dần khi nhãn gọn hiện dần (không nhảy cỡ). Chữ in mặt đất: kéo dãn theo phối
+  cảnh tối đa 1,7 (trước 3,2 → phình/co khi máy xoay), cỡ thử [1, 0,82, 0,66] (trước tới 0,42), giữ chỗ 2 s trước khi tìm chỗ khác; tên tỉnh/xã không nảy.
+  Thử: dữ liệu ranh thật, khách "sinh lời" có cảnh sân bay Tân Sơn Nhất; chụp so sánh 3 mẫu thẻ (đã gửi Giang); rà `setFrame/draw` mỗi 0,5 s cho 3 tổ hợp
+  khách/kiểu hiện/mẫu thẻ: 0 lỗi. Ở máy thử không có /api/map/route nên đường lên sân bay / ra trục là đường thẳng + phút ước lượng; trên web là đường thật.
+
 - 2026-11-15 vòng 4 (Giang xem bản 2a52b41): (1) **Hạ tầng đủ**: bỏ luật "bản ngắn chỉ 1 cảnh hạ tầng" — mua để ở / cho thuê lấy MỌI hạ tầng đủ gần
   (metro ≤ 2 km, sân bay ≤ 20 phút, cao tốc ≤ 3 km), hạ tầng đang thi công trong 5 km luôn vào (tối đa 2 tuyến); `S.build` thêm metro đang xây
   (`metroBuildNear(h, 3)` từ `METRO_BUILD`, như app cũ) → thẻ + lời ghi tên ga ("Tuyến Metro số 2 đang thi công, Ga Bà Quẹo chỉ cách …"). (2) **Camera chậm**:
