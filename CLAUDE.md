@@ -221,6 +221,26 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 ## 5. Nhật ký bài học
 
+- 2026-11-15 vòng 6 (Giang: "chỗ tiện ích vẽ nhanh quá, thẻ tiện ích đè nhau, lỗi to nhỏ — muốn tốc độ + cách hiện nhãn như app cũ";
+  chỉ file AI đạo diễn, kiểu cũ không đụng). Dựng thử căn Bình Chánh ở máy thử, nguyên nhân: line tới tiện ích chạy 1,5 s cố định
+  (xong khi máy còn đang bay), cảnh gom cụm đọc 3 tiện ích trong 1 câu ~4 s nên hình nhảy 2,6 s/điểm và thẻ lệch lời (lời nói "trường
+  tiểu học" mà thẻ là công viên); kiểu lượn 360° đổi thẻ đầy đủ → nhãn gọn (to nhỏ) và nhiều nhãn gọn mờ chồng nhau; chữ in mặt đất
+  tính lại cỡ theo màn hình mỗi khung. Sửa: (1) **Tắt gom cụm** (`GOM_CUM = false` trong dd-agent.js; dd3d vẫn dựng được cảnh cluster
+  nếu bật lại) → mỗi tiện ích MỘT cảnh riêng, có câu đọc riêng như kiểu cũ (video căn thử 80 → 85 s). (2) **Nhịp kiểu app cũ**
+  (`lineWin` trong dd3d.js, dùng chung cho line / thẻ / SFX): cảnh tiện ích tối thiểu `POI_MIN` 5 s; máy bay êm hai đầu (`EASE`, trước
+  `QUAD` lao ngay) trong `flyD` = nửa cảnh (2,6–3,6 s), khung ôm cả đường đi; line bắt đầu ở 14% cảnh (≤ 0,8 s), chạy mượt hai đầu
+  (`smooth`) trong 46% cảnh (1,9–3,2 s); thẻ hiện KHI line tới nơi (mờ vào 0,4 s), mờ đi 0,3 s cuối cảnh (`cardA`) → mỗi lúc một thẻ.
+  Áp cho tiện ích, điểm mốc vùng, cảnh cao tốc. (3) **Lượn 360°**: mọi nhãn cùng MỘT cỡ (`orb`: tên 1 dòng + phút · km), nhãn đang nói đặt
+  trước, nhãn cũ chật thì mờ dần nhường chỗ; lời đọc kể TỪNG tiện ích bằng tên gọn (`shortName`, nay export từ dd3d) + phút/mét, mỗi
+  tiện ích một câu (`orbit.line`; AI viết lời cũng được dặn gọi đúng tên ngắn) → nhãn bật đúng lúc giọng nói tên, cách nhau ≥ 2 s; `beatsFor`
+  tìm tên lần lượt (2 trường cùng loại không trùng chỗ), tên nào không thấy thì nội suy giữa 2 tên thấy được (trước: thiếu 1 là chia đều cả cảnh). (4) **Chữ in mặt đất giữ cỡ theo MÉT** khi đã có chỗ (`lock.fix` = Hm, st, chiều
+  đọc) → to nhỏ tự nhiên theo máy như chữ sơn trên đường (kiểu cũ); cỡ trên màn hình ra ngoài 0,5–2 lần hoặc máy xoay làm chữ lộn ngược
+  thì mờ hẳn rồi mới đặt lại; máy đang cận/lùi nhanh (> 0,35 zoom/s, `zMoving`) thì chưa đặt chữ mới. (5) `fmtKm` dưới 1 km làm tròn
+  10 m như lời đọc (thẻ "735 m" mà giọng "730 m"). Bộ thử: `dir.debug()` trả ô nhãn + chữ mặt đất của khung vừa vẽ; Playwright chạy
+  `site/` + chuyển `/api/map/*` sang web thật (kèm Referer vitristudio.com → có đường đi thật), dựng căn, bước 0,2 s qua các cảnh tiện
+  ích, đo: thẻ đè thẻ, > 1 thẻ lớn cùng lúc, chữ mặt đất đè thẻ, chữ nhảy cỡ > 12%/khung, thẻ đổi cỡ. Lưu ý: `/dao-dien.html` cần
+  `?thu=1` (cổng thử, lưu `localStorage['vitri.dd.thu']`) không thì chuyển về `/`.
+
 - 2026-11-15 vòng 5 (Giang xem bản d7badd9): (1) **Mở đầu nói vị trí trước** (đúng lúc hình khoanh tỉnh → xã): "Tại <tỉnh>, <căn> này nằm ở <xã>." rồi mới
   tới câu móc theo phong cách (`lead` + `TPL`); AI nhận mô tả cảnh tương ứng. (2) **Sân bay**: `infra.airport.route` = đường đi thật của điểm mốc sân bay cùng
   tên; cảnh sân bay dài thêm `AP_OFF` 3,6 s — máy lùi ra ôm nhà + sân bay, line `ap` chạy ra, thẻ "Sân bay … · phút · km", rồi mới bay vào đường băng cho máy

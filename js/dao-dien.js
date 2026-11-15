@@ -7,7 +7,7 @@ import { scanArea, routeTo, pickHubs, loadHubFx, simplifyLine, CATEGORIES, loadZ
 import { HUBS } from './hubs.js';
 import { parseListing, summaryChips, KINDS } from './dd-parse.js';
 import { BUYERS, suggestBuyer, buildStory, MUSIC_LIB, AUTO_TONE } from './dd-agent.js';
-import { createDirector3D, CAT3D, kmBetween, fmtKm, fmtSub } from './dd3d.js';
+import { createDirector3D, CAT3D, kmBetween, fmtKm, fmtSub, shortName } from './dd3d.js';
 import { rpc } from './account.js';
 import { SB_URL, SB_KEY } from './sb.js';
 import { exportMp4, decodeAudioFile, mixAudio, canEncodeMp4 } from './export.js';
@@ -408,8 +408,9 @@ function aiPayload(st, L) {
     duong: st.roads.map(r => ({ ten: r.name, cach_nha: fmtKm(r.km), phut_xe: r.km < 0.12 ? null : r.min })) });
   const inCl = i => st.cluster?.idx.includes(i);
   if (!st.orbit) st.pois.forEach((p, i) => { if (!inCl(i)) put('poi:' + p.id, 'poi:' + p.id, { canh: 'Tiện ích: đường đi thật từ nhà sáng lên', ten: p.name, cach: fmtKm(p.km), phut_xe_may: mm(p) }); });
-  if (st.orbit) put('poi:vong', 'orbit', { canh: 'MỘT cảnh máy lượn 360 độ góc xa quanh nhà, các tiện ích lần lượt hiện nhãn lên (không vẽ đường đi). 1–2 câu: trong bán kính bao xa quanh nhà có những tiện ích nào (nói theo đúng thứ tự danh sách, tên loại hoặc tên ngắn)',
-    ban_kinh: fmtKm(st.orbit.r), tien_ich: st.orbit.idx.map(i => ({ ten: st.pois[i].name, cach: fmtKm(st.pois[i].km), phut_xe_may: mm(st.pois[i]) })) });
+  // vòng 6: nhãn bật đúng lúc giọng đọc nói TÊN tiện ích (dd3d tìm tên trong câu) → AI phải kể từng tiện ích bằng đúng tên ngắn, đúng thứ tự
+  if (st.orbit) put('poi:vong', 'orbit', { canh: 'MỘT cảnh máy lượn 360 độ góc xa quanh nhà, các tiện ích lần lượt hiện nhãn lên (không vẽ đường đi). Mở bằng 1 câu rất ngắn, rồi kể LẦN LƯỢT TỪNG tiện ích theo đúng thứ tự danh sách, gọi đúng tên ngắn trong "ten" (không đổi tên) kèm số phút hoặc khoảng cách, mỗi tiện ích một câu ngắn',
+    ban_kinh: fmtKm(st.orbit.r), tien_ich: st.orbit.idx.map(i => ({ ten: shortName(st.pois[i].name), cach: fmtKm(st.pois[i].km), phut_xe_may: mm(st.pois[i]) })) });
   if (st.cluster) put('poi:cum', 'cluster', { canh: 'MỘT cảnh gom nhiều tiện ích quanh nhà, ghim lần lượt bật lên. 1 câu ngắn: trong bán kính bao xa còn có những loại tiện ích nào (nói tên loại như chợ, trạm y tế, công viên; không cần đọc hết tên riêng)',
     ban_kinh: fmtKm(st.cluster.r), tien_ich: st.cluster.idx.map(i => ({ ten: st.pois[i].name, cach: fmtKm(st.pois[i].km) })) });
   st.anchors.forEach(a => put('anchor:' + a.id, 'anchor:' + a.id, { canh: 'Điểm mốc vùng: đường đi thật', ten: a.name, duong_di_km: a.km, phut_o_to: a.min }));

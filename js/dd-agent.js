@@ -2,7 +2,7 @@
 // Chọn tiện ích theo khách mua, viết lời theo SỐ LIỆU THẬT (khoảng cách, phút, số tiện ích trong 1 km), chọn phong cách
 // (nhạc, cách vẽ) theo loại bất động sản. Bản luật — bước sau thay phần viết lời bằng AI máy chủ (cùng dữ liệu, cùng luật cấm bịa).
 import { KINDS, infoChips, fmtNum } from './dd-parse.js';
-import { rectM, ROAD_COLORS } from './dd3d.js';
+import { rectM, ROAD_COLORS, shortName } from './dd3d.js';
 import { autoPickRoads } from './data.js';
 
 // 15/11 (Giang): tách rõ "Đầu tư sinh lời" (khoá 'vung' giữ nguyên cho dữ liệu đã lưu — trước là "Kết nối khu vực") và "Đầu tư cho thuê"
@@ -88,7 +88,7 @@ function poiLine(p, buyer, i) {
 export function buildStory(S, L, buyer, edits = {}) {
   const kind = L.kind || 'nhapho';
   const H = [S.house.lng, S.house.lat];
-  // Bản ngắn (mặc định, 15/11): 35–50 s cho TikTok/Reels — ít tiện ích hơn, tiện ích phụ gom 1 cảnh, 1 điểm mốc vùng.
+  // Bản ngắn (mặc định, 15/11): 35–50 s cho TikTok/Reels — ít tiện ích hơn, 1 điểm mốc vùng (gom cụm tắt từ vòng 6, xem GOM_CUM).
   // Bản đầy đủ (khách tick, cho YouTube/Zalo): như trước 15/11.
   const full = !!edits.full;
   // Kiểu hiện tiện ích (15/11): 'lanluot' (mặc định) bay tới từng tiện ích, vẽ đường đi; 'vong' máy lượn 360° góc xa, tiện ích chỉ
@@ -268,11 +268,17 @@ export function buildStory(S, L, buyer, edits = {}) {
   const ctaLead = tone === 'chuyen-gia' ? 'Cần bảng thông số đầy đủ?' : tone === 'chot-sale' ? 'Xem sớm để không lỡ.' : tp[2] || '';
   const houseLine = houseText && houseText !== 'Thông số: .' ? houseText : '';
   const lotLine = houseLine;
-  // Gom cụm (bản ngắn, ≥ 3 tiện ích): tiện ích đầu (mạnh nhất theo khách) có cảnh riêng, còn lại MỘT cảnh — ghim bật lần lượt
-  const cluster = !vong && !full && pois.length >= 3 ? { idx: pois.map((_, i) => i).slice(1) } : null;
+  // Gom cụm (bản ngắn, ≥ 3 tiện ích): tiện ích đầu (mạnh nhất theo khách) có cảnh riêng, còn lại MỘT cảnh — ghim bật lần lượt.
+  // 15/11 vòng 6 (Giang: chỗ tiện ích vẽ nhanh quá, muốn nhịp + cách hiện thẻ như app cũ): TẮT gom cụm — mỗi tiện ích một cảnh
+  // riêng, có câu đọc riêng (như kiểu cũ). Lý do: cảnh gom cụm đọc 3 tiện ích trong 1 câu ~4 s nên hình phải nhảy 2,6 s/điểm và
+  // chữ lệch lời. Bật lại: GOM_CUM = true (dd3d vẫn dựng được cảnh cluster).
+  const GOM_CUM = false;
+  const cluster = GOM_CUM && !vong && !full && pois.length >= 3 ? { idx: pois.map((_, i) => i).slice(1) } : null;
   // Lượn 360° góc xa: MỘT cảnh cho mọi tiện ích, nhãn bật lần lượt đúng lúc lời đọc nhắc tới (dd3d tìm chữ trong câu)
-  const orbit = vong && pois.length ? { idx: pois.map((_, i) => i), words: pois.map(catWord), r: Math.max(...pois.map(p => p.km)) } : null;
-  if (orbit) orbit.line = `Nhìn quanh một vòng: trong <b>${km(Math.ceil(orbit.r * 10) / 10)}</b> quanh nhà có ${[...new Set(orbit.words)].join(', ').replace(/, ([^,]*)$/, ' và $1')}.`;
+  // vòng 6: lời đọc kể TỪNG tiện ích (tên gọn như trên nhãn) kèm số phút / mét, mỗi tiện ích một câu ngắn → nhãn bật đúng lúc giọng
+  // nhắc tới, nhịp ~2 s/điểm (trước: chỉ kể tên loại trong ~3 s → nhãn bật dồn dập hoặc trễ hẳn so với lời)
+  const orbit = vong && pois.length ? { idx: pois.map((_, i) => i), words: pois.map(p => shortName(p.name)), r: Math.max(...pois.map(p => p.km)) } : null;
+  if (orbit) orbit.line = `Nhìn quanh một vòng. ${pois.map(p => `${shortName(p.name)}, <b>${p.km >= 1 && mins(p) ? `${mins(p)} phút` : km(p.km)}</b>.`).join(' ')}`;
   if (cluster) {
     const cp = cluster.idx.map(i => pois[i]);
     cluster.r = Math.max(...cp.map(p => p.km));
