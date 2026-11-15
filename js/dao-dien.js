@@ -287,8 +287,9 @@ function storeData() {
 }
 // mọi câu lời đọc của kịch bản hiện tại (theo thứ tự cảnh)
 // bản ngắn: tiện ích trong cảnh gom cụm không đọc câu riêng (chỉ đọc 1 câu cụm) → không tốn giọng cho câu không dùng
-const poiLinesUsed = st => st.lines.poi.filter((_, i) => !st.cluster?.idx.includes(i));
-const allLines = st => { const L = st.lines; return [L.intro, st.lot ? L.lot : L.house, L.roads, L.build, L.photos, ...poiLinesUsed(st), st.cluster ? L.cluster : null, ...L.anchor, L.airport, L.metro, L.road, st.score && !st.statsInCta ? L.score : null, L.cta].filter(Boolean); };
+// lượn 360°: chỉ đọc 1 câu cho cả cảnh, không đọc câu riêng từng tiện ích
+const poiLinesUsed = st => (st.orbit ? [] : st.lines.poi.filter((_, i) => !st.cluster?.idx.includes(i)));
+const allLines = st => { const L = st.lines; return [L.intro, st.lot ? L.lot : L.house, L.roads, L.build, L.photos, ...poiLinesUsed(st), st.cluster ? L.cluster : null, st.orbit ? L.orbit : null, ...L.anchor, L.airport, L.metro, L.road, st.score && !st.statsInCta ? L.score : null, L.cta].filter(Boolean); };
 // Giọng: đã đăng nhập thì AI đọc các câu CÒN THIẾU (câu cũ dùng lại); chưa đăng nhập thì để trống, báo đăng ký
 let voiceErr = '';
 async function voiceAll(onP) {
@@ -309,7 +310,7 @@ function withVoice(st) {
   const L = st.lines;
   return { ...st, paceByText: true, voice: { intro: voiceOf(L.intro), house: voiceOf(L.house), lot: voiceOf(L.lot), poi: L.poi.map(voiceOf), anchor: L.anchor.map(voiceOf),
     photos: voiceOf(L.photos), roads: voiceOf(L.roads), build: voiceOf(L.build), airport: voiceOf(L.airport), metro: voiceOf(L.metro), road: voiceOf(L.road), score: voiceOf(L.score), cta: voiceOf(L.cta),
-    cluster: voiceOf(L.cluster) } };
+    cluster: voiceOf(L.cluster), orbit: voiceOf(L.orbit) } };
 }
 async function rebuild(autoplay = false) {
   stop();
@@ -372,7 +373,9 @@ function aiPayload(st, L) {
   put('house', st.lot ? 'lot' : 'house', { canh: (st.lot ? 'Máy quay lượn 360 độ quanh lô đất (khoanh ranh lô)' : 'Máy quay lượn 360 độ quanh bất động sản, khối nhà nổi lên') + '. Đọc ĐẦY ĐỦ thông tin có trong dữ liệu: đường trước nhà, kích thước, diện tích, số tầng, phòng ngủ, pháp lý, điểm nổi bật' });
   if (st.roads.length) put('roads', 'roads', { canh: 'Các trục đường lớn quanh nhà lần lượt sáng lên, tên đường in trên mặt đất', duong: facts.duong_lon });
   const inCl = i => st.cluster?.idx.includes(i);
-  st.pois.forEach((p, i) => { if (!inCl(i)) put('poi:' + p.id, 'poi:' + p.id, { canh: 'Tiện ích: đường đi thật từ nhà sáng lên', ten: p.name, cach: fmtKm(p.km), phut_xe_may: mm(p) }); });
+  if (!st.orbit) st.pois.forEach((p, i) => { if (!inCl(i)) put('poi:' + p.id, 'poi:' + p.id, { canh: 'Tiện ích: đường đi thật từ nhà sáng lên', ten: p.name, cach: fmtKm(p.km), phut_xe_may: mm(p) }); });
+  if (st.orbit) put('poi:vong', 'orbit', { canh: 'MỘT cảnh máy lượn 360 độ góc xa quanh nhà, các tiện ích lần lượt hiện nhãn lên (không vẽ đường đi). 1–2 câu: trong bán kính bao xa quanh nhà có những tiện ích nào (nói theo đúng thứ tự danh sách, tên loại hoặc tên ngắn)',
+    ban_kinh: fmtKm(st.orbit.r), tien_ich: st.orbit.idx.map(i => ({ ten: st.pois[i].name, cach: fmtKm(st.pois[i].km), phut_xe_may: mm(st.pois[i]) })) });
   if (st.cluster) put('poi:cum', 'cluster', { canh: 'MỘT cảnh gom nhiều tiện ích quanh nhà, ghim lần lượt bật lên. 1 câu ngắn: trong bán kính bao xa còn có những loại tiện ích nào (nói tên loại như chợ, trạm y tế, công viên; không cần đọc hết tên riêng)',
     ban_kinh: fmtKm(st.cluster.r), tien_ich: st.cluster.idx.map(i => ({ ten: st.pois[i].name, cach: fmtKm(st.pois[i].km) })) });
   st.anchors.forEach(a => put('anchor:' + a.id, 'anchor:' + a.id, { canh: 'Điểm mốc vùng: đường đi thật', ten: a.name, duong_di_km: a.km, phut_o_to: a.min }));
@@ -498,7 +501,8 @@ function poiChips(onChange) {
     });
   }
   if (near.length > 3) chip(poiMore ? '▴ Thu gọn' : `▾ Xem thêm ${near.length - 3} gợi ý`, 'more', () => { poiMore = !poiMore; story && !$('studio').hidden ? renderBoard() : renderPoiPick(); });   // chỉ mở/thu, không tính là sửa video
-  chip('🔍 Tìm / ghim tiện ích khác', 'more', openSheet);
+  chip('🔍 Tìm / ghim tiện ích khác', 'more', () => openSheet('list'));
+  chip('🛣 Thêm đường lớn, sân bay, ga, cảng', 'more', () => openSheet('big'));
   return box;
 }
 function renderPoiPick() {
@@ -513,9 +517,11 @@ function renderBoard() {
   if (story.lot) b.append(sceneCard({ key: 'lot', title: story.lot.label, text: L.lot }));
   else b.append(sceneCard({ key: 'house', title: `${KINDS[story.kind].label} · ${story.info.price || ''}`, text: L.house }));
   // trục đường lớn: AI chọn 3, khách bấm để thêm (tối đa 5) / bỏ
-  const cands = (S.scan?.roads || []).filter(r => r.level >= 1 && r.nearKm <= 3.4).sort((a, c) => a.nearKm - c.nearKm).slice(0, 8);
+  const sel = story.roads.map(r => r.id);
+  // gợi ý: trục gần nhà + trục xa khách đã thêm ở ô "Đường lớn · sân bay"
+  const cands = (S.scan?.roads || []).filter(r => r.level >= 1 && (r.nearKm <= 3.4 || sel.includes(r.id))).sort((a, c) => a.nearKm - c.nearKm).slice(0, 10);
   if (cands.length) {
-    const sel = story.roads.map(r => r.id), ex = document.createElement('div'); ex.className = 'chips road-chips';
+    const ex = document.createElement('div'); ex.className = 'chips road-chips';
     for (const r of cands) {
       const on = sel.includes(r.id);
       const c = Object.assign(document.createElement('button'), { type: 'button', className: 'rchip' + (on ? ' on' : ''), textContent: `${on ? '✓ ' : '＋ '}${r.label} · ${fmtKm(r.nearKm)}` });
@@ -531,7 +537,13 @@ function renderBoard() {
   b.append(sceneCard({ key: 'poipick', title: `📍 Tiện ích gần nhà · ${story.pois.length} đã chọn (tối đa ${POI_MAX})`, sub: ' · bấm ＋ để thêm', text: '', extra: poiChips(edited) }));
   b.lastChild.querySelector('textarea')?.remove();
   const sub = p => ' · ' + (p.min ? `${Math.round(p.min)} phút · ` : '') + fmtKm(p.km);
-  story.pois.forEach((p, i) => { if (!story.cluster?.idx.includes(i)) b.append(sceneCard({ key: 'poi:' + p.id, title: p.name, sub: sub(p), text: L.poi[i], cat: p.cat, drag: true, removable: true })); });
+  if (!story.orbit) story.pois.forEach((p, i) => { if (!story.cluster?.idx.includes(i)) b.append(sceneCard({ key: 'poi:' + p.id, title: p.name, sub: sub(p), text: L.poi[i], cat: p.cat, drag: true, removable: true })); });
+  // lượn 360°: mọi tiện ích trong 1 cảnh, nhãn bật lần lượt theo lời đọc (bỏ / thêm tiện ích ở thẻ "Tiện ích gần nhà")
+  if (story.orbit) {
+    const ex = document.createElement('div'); ex.className = 'chips road-chips';
+    for (const i of story.orbit.idx) { const p = story.pois[i]; ex.append(Object.assign(document.createElement('span'), { className: 'rchip on', textContent: `${ICON_EMO[CAT3D[p.cat]?.[0]] || '📍'} ${p.name.length > 22 ? p.name.slice(0, 21) + '…' : p.name}${sub(p)}` })); }
+    b.append(sceneCard({ key: 'orbit', title: `🔄 Lượn 360° quanh nhà · ${story.orbit.idx.length} tiện ích hiện lần lượt`, sub: ' · không vẽ đường đi', text: L.orbit, extra: ex }));
+  }
   // bản ngắn: các tiện ích còn lại gom 1 cảnh — bấm tên để đưa tiện ích đó lên cảnh riêng (làm tiện ích chính)
   if (story.cluster) {
     const ex = document.createElement('div'); ex.className = 'chips road-chips';
@@ -560,6 +572,7 @@ function renderBoard() {
   enableDrag(b);
   syncTone();
   $('full').checked = !!story.full;
+  $('flow').value = story.flow;
   $('ctaMode').value = story.ctaMode;
   if (document.activeElement !== $('ctaKey')) $('ctaKey').value = story.ctaKey;
   fillPost();
@@ -609,9 +622,54 @@ function enableDrag(list) {
 
 // ---------- Thêm tiện ích: danh sách / bản đồ ----------
 let pickMap = null;
-function openSheet() {
+function openSheet(tab = 'list') {
   if (!S.scan) { alert('Đang quét tiện ích quanh vị trí, chờ vài giây rồi bấm lại.'); return; }
-  $('sheet').hidden = false; $('poiSearch').value = ''; renderPoiList(); showTab('list');
+  $('sheet').hidden = false; $('poiSearch').value = ''; renderPoiList(); showTab(typeof tab === 'string' ? tab : 'list');
+}
+// Tab "Đường lớn · sân bay · ga" (15/11, Giang): khách tự thêm / bỏ trục đường lớn (cao tốc, quốc lộ, tỉnh lộ — kể cả trục xa),
+// điểm mốc vùng (trung tâm, sân bay, ga, cảng — vẽ đường đi thật + số phút) và cảnh hạ tầng (máy bay cất cánh, metro, cao tốc,
+// đang thi công). Mặc định vẫn do Agent chọn như cũ; chỉ đổi khi khách bấm.
+const A_ICON = { center: '🏙️', airport: '✈️', port: '⚓', station: '🚆', metro: '🚇' };
+function bigChanged() { save(); if (story && !$('studio').hidden) edited(); else renderPoiPick(); renderBigList(); }
+function renderBigList() {
+  const box = $('bigList'); box.textContent = '';
+  const st = buildStory(storeData(), S.listing || { kind: 'nhapho' }, S.buyer || 'o', S.edits);
+  const grp = t => box.append(Object.assign(document.createElement('div'), { className: 'grp', textContent: t }));
+  const row = (icon, name, sub, on, fn) => {
+    const r = Object.assign(document.createElement('button'), { className: 'prow' + (on ? ' sel' : '') });
+    r.append(Object.assign(document.createElement('span'), { textContent: icon }), Object.assign(document.createElement('span'), { textContent: name }),
+      Object.assign(document.createElement('small'), { textContent: (on ? '✓ đã có · ' : '＋ ') + sub }));
+    r.onclick = fn; box.append(r);
+  };
+  const toggle = (offKey, addKey, id, on, max, cur) => {
+    const off = new Set(S.edits[offKey] || []), add = new Set(S.edits[addKey] || []);
+    if (on) { off.add(id); add.delete(id); } else { if (cur >= max) { alert(`Tối đa ${max} mục.`); return; } off.delete(id); add.add(id); }
+    S.edits[offKey] = [...off]; S.edits[addKey] = [...add]; bigChanged();
+  };
+  // trục đường lớn: cao tốc, quốc lộ, tỉnh lộ, đường chính (gần → xa)
+  const roads = (S.scan?.roads || []).filter(r => r.level >= 1).sort((a, b) => a.nearKm - b.nearKm).slice(0, 14), selR = st.roads.map(r => r.id);
+  grp('🛣 Trục đường lớn · cao tốc · quốc lộ — vẽ line, tên in trên đường');
+  for (const r of roads) row(r.level === 3 ? '🛣' : '🚗', r.label, `${r.level === 3 ? 'cao tốc · ' : ''}cách nhà ${fmtKm(r.nearKm)}`, selR.includes(r.id), () => {
+    const on = selR.includes(r.id);
+    if (!on && selR.length >= 5) { alert('Tối đa 5 trục đường.'); return; }
+    S.edits.roads = on ? selR.filter(x => x !== r.id) : [...selR, r.id]; bigChanged();
+  });
+  if (!roads.length) box.append(Object.assign(document.createElement('p'), { className: 'tip', textContent: 'Chưa thấy trục đường lớn trong bán kính quét.' }));
+  // điểm mốc vùng
+  grp('✈️ Trung tâm · sân bay · ga · cảng — vẽ đường đi thật + số phút');
+  const selA = st.anchors.map(a => a.id), anc = (S.anchors || []).filter(a => a.min <= 150);
+  for (const a of anc) row(A_ICON[a.type] || '📍', a.name, `${a.min} phút · ${fmtKm(a.km)}`, selA.includes(a.id), () => toggle('anchorsOff', 'anchorsAdd', a.id, selA.includes(a.id), 4, selA.length));
+  if (!anc.length) box.append(Object.assign(document.createElement('p'), { className: 'tip', textContent: regionJob && !S.anchors?.length ? 'Đang tải điểm mốc vùng… mở lại sau vài giây.' : 'Chưa có điểm mốc vùng.' }));
+  // cảnh hạ tầng
+  const I = S.infra || {}, inf = st.infra || {};
+  if (I.airport || I.metro || I.road || S.build?.length) grp('🚀 Cảnh hạ tầng nổi bật');
+  if (I.airport) row('✈️', `Máy bay cất cánh · ${I.airport.name}`, `${I.airport.min} phút`, !!inf.airport, () => toggle('infraOff', 'infraAdd', 'airport', !!inf.airport, 9, 0));
+  if (I.metro) row('🚇', I.metro.name, I.metro.sub, !!inf.metro, () => toggle('infraOff', 'infraAdd', 'metro', !!inf.metro, 9, 0));
+  if (I.road) row('🛣', `Cảnh cao tốc · ${I.road.name}`, `cách nhà ${fmtKm(I.road.km)}`, !!inf.road, () => toggle('infraOff', 'infraAdd', 'road', !!inf.road, 9, 0));
+  if (S.build?.length) row('🚧', `Đang thi công · ${S.build[0].label}`, `cách nhà ${fmtKm(S.build[0].nearKm)}`, st.build.length > 0, () => {
+    if (st.build.length) { S.edits.buildOn = false; S.edits.buildOff = S.build.map(b => b.id); } else { S.edits.buildOn = true; S.edits.buildOff = []; }
+    bigChanged();
+  });
 }
 function closeSheet() { $('sheet').hidden = true; }
 // tiện ích đang chọn (dùng được cả ở bước 2 khi chưa dựng video)
@@ -656,6 +714,7 @@ function showTab(t) {
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
   $('poiList').hidden = t !== 'list'; $('poiSearch').hidden = t !== 'list';
   $('pickMap').hidden = t !== 'map'; $('mapTip').hidden = t !== 'map';
+  $('bigList').hidden = t !== 'big'; if (t === 'big') renderBigList();
   $('tapBox').hidden = true; pickTap?.remove(); pickTap = null;
   if (t === 'map') openPickMap();
 }
@@ -871,6 +930,7 @@ async function makePage() {
 
 // ---------- gắn sự kiện ----------
 $('full').onchange = () => { S.edits.full = $('full').checked; edited(); };
+$('flow').onchange = () => { S.edits.flow = $('flow').value === 'vong' ? 'vong' : undefined; edited(); };
 $('ctaMode').onchange = () => { S.edits.ctaMode = $('ctaMode').value; edited(); };
 $('ctaKey').addEventListener('change', () => { S.edits.ctaKey = $('ctaKey').value.trim().toUpperCase().slice(0, 18) || undefined; edited(); });
 $('copyPost').onclick = () => copyTxt($('postText'), $('copyPost'));

@@ -127,6 +127,9 @@ catch (e) { location.replace('/'); }
             <label class="tog"><input type="checkbox" id="full"> Bản đầy đủ <small>(YouTube, Zalo · nhiều tiện ích hơn, dài hơn)</small></label>
           </div>
           <div class="meta">
+            <label class="sel">📍 Kiểu hiện tiện ích <select id="flow"><option value="lanluot">Bay tới từng tiện ích (vẽ đường đi)</option><option value="vong">Lượn 360° góc xa (chỉ hiện tiện ích)</option></select></label>
+          </div>
+          <div class="meta">
             <label class="sel">💬 Kêu gọi <select id="ctaMode"><option value="binhluan">Bình luận từ khoá</option><option value="nhantin">Nhắn tin từ khoá</option></select></label>
             <label class="sel">Từ khoá <input id="ctaKey" maxlength="18" placeholder="XEM NHÀ" aria-label="Từ khoá kêu gọi"></label>
           </div>
@@ -148,11 +151,12 @@ catch (e) { location.replace('/'); }
 <div class="sheet" id="sheet" hidden>
   <div class="sheet-in" role="dialog" aria-modal="true" aria-label="Thêm tiện ích">
     <div class="sheet-top">
-      <div class="tabs"><button class="on" data-t="list">Danh sách</button><button data-t="map">📌 Ghim trên bản đồ</button></div>
+      <div class="tabs"><button class="on" data-t="list">Danh sách</button><button data-t="map">📌 Ghim bản đồ</button><button data-t="big">🛣 Đường lớn · sân bay</button></div>
       <button class="x" id="sheetX" aria-label="Đóng">✕</button>
     </div>
     <input class="search" id="poiSearch" placeholder="Tìm tên tiện ích…">
     <div class="poi-list" id="poiList"></div>
+    <div class="poi-list" id="bigList" hidden></div>
     <div class="pick-map" id="pickMap" hidden></div>
     <div id="tapBox" hidden></div>
     <p class="tip" id="mapTip" hidden>Chạm vào chấm tiện ích để thêm. Tiện ích chưa có chấm: chạm đúng chỗ đó trên ảnh vệ tinh → chọn tên gợi ý hoặc tự đặt tên rồi ghim.</p>

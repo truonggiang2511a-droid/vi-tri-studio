@@ -90,7 +90,11 @@ export function buildStory(S, L, buyer, edits = {}) {
   // Bản ngắn (mặc định, 15/11): 35–50 s cho TikTok/Reels — ít tiện ích hơn, tiện ích phụ gom 1 cảnh, 1 điểm mốc vùng.
   // Bản đầy đủ (khách tick, cho YouTube/Zalo): như trước 15/11.
   const full = !!edits.full;
-  const max = buyer === 'vung' ? 2 : kind === 'datnen' || kind === 'nhavuon' ? 3 : full ? 5 : 4;
+  // Kiểu hiện tiện ích (15/11): 'lanluot' (mặc định) bay tới từng tiện ích, vẽ đường đi; 'vong' máy lượn 360° góc xa, tiện ích chỉ
+  // bật nhãn lên (không vẽ đường đi) — line chỉ còn ở trục đường lớn và đường đi lên trung tâm / sân bay / ga / cảng
+  const vong = edits.flow === 'vong';
+  const max = vong ? (buyer === 'vung' ? 3 : kind === 'datnen' || kind === 'nhavuon' ? 4 : 6)
+    : buyer === 'vung' ? 2 : kind === 'datnen' || kind === 'nhavuon' ? 3 : full ? 5 : 4;
   // tiện ích: Agent chọn → khách bỏ / thêm / đổi thứ tự
   let chosen = pickPois(S.pois, buyer, kind, max).map(p => p.id);
   if (edits.order) chosen = edits.order.slice();
@@ -108,6 +112,7 @@ export function buildStory(S, L, buyer, edits = {}) {
   const I = S.infra || {};
   let infra = buyer === 'vung' ? { ...I }
     : I.metro && I.metro.nearKm <= 2 ? { metro: I.metro } : I.airport && I.airport.min <= 20 ? { airport: I.airport } : I.road && I.road.km <= 3 ? { road: I.road } : null;
+  for (const k of edits.infraAdd || []) if (I[k]) (infra ||= {})[k] = I[k];   // khách tự thêm (ô "Đường lớn · sân bay")
   if (infra) for (const k of edits.infraOff || []) delete infra[k];
   if (infra && !Object.keys(infra).length) infra = null;
   // Kết nối vùng (đường thật + số phút ô tô): MỌI khách đều có — về trung tâm + ra sân bay (không có thì cảng biển);
@@ -117,6 +122,11 @@ export function buildStory(S, L, buyer, edits = {}) {
   // bản ngắn: mua để ở / cho thuê chỉ 1 điểm mốc (trung tâm nếu ≤ 45 phút, không thì sân bay / cảng)
   let anc = buyer === 'vung' ? avail.slice(0, full ? 3 : 2)
     : full ? [ctr, far].filter(Boolean) : [ctr && ctr.min <= 45 ? ctr : far || ctr].filter(Boolean);
+  // khách tự thêm điểm mốc (sân bay, ga, cảng, trung tâm khác) — kể cả điểm xa hơn 70 phút
+  for (const id of edits.anchorsAdd || []) {
+    const a = (S.anchors || []).find(x => x.id === id);
+    if (a && !anc.includes(a) && !(edits.anchorsOff || []).includes(id)) anc.push(a);
+  }
   if (edits.anchorOrder) anc = anc.slice().sort((a, b) => edits.anchorOrder.indexOf(a.id) - edits.anchorOrder.indexOf(b.id));
   const anchors = anc.map(a => ({ id: a.id, name: a.name, type: a.type, at: [a.lng, a.lat], km: a.km, min: a.min, route: a.coords ? a.coords.map(ll) : null }));
 
@@ -157,7 +167,8 @@ export function buildStory(S, L, buyer, edits = {}) {
   })();
   const roads = roadIds.map(id => (S.roadsAll || []).find(r => r.id === id)).filter(Boolean).slice(0, 5).map((r, j) => ({
     id: r.id, name: r.label || r.name, km: r.nearKm, color: ROAD_COLORS[j % ROAD_COLORS.length],
-    ways: r.ways.map(w => w.filter(pt => near(pt) <= 3.5).map(([la, ln]) => [ln, la])).filter(w => w.length > 1),
+    // trục xa khách tự thêm (cao tốc / quốc lộ cách 5–15 km): lấy đoạn tới cách nhà khoảng cách trục + 1,5 km
+    ways: r.ways.map(w => w.filter(pt => near(pt) <= Math.max(3.5, (r.nearKm || 0) + 1.5)).map(([la, ln]) => [ln, la])).filter(w => w.length > 1),
   })).filter(r => r.ways.length);
   // Vùng quan trọng: ranh khu công nghiệp / bệnh viện / đại học / công viên của tiện ích đã chọn + ranh sân bay khi có cảnh sân bay
   const ringLL = r => { const q = r.map(([la, ln]) => [ln, la]); if (q.length && (q[0][0] !== q.at(-1)[0] || q[0][1] !== q.at(-1)[1])) q.push(q[0]); return q; };
@@ -165,7 +176,7 @@ export function buildStory(S, L, buyer, edits = {}) {
   // (sân bay: ranh đường biên sân bay — chỉ khi có cảnh sân bay)
   // Hạ tầng đang thi công (OpenStreetMap, như app cũ): tối đa 2 tuyến trong 5 km
   // bản ngắn: đã có cảnh hạ tầng (cao tốc / metro / sân bay) thì bỏ cảnh hạ tầng đang thi công — mỗi video 1 cảnh hạ tầng
-  const build = (full || !infra ? S.build || [] : []).filter(b => b.nearKm <= 5 && !(edits.buildOff || []).includes(b.id)).slice(0, 2).map(b => ({
+  const build = (full || !infra || edits.buildOn ? S.build || [] : []).filter(b => b.nearKm <= 5 && !(edits.buildOff || []).includes(b.id)).slice(0, 2).map(b => ({
     id: b.id, name: b.label, km: b.nearKm, ways: b.ways.map(w => w.map(([la, ln]) => [ln, la])).filter(w => w.length > 1) })).filter(b => b.ways.length);
   const kwFull = { nhapho: 'căn nhà', bietthu: 'căn biệt thự', nhavuon: 'căn nhà vườn', canho: 'căn hộ', datnen: 'lô đất' }[kind];
   const kw = { nhapho: 'nhà', bietthu: 'biệt thự', nhavuon: 'nhà vườn', canho: 'căn hộ', datnen: 'lô đất' }[kind];
@@ -194,7 +205,10 @@ export function buildStory(S, L, buyer, edits = {}) {
   const lp = [L.dims && `<b>${L.dims}</b>`, L.area && `diện tích <b>${fmtNum(L.area)} m²</b>`, L.w && `mặt tiền <b>${fmtNum(L.w)} m</b>`, f?.name && `quay ra <b>${f.name}</b>`, L.road && L.road.toLowerCase(), L.thoCu && L.thoCu.toLowerCase(), L.legal && L.legal.toLowerCase()].filter(Boolean).join(', ');
   const lotLine = lp ? `Lô đất ${lp}` : '';
   // Gom cụm (bản ngắn, ≥ 3 tiện ích): tiện ích đầu (mạnh nhất theo khách) có cảnh riêng, còn lại MỘT cảnh — ghim bật lần lượt
-  const cluster = !full && pois.length >= 3 ? { idx: pois.map((_, i) => i).slice(1) } : null;
+  const cluster = !vong && !full && pois.length >= 3 ? { idx: pois.map((_, i) => i).slice(1) } : null;
+  // Lượn 360° góc xa: MỘT cảnh cho mọi tiện ích, nhãn bật lần lượt đúng lúc lời đọc nhắc tới (dd3d tìm chữ trong câu)
+  const orbit = vong && pois.length ? { idx: pois.map((_, i) => i), words: pois.map(catWord), r: Math.max(...pois.map(p => p.km)) } : null;
+  if (orbit) orbit.line = `Nhìn quanh một vòng: trong <b>${km(Math.ceil(orbit.r * 10) / 10)}</b> quanh nhà có ${[...new Set(orbit.words)].join(', ').replace(/, ([^,]*)$/, ' và $1')}.`;
   if (cluster) {
     const cp = cluster.idx.map(i => pois[i]);
     cluster.r = Math.max(...cp.map(p => p.km));
@@ -237,6 +251,7 @@ export function buildStory(S, L, buyer, edits = {}) {
     // lời kêu gọi đúng loại sản phẩm: nhà → đi xem nhà, lô đất → đi xem lô đất, căn hộ / biệt thự / nhà vườn tương tự
     cta: `${L.price ? `Giá <b>${L.price}</b>. ` : ''}${ctaMode === 'binhluan' ? `Bình luận chữ ${ctaKey.toLowerCase()}` : `Nhắn tin chữ ${ctaKey.toLowerCase()}`} để nhận thông tin và hẹn đi xem ${kwFull}.`,
     cluster: cluster ? cluster.line : '',
+    orbit: orbit ? orbit.line : '',
     // cảnh ảnh căn nhà: đọc điểm nổi bật CHÍNH môi giới viết trong tin (không có thì câu mời xem chung, không bịa)
     // cảnh ảnh (cuối video): chỉ giới thiệu đây là ảnh thực tế — khớp với mọi ảnh, không tả bịa nội dung từng ảnh
     photos: (edits.photos || []).length ? `Đây là hình ảnh thực tế của ${kwFull}, mời anh chị xem qua.` : '',
@@ -245,7 +260,7 @@ export function buildStory(S, L, buyer, edits = {}) {
   };
   // khách sửa câu: ghi đè theo khoá cảnh (intro, house, lot, poi:<id>, anchor:<id>, score, cta…)
   const E = edits.lines || {};
-  for (const k of ['intro', 'house', 'lot', 'photos', 'roads', 'build', 'score', 'airport', 'metro', 'road', 'cta', 'cluster']) if (E[k] != null) lines[k] = E[k];
+  for (const k of ['intro', 'house', 'lot', 'photos', 'roads', 'build', 'score', 'airport', 'metro', 'road', 'cta', 'cluster', 'orbit']) if (E[k] != null) lines[k] = E[k];
   pois.forEach((p, i) => { if (E['poi:' + p.id] != null) lines.poi[i] = E['poi:' + p.id]; });
   anchors.forEach((a, i) => { if (E['anchor:' + a.id] != null) lines.anchor[i] = E['anchor:' + a.id]; });
 
@@ -254,7 +269,7 @@ export function buildStory(S, L, buyer, edits = {}) {
     house: H, info: { price: L.price || KINDS[kind].label, chips: infoChips(L) }, footprint, lot,
     pois, anchors, infra, score: buyer === 'vung' || !score.length ? null : score, scoreR, stats: stats.slice(0, 3), lines,
     // bản ngắn: 3 con số hiện ngay trong cảnh kết (không có cảnh tổng kết riêng, bớt ~5 giây)
-    full, cluster, statsInCta: !full, ctaKey, ctaMode, cta: ctaAsk, area, ctaSub: `để nhận thông tin chi tiết`, ctaLong: `${ctaAsk} nhận thông tin`,
+    full, cluster, orbit, flow: vong ? 'vong' : 'lanluot', statsInCta: !full, ctaKey, ctaMode, cta: ctaAsk, area, ctaSub: `để nhận thông tin chi tiết`, ctaLong: `${ctaAsk} nhận thông tin`,
     style: styleOf(kind, buyer), bird: !!edits.bird,
     watermark: edits.watermark || '',
     // bản ngắn: tối đa 5 ảnh thực tế cuối video

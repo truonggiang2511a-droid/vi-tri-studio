@@ -221,6 +221,18 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 ## 5. Nhật ký bài học
 
+- 2026-11-15 vòng 3 (Giang duyệt bản 09e52da trên web; thêm 2 việc, mặc định giữ nguyên như video đã duyệt): (1) Ô "Tìm / ghim tiện ích" có
+  tab mới **"🛣 Đường lớn · sân bay"** (`renderBigList`, `openSheet('big')`, chip "🛣 Thêm đường lớn, sân bay, ga, cảng" ở thẻ tiện ích): trục đường
+  lớn cấp ≥ 1 (cao tốc, quốc lộ, tỉnh lộ, kể cả trục xa — `S.scan.roads`, tối đa 5 → `edits.roads`; trục xa lấy đoạn tới khoảng cách trục + 1,5 km,
+  máy cảnh trục đường ôm tới 12 km), điểm mốc vùng (`S.anchors`: trung tâm, sân bay, ga, cảng ≤ 150 phút → `edits.anchorsAdd/anchorsOff`, tối đa 4),
+  cảnh hạ tầng (máy bay cất cánh / metro / cảnh cao tốc → `edits.infraAdd/infraOff`; đang thi công → `edits.buildOn/buildOff`). (2) **Kiểu hiện tiện ích
+  "Lượn 360° góc xa"** (`#flow`, `edits.flow = 'vong'`, `story.flow/story.orbit`; mặc định vẫn "Bay tới từng tiện ích"): tối đa 6 tiện ích, MỘT cảnh
+  `orbit` (≥ 10 s) máy ôm vòng tròn bán kính = tiện ích xa nhất, lượn trọn 360°; tiện ích KHÔNG vẽ đường đi (không tạo nguồn line `r*`), nhãn bật lần
+  lượt theo chữ trong câu (`beatsFor`, dùng chung với gom cụm), điểm đang nói nhãn đầy đủ, điểm đã nhắc nhãn gọn (`compact`) — chật thì mờ dần
+  (`optional`, `labFade`), còn chấm ghim (`orbShown`); line trục đường lớn sáng 0,85 + tên đường hiện suốt cảnh; đường đi thật chỉ còn ở điểm mốc vùng.
+  AI viết lời nhận 1 đoạn `poi:vong` → `lines.orbit`. Thử ở máy: tick QL1A + Tân Sơn Nhất + cảng Hiệp Phước, đổi 2 kiểu, quét `setFrame/draw` mỗi
+  0,25 s cả video 2 kiểu: 0 lỗi; mặc định (không bấm gì) vẫn y như bản 09e52da (53,8 s, cùng thứ tự cảnh).
+
 - 2026-11-15 vòng 2 (Giang xem ảnh thử: thẻ tên dài che gần hết màn hình, còn đè chữ, máy quá xa; muốn máy lia theo đúng chỗ đang nói,
   gần cận / xa lùi, lời dài thì đổi nhiều góc tới hết lời; mở đầu khoanh sáng tỉnh → xã rồi lượn 360° quanh căn đọc ĐỦ thông tin; vùng quan trọng
   tô màu nổi + tên to, nhãn ghim như tiện ích; khán giả lớn tuổi cần chữ to) — vẫn nhánh `dd-video-gon`, chỉ file AI đạo diễn:

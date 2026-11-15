@@ -105,6 +105,8 @@ textarea { resize: vertical; line-height: 1.45; }
 .prow:hover { background: #0d1527; }
 .prow small { margin-left: auto; color: var(--muted); white-space: nowrap; }
 .prow.in { opacity: .45; }
+.prow.sel { background: rgba(245,196,81,.12); }
+.prow.sel small { color: var(--gold); }
 .pick-map { height: 52vh; border-radius: 14px; overflow: hidden; }
 @media (min-width: 900px) {
   .wrap { max-width: 980px; }

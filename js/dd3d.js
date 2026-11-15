@@ -237,21 +237,31 @@ export function buildTimeline(story) {
   if (story.roads?.length) add('roads', 1.6 + ROAD_STEP * story.roads.length + 1.2, v.roads);
   // bản ngắn: tiện ích mạnh nhất có cảnh riêng, các tiện ích còn lại gom MỘT cảnh (story.cluster.idx) — trong cảnh đó
   // máy lia tới TỪNG tiện ích đúng lúc lời đọc nhắc tới nó (s.beats), mỗi tiện ích ≥ 2,4 s
-  const inCl = new Set(story.cluster?.idx || []);
-  (story.pois || []).forEach((p, i) => { if (!inCl.has(i)) add('poi', 3.6, v.poi?.[i], { i }); });
-  if (inCl.size) {
-    add('cluster', 0.8 + CL_SHOT * inCl.size, v.cluster, { idx: [...inCl] });
-    const s = scenes.at(-1), n = s.idx.length, d = s.t1 - s.t0;
-    const plain = String(L.cluster || '').replace(/<[^>]+>/g, '').toLowerCase(), say = s.vo ? s.vo.buffer.duration : est(L.cluster);
-    const words = story.cluster.words || [];
-    // thời điểm nói tới từng tiện ích (theo vị trí chữ trong câu × thời lượng giọng); không thấy chữ → chia đều
+  // thời điểm nói tới từng tiện ích của cảnh s (theo vị trí chữ loại tiện ích trong câu × thời lượng giọng); không thấy chữ → chia đều.
+  // first: lúc tiện ích đầu hiện (tính từ đầu cảnh), gap: tối thiểu giữa 2 tiện ích, tail: tiện ích cuối còn ít nhất bấy nhiêu giây
+  const beatsFor = (s, words = [], html, first, gap, tail) => {
+    const n = s.idx.length, d = s.t1 - s.t0, plain = String(html || '').replace(/<[^>]+>/g, '').toLowerCase(), say = s.vo ? s.vo.buffer.duration : est(html);
     let beats = s.idx.map((_, j) => { const at = words[j] ? plain.indexOf(words[j].toLowerCase()) : -1; return at >= 0 && say ? s.t0 + VO_AT + say * at / Math.max(1, plain.length) - 0.4 : null; });
-    if (beats.some(b => b == null)) beats = s.idx.map((_, j) => s.t0 + 0.3 + j * (d - 0.8) / n);
-    beats[0] = s.t0 + 0.2;   // vào cảnh là lia tới tiện ích đầu ngay (không đứng chờ lời đọc tới chữ đó)
-    for (let j = 1; j < n; j++) beats[j] = Math.max(beats[j], beats[j - 1] + 1.8);
-    const over = beats[n - 1] - (s.t1 - 2.0);   // tiện ích cuối còn ≥ 2 s
-    if (over > 0) beats = beats.map((b, j) => Math.max(s.t0 + 0.2 + j * 0.2, b - over));
-    s.beats = beats;
+    if (beats.some(b => b == null)) beats = s.idx.map((_, j) => s.t0 + first + j * (d - first - tail) / Math.max(1, n - 1 || 1));
+    beats[0] = s.t0 + first;
+    for (let j = 1; j < n; j++) beats[j] = Math.max(beats[j], beats[j - 1] + gap);
+    const over = beats[n - 1] - (s.t1 - tail);
+    if (over > 0) beats = beats.map((b, j) => Math.max(s.t0 + first + j * 0.2, b - over));
+    return beats;
+  };
+  if (story.orbit) {
+    // Lượn 360° góc xa: một cảnh, máy lượn trọn vòng quanh nhà (≥ 10 s), tiện ích bật nhãn lần lượt, không vẽ đường đi
+    add('orbit', Math.max(10, 2.2 + 1.5 * story.orbit.idx.length), v.orbit, { idx: story.orbit.idx });
+    const s = scenes.at(-1);
+    s.beats = beatsFor(s, story.orbit.words, L.orbit, 1.4, 1.2, 1.6);
+  } else {
+    const inCl = new Set(story.cluster?.idx || []);
+    (story.pois || []).forEach((p, i) => { if (!inCl.has(i)) add('poi', 3.6, v.poi?.[i], { i }); });
+    if (inCl.size) {
+      add('cluster', 0.8 + CL_SHOT * inCl.size, v.cluster, { idx: [...inCl] });
+      const s = scenes.at(-1);
+      s.beats = beatsFor(s, story.cluster.words, L.cluster, 0.2, 1.8, 2.0);   // tiện ích đầu: lia tới ngay khi vào cảnh
+    }
   }
   (story.anchors || []).forEach((a, i) => add('anchor', 4.4, v.anchor?.[i], { i }));
   const inf = story.infra || {};
@@ -264,8 +274,8 @@ export function buildTimeline(story) {
   if (story.photos?.length) add('photos', PT * story.photos.length + 0.3, v.photos);
   add('cta', 3.8, v.cta);
   // Kêu gọi giữa video: ngay sau tiện ích mạnh nhất (đầu cảnh gom cụm / hết cảnh tiện ích đầu), thanh kêu gọi nở to 2,8 s
-  const first = scenes.find(s => s.kind === 'poi'), cl = scenes.find(s => s.kind === 'cluster');
-  const ctaMid = cl ? cl.t0 + 0.2 : first ? first.t1 : null;
+  const first = scenes.find(s => s.kind === 'poi'), cl = scenes.find(s => s.kind === 'cluster'), orb = scenes.find(s => s.kind === 'orbit');
+  const ctaMid = cl ? cl.t0 + 0.2 : orb ? orb.t1 - 2.9 : first ? first.t1 : null;
   // thanh kêu gọi nhỏ hiện từ giây 8 (sau cảnh mở đầu) tới cảnh kêu gọi cuối
   const intro = scenes[0];
   return { scenes, duration: t, shift: SH, area: AREA, pinT, photoT: PT, ctaMid, barFrom: Math.max(8, intro.t1), voiceSegs: scenes.filter(s => s.vo).map(s => s.vo) };
@@ -293,6 +303,8 @@ export function sfxEvents3D(tl) {
     // gom cụm: 1 whoosh, lấp lánh lúc các đường chạy, mỗi nhãn bật 1 tiếng ding nhẹ theo nhịp
     // gom cụm: mỗi tiện ích 1 cú lia (whoosh) + line chạy (lấp lánh) + nhãn bật (ding nhẹ)
     if (s.kind === 'cluster') s.beats.forEach(b => { add(b, 'whoosh', 0.35, 1.0); add(b + 0.1, 'shimmer', 0.22, 1.1); add(b + CL_LBL, 'ding', 0.22); });
+    // lượn 360°: 1 whoosh lúc máy lùi ra góc xa, mỗi tiện ích bật nhãn 1 tiếng ding nhẹ
+    if (s.kind === 'orbit') { add(s.t0, 'whoosh', 0.45, 1.6); s.beats.forEach(b => add(b, 'ding', 0.2)); }
     if (s.kind === 'roads') { add(s.t0, 'whoosh', 0.45, 1.4); for (let j = 0; j * ROAD_STEP + 1.6 < d - 1; j++) { add(s.t0 + 1.4 + j * ROAD_STEP, 'shimmer', 0.22, 1.0); } }
     if (s.kind === 'build') { add(s.t0, 'whoosh', 0.45, 1.4); add(s.t0 + 0.6, 'shimmer', 0.3, 1.8); add(s.t0 + 2.4, 'ding', 0.4); }
     if (s.kind === 'house' || s.kind === 'lot') add(s.t0 + 0.05, 'whoosh', 0.25, 1.4);
@@ -366,7 +378,8 @@ export function createDirector3D({ width, height, story }) {
     if (gold) layers.push({ id: id + '-c', type: 'line', source: id, layout: lay, paint: { 'line-width': Math.max(1.5, width * 0.32), 'line-gradient': ZERO } });
     routeIds.push({ id, color, gold });
   };
-  (story.pois || []).forEach((p, i) => addRoute('r' + i, poiPaths[i].pts, LINE.mid, 5.5, 18, true));
+  // kiểu lượn 360°: tiện ích KHÔNG vẽ đường đi (chỉ bật nhãn), line chỉ còn ở trục đường lớn + điểm mốc vùng
+  if (story.flow !== 'vong') (story.pois || []).forEach((p, i) => addRoute('r' + i, poiPaths[i].pts, LINE.mid, 5.5, 18, true));
   (story.anchors || []).forEach((a, i) => addRoute('a' + i, ancPaths[i].pts, LINE.mid, 5.5, 20, true));
   if (inf.road) inf.road.ways.forEach((w, j) => addRoute('w' + j, w, CAT3D.road[1], 9, 26));
   if (metroPath) addRoute('m0', metroPath.pts, CAT3D.metro[1], 6, 18);
@@ -538,6 +551,15 @@ export function createDirector3D({ width, height, story }) {
           ease(b0, Math.min(CL_FLY, b1 - b0), base, QUAD);
           angles(b0 + Math.min(CL_FLY, b1 - b0), b1, base, p.at);
         });
+      } else if (s.kind === 'orbit') {
+        // góc xa ôm vòng tròn bán kính = tiện ích xa nhất (quay hướng nào cũng lọt khung), lượn trọn 360° quanh nhà trong cảnh
+        const R = Math.max(0.5, story.orbit.r * 1.05), base = fitCam(circleKm(H, R, 24), 0, 52, { top: 0.2 * height, bottom: 0.28 * height, left: 0.06 * width, right: 0.1 * width });
+        const T = Math.max(10, d);
+        follow(s.t0, d, (t, from) => {
+          const u = t - s.t0, tgt = { c: H, z: base.z + 0.15 * Math.sin(2 * Math.PI * u / T), p: 52, b: from.b + 360 * u / T };
+          const e = EASE(clamp01(u / 1.6));
+          return e >= 1 ? tgt : mixCam(from, tgt, e);
+        });
       } else if (s.kind === 'anchor') {
         const a = story.anchors[s.i], P = ancPaths[s.i].pts, step = Math.max(1, Math.floor(P.length / 30));
         const fd = fly(2.2, d), base = fitCam([H, a.at, ...P.filter((_, j) => j % step === 0)], bearingDemo(H, a.at) - 20, 50);
@@ -569,7 +591,7 @@ export function createDirector3D({ width, height, story }) {
       } else if (s.kind === 'roads') {
         // lùi lên cao thấy nhà + đoạn các trục gần nhà (trong 1,6 km), xoay chậm
         // mỗi trục lấy đoạn gần nhà (tới cách nhà ~ khoảng cách trục + 1,2 km) → vùng ven trục xa 2–3 km vẫn lọt khung
-        const near = story.roads.flatMap(r => r.ways.flat().filter(p => kmBetween(H, p) <= Math.min(3.5, Math.max(1.6, (r.km || 0) + 1.2)))).filter((_, j) => j % 2 === 0);
+        const near = story.roads.flatMap(r => r.ways.flat().filter(p => kmBetween(H, p) <= Math.min(12, Math.max(1.6, (r.km || 0) + 1.2)))).filter((_, j) => j % 2 === 0);
         // khu công nghiệp gần nhà (≤ 4,5 km) cũng lọt khung để khách thấy vùng + tên
         for (const z of zones) if (z.show?.includes('roads')) near.push(...z.rings.flat().filter((p, j) => j % 4 === 0 && kmBetween(H, p) <= 4.5));
         ease(s.t0, 1.8, fitCam([H, ...near.length ? near : [H]], -10, 52));
@@ -612,11 +634,14 @@ export function createDirector3D({ width, height, story }) {
   // vùng mốc (KCN gần nhà, cảng, sân bay) không gắn tiện ích: hiện trong cảnh toàn cảnh trục đường / tổng kết / cảnh điểm mốc của nó
   const showNow = (z, s) => !!z.show && (z.show.includes(s.kind) || (s.kind === 'anchor' && z.show.includes('anchor:' + story.anchors[s.i]?.id)));
   // cảnh có tiện ích id: cảnh riêng của nó hoặc cảnh gom cụm chứa nó
-  const poiScene = id => tl.scenes.find(x => (x.kind === 'poi' && story.pois[x.i]?.id === id) || (x.kind === 'cluster' && x.idx.some(i => story.pois[i]?.id === id)));
+  const poiScene = id => tl.scenes.find(x => (x.kind === 'poi' && story.pois[x.i]?.id === id) || ((x.kind === 'cluster' || x.kind === 'orbit') && x.idx.some(i => story.pois[i]?.id === id)));
   // lúc bắt đầu nói tới tiện ích id (cảnh riêng: đầu cảnh; gom cụm: beat của nó)
   const poiStart = id => { const sc = poiScene(id); if (!sc) return null; if (sc.kind === 'poi') return sc.t0; const j = sc.idx.findIndex(i => story.pois[i]?.id === id); return sc.beats[j]; };
   // tiện ích đang nói trong cảnh gom cụm tại t (chỉ số trong s.idx)
   const clusterCur = (s, t) => { let j = 0; while (j + 1 < s.idx.length && t >= s.beats[j + 1]) j++; return j; };
+  // kiểu lượn 360°: tiện ích i đã bật lên chưa (từ beat của nó tới hết video, trừ cảnh ảnh) → còn chấm ghim
+  const orbSc = tl.scenes.find(s => s.kind === 'orbit');
+  const orbShown = (i, t) => { if (!orbSc) return false; const j = orbSc.idx.indexOf(i); return j >= 0 && t >= orbSc.beats[j] + 0.3 && sceneAt(t).kind !== 'photos'; };
   function setZones(t) {
     const s = sceneAt(t), on = [];
     for (const z of zones) {
@@ -666,7 +691,7 @@ export function createDirector3D({ width, height, story }) {
     for (const { id, color, gold, road } of routeIds) {
       const q = pr[id] ?? 0;
       // cảnh tổng kết / kêu gọi: mọi line sáng lại vừa phải; cảnh khác: chỉ line hiện tại sáng; trục đường mờ sau cảnh của nó
-      const dim = road ? (sk === 'roads' ? 1 : 0.12) : gold && q >= 1 && !cur.includes(id) && !(sk === 'score' || sk === 'cta') ? 0.32 : 1;
+      const dim = road ? (sk === 'roads' ? 1 : sk === 'orbit' ? 0.85 : 0.12) : gold && q >= 1 && !cur.includes(id) && !(sk === 'score' || sk === 'cta') ? 0.32 : 1;
       const key = q.toFixed(4) + '|' + dim;
       if (lastGrad[id] === key) continue;
       lastGrad[id] = key;
@@ -760,7 +785,13 @@ export function createDirector3D({ width, height, story }) {
     }
     return best ? [fitEllipsis(ctx, best.a, maxW), fitEllipsis(ctx, best.b, maxW)] : [fitEllipsis(ctx, text, maxW)];
   }
+  // compact: nhãn gọn (biểu tượng + tên ngắn 1 dòng) cho tiện ích đã nhắc trong cảnh lượn 360°
   function measureLabel(ctx, it) {
+    if (it.compact) {
+      const isz = 26 * k; ctx.font = font(800, 14.5);
+      const lines = [fitEllipsis(ctx, shortName(it.name), 0.44 * width)];
+      return { ...it, lines, isz, fs: 14.5, glyph: 17, w: 5 * k + isz + 8 * k + ctx.measureText(lines[0]).width + 10 * k, h: isz + 8 * k };
+    }
     const isz = LB.icon * k;
     ctx.font = font(800, LB.name);
     const lines = wrap2(ctx, it.full ? it.name : shortName(it.name), LB.maxW * width - isz - 27 * k);
@@ -768,11 +799,12 @@ export function createDirector3D({ width, height, story }) {
     ctx.font = font(700, LB.sub); const w2 = it.sub ? ctx.measureText(it.sub).width : 0;
     const w = 6 * k + isz + 9 * k + Math.max(w1, w2) + 12 * k;
     const h = Math.max(isz + 12 * k, (24 + LB.line * (lines.length - 1) + (it.sub ? 20 : 0) + 11) * k);
-    return { ...it, lines, w, h, isz };
+    return { ...it, lines, w, h, isz, fs: LB.name, glyph: LB.glyph };
   }
-  const labMem = {};
+  const labMem = {}, labFade = {};
   const ovl = (a, b) => Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
-  function placeLabels(ctx, items, reserved) {
+  // optional: nhãn phụ (nhãn gọn) — chật thì mờ dần đi thay vì đè lên nhãn khác, có chỗ lại hiện dần (không nháy)
+  function placeLabels(ctx, items, reserved, t = 0) {
     const out = [], P = reserved.slice();
     const top = SAFE.top * height + 6 * k, bot = height * CAP_Y - 34 * k, gap = 18 * k;
     for (const it0 of items) {
@@ -784,13 +816,22 @@ export function createDirector3D({ width, height, story }) {
       let best = null;
       cands.forEach(([x0, y0], ci) => {
         const y = Math.max(top, Math.min(bot - h, y0)), x = Math.max(SAFE.x * width, Math.min(right(y) - w, x0)), box = [x, y, x + w, y + h];
-        let cost = P.reduce((s2, b) => s2 + ovl(box, b), 0) + (Math.abs(x - x0) + Math.abs(y - y0)) * 8 * k + ci * 60 * k * k;
+        const hit = P.reduce((s2, b) => s2 + ovl(box, b), 0);
+        let cost = hit + (Math.abs(x - x0) + Math.abs(y - y0)) * 8 * k + ci * 60 * k * k;
         if (labMem[it.key] === ci) cost -= 600 * k * k;
-        if (!best || cost < best.cost) best = { cost, box, ci };
+        if (!best || cost < best.cost) best = { cost, box, ci, hit };
       });
       labMem[it.key] = best.ci;
+      let v = 1;
+      if (it.optional) {
+        const g = labFade[it.key], target = best.hit > 0.18 * w * h ? 0 : 1;
+        v = !g || Math.abs(t - g.t) > 0.5 ? target : g.v + Math.sign(target - g.v) * Math.min(Math.abs(target - g.v), Math.abs(t - g.t) / 0.25);
+        labFade[it.key] = { v, t };
+        if (target === 0 && v <= 0.01) continue;
+        if (target === 0) { out.push({ ...it, px, py, box: best.box, a: it.a * v }); continue; }   // đang mờ đi: không giữ chỗ
+      }
       P.push(best.box);
-      out.push({ ...it, px, py, box: best.box });
+      out.push({ ...it, px, py, box: best.box, a: it.a * v });
     }
     return out;
   }
@@ -804,20 +845,21 @@ export function createDirector3D({ width, height, story }) {
     // mũi ghim: nét từ cạnh nhãn gần điểm nhất tới điểm + chấm tròn ở điểm
     const ax = Math.max(x0 + 14 * k, Math.min(x1 - 14 * k, L.px)), ay = L.py < y0 ? y0 : L.py > y1 ? y1 : cy;
     const ex = L.py >= y0 && L.py <= y1 ? (L.px < x0 ? x0 : x1) : ax;
-    ctx.beginPath(); ctx.moveTo(ex, ay); ctx.lineTo(L.px, L.py); ctx.lineWidth = 2.6 * k; ctx.strokeStyle = col; ctx.stroke();
-    ctx.beginPath(); ctx.arc(L.px, L.py, 5.5 * k, 0, 7); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 2.6 * k; ctx.stroke();
+    const lw = (L.compact ? 2 : 2.6) * k;
+    ctx.beginPath(); ctx.moveTo(ex, ay); ctx.lineTo(L.px, L.py); ctx.lineWidth = lw; ctx.strokeStyle = col; ctx.stroke();
+    ctx.beginPath(); ctx.arc(L.px, L.py, (L.compact ? 4.5 : 5.5) * k, 0, 7); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = lw; ctx.stroke();
     const sc = 0.35 + 0.65 * POP(e);
     ctx.translate(cx, cy); ctx.scale(sc, sc); ctx.translate(-cx, -cy);
-    rrect(ctx, x0, y0, w, h, 13 * k);
+    rrect(ctx, x0, y0, w, h, (L.compact ? 10 : 13) * k);
     ctx.shadowColor = 'rgba(0,0,0,.56)'; ctx.shadowBlur = 18 * k; ctx.shadowOffsetY = 6 * k;
     ctx.fillStyle = 'rgba(11,18,32,.92)'; ctx.fill();
-    ctx.shadowColor = 'transparent'; ctx.lineWidth = 2 * k; ctx.strokeStyle = col; ctx.stroke();
-    const isz = L.isz, ix = x0 + 6 * k, iy = cy - isz / 2;
-    rrect(ctx, ix, iy, isz, isz, 9 * k); ctx.fillStyle = col; ctx.fill();
-    drawIcon(ctx, ic, ix + isz / 2, iy + isz / 2, LB.glyph * k, '#0b1220');
-    const tx = ix + isz + 9 * k;
-    let ty = y0 + 24 * k;
-    ctx.textBaseline = 'alphabetic'; ctx.fillStyle = '#fff'; ctx.font = font(800, LB.name);
+    ctx.shadowColor = 'transparent'; ctx.lineWidth = (L.compact ? 1.5 : 2) * k; ctx.strokeStyle = col; ctx.stroke();
+    const isz = L.isz, ix = x0 + (L.compact ? 4 : 6) * k, iy = cy - isz / 2;
+    rrect(ctx, ix, iy, isz, isz, (L.compact ? 7 : 9) * k); ctx.fillStyle = col; ctx.fill();
+    drawIcon(ctx, ic, ix + isz / 2, iy + isz / 2, L.glyph * k, '#0b1220');
+    const tx = ix + isz + (L.compact ? 7 : 9) * k;
+    let ty = L.compact ? cy + L.fs * 0.36 * k : y0 + 24 * k;
+    ctx.textBaseline = 'alphabetic'; ctx.fillStyle = '#fff'; ctx.font = font(800, L.fs);
     for (const ln of L.lines) { ctx.fillText(ln, tx, ty); ty += LB.line * k; }
     if (L.sub) { ctx.fillStyle = '#FFE08A'; ctx.font = font(700, LB.sub); ctx.fillText(L.sub, tx, ty - LB.line * k + 20 * k); }
     ctx.restore();
@@ -1407,7 +1449,7 @@ export function createDirector3D({ width, height, story }) {
     if (rs && t >= rs.t0) roadText.forEach((rts, j) => {
       if (!rts.length) return;
       const cur = t < rs.t1;
-      items.push({ key: 'rd' + j, rts, text: story.roads[j].name, px: fitPx(story.roads[j].name, 26), color: story.roads[j].color, d3: true, rise: cur ? easeOut(roadOn(j, t)) : 1, a: cur ? roadOn(j, t) : fadeTo(t, rs.t1), pri: cur ? 2 : 0 });
+      items.push({ key: 'rd' + j, rts, text: story.roads[j].name, px: fitPx(story.roads[j].name, 26), color: story.roads[j].color, d3: true, rise: cur ? easeOut(roadOn(j, t)) : 1, a: cur ? roadOn(j, t) : s.kind === 'orbit' ? 0.85 : fadeTo(t, rs.t1), pri: cur ? 2 : s.kind === 'orbit' ? 1 : 0 });
     });
     const on = zoneKey.split('|');
     zones.forEach((z, j) => {
@@ -1500,6 +1542,16 @@ export function createDirector3D({ width, height, story }) {
       const j = clusterCur(s, t), i = s.idx[j], p = story.pois[i], t1 = s.beats[j] + CL_LBL;
       if (t >= t1) items.push({ key: 'p' + i, at: p.at, cat: p.cat, name: p.name, sub: sub(p), a: (t - t1) / 0.45 });
     }
+    // lượn 360°: tiện ích đang nói = nhãn đầy đủ (tên + phút · km); tiện ích đã nhắc = nhãn gọn, chật thì mờ đi (không đè)
+    if (s.kind === 'orbit') {
+      const j = clusterCur(s, t);
+      s.idx.forEach((i, jj) => {
+        if (t < s.beats[jj]) return;
+        const p = story.pois[i];
+        if (jj === j) items.unshift({ key: 'p' + i, at: p.at, cat: p.cat, name: p.name, sub: sub(p), a: (t - s.beats[jj]) / 0.45 });
+        else items.push({ key: 'p' + i, compact: true, optional: true, at: p.at, cat: p.cat, name: p.name, a: 1 });
+      });
+    }
     if (s.kind === 'anchor' && t >= s.t0 + 2.2) { const a = story.anchors[s.i]; items.push({ key: 'a' + s.i, at: a.at, cat: a.type, name: a.name, sub: sub(a), a: (t - s.t0 - 2.2) / 0.45 }); }
     if (s.kind === 'airport') { const rw = inf.airport; items.push({ key: 'air', full: true, at: [(rw.a[0] + rw.b[0]) / 2, (rw.a[1] + rw.b[1]) / 2], cat: 'airport', name: rw.name, sub: fmtSub(rw, false), a: (t - s.t0 - 2.2) / 0.45 }); }
     if (s.kind === 'metro') items.push({ key: 'metro', full: true, at: inf.metro.stations[Math.min(2, inf.metro.stations.length - 1)][1], cat: 'metro', name: inf.metro.name, sub: inf.metro.sub, a: (t - s.t0 - 1.6) / 0.45 });
@@ -1519,12 +1571,12 @@ export function createDirector3D({ width, height, story }) {
     if (s.kind === 'house' || s.kind === 'lot') reserved.push([0, PANEL_Y(), width, PANEL_Y() + 90 * k]);
     if (s.kind === 'score' || s.kind === 'cta') reserved.push([0, PANEL_Y(), width, PANEL_Y() + 116 * k]);
     if (s.kind === 'cta') reserved.push([0, height * CAP_Y - 100 * k, width, height]);
-    const labs = placeLabels(ctx, items, reserved);
+    const labs = placeLabels(ctx, items, reserved, t);
     groundLabels(ctx, t, s, labs.map(l => l.box));
     (story.pois || []).forEach((p, i) => head(ctx, poiPaths[i], pr['r' + i] ?? 0, GOLD));
     (story.anchors || []).forEach((a, i) => head(ctx, ancPaths[i], pr['a' + i] ?? 0, GOLD));
     // ghim nhỏ viền vàng ở các tiện ích đã tới (line tới nơi)
-    (story.pois || []).forEach((p, i) => { if ((pr['r' + i] ?? 0) >= 1) poiPin(ctx, p.at, p.cat); });
+    (story.pois || []).forEach((p, i) => { if ((pr['r' + i] ?? 0) >= 1 || orbShown(i, t)) poiPin(ctx, p.at, p.cat); });
     (story.anchors || []).forEach((a, i) => { if ((pr['a' + i] ?? 0) >= 1 && (s.kind === 'anchor' || s.kind === 'cta')) poiPin(ctx, a.at, a.type); });
     if (story.lot && (s.kind === 'intro' || s.kind === 'lot')) lotOverlay(ctx, s.kind === 'lot' ? 1 : clamp01((t - PIN_T - 0.2) / 0.6), s.kind === 'lot');
     if (!(story.lot && s.kind === 'lot')) pin(ctx, t);
