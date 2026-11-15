@@ -3,10 +3,10 @@
 // Dùng lại bộ quét (js/data.js), giọng đọc + lượt (js/dd-voice.js → /api/tts, vt_me, vt_export_begin), bộ xuất (js/export.js).
 import maplibregl from 'maplibre-gl';
 import { parseCoords, haversineKm } from './geo.js';
-import { scanArea, routeTo, pickHubs, loadHubFx, simplifyLine, CATEGORIES, loadZones, loadInfra, placesNear, guessCategory } from './data.js';
+import { scanArea, routeTo, pickHubs, loadHubFx, simplifyLine, CATEGORIES, loadZones, loadInfra, metroBuildNear, placesNear, guessCategory } from './data.js';
 import { HUBS } from './hubs.js';
 import { parseListing, summaryChips, KINDS } from './dd-parse.js';
-import { BUYERS, suggestBuyer, buildStory, MUSIC_LIB } from './dd-agent.js';
+import { BUYERS, suggestBuyer, buildStory, MUSIC_LIB, AUTO_TONE } from './dd-agent.js';
 import { createDirector3D, CAT3D, kmBetween, fmtKm, fmtSub } from './dd3d.js';
 import { rpc } from './account.js';
 import { SB_URL, SB_KEY } from './sb.js';
@@ -139,7 +139,8 @@ function loadRegion(h) {
     }
     S.infra = infra;
     // hạ tầng đang thi công gần nhà (OpenStreetMap, như app cũ)
-    S.build = await loadInfra(h).catch(() => []);
+    // hạ tầng đang thi công: metro đang xây (METRO_BUILD, ga trong 3 km) + đường / cao tốc đang thi công (OSM) — như app cũ
+    S.build = [...metroBuildNear(h, 3), ...(await loadInfra(h).catch(() => [])).filter(x => !x.metro)].slice(0, 3);
   })().catch(() => { S.infra = {}; });
 }
 
@@ -192,6 +193,7 @@ function renderBuyers() {
     $('buyers').append(el);
   }
   renderPoiPick();   // tiện ích gợi ý đổi theo khách mua
+  renderTones();     // phong cách gợi ý đổi theo khách mua
 }
 
 // ---------- Ảnh căn nhà (tối đa 12, chỉ lưu trên máy khách) ----------
@@ -303,7 +305,7 @@ async function voiceAll(onP) {
 let dir = null, story = null, playing = false, raf = 0, actx = null, src = null;
 const musicBuf = {};
 function currentStory() {
-  return buildStory(storeData(), S.listing, S.buyer, { ...S.edits, bird: $('bird').checked, watermark: $('brand').value.trim(), photos: S.photos.map(p => p.bmp) });
+  return buildStory(storeData(), S.listing, S.buyer, { ...S.edits, tone: $('tone').value, bird: $('bird').checked, watermark: $('brand').value.trim(), photos: S.photos.map(p => p.bmp) });
 }
 // gắn giọng đã có vào kịch bản; câu chưa có giọng thì nhịp cảnh ước theo số chữ
 function withVoice(st) {
@@ -341,7 +343,13 @@ function edited() { story = currentStory(); renderBoard(); setDirty(true); save(
 // mua để ở → P.A.S (đánh trúng nỗi đau), đầu tư cho thuê → A.I.D.A, kết nối khu vực → chuyên gia đầu tư. Lời dài hơn (long).
 const TONES = [['auto', '🤖 AI tự chọn theo khách'], ['pas', 'P.A.S · đánh trúng nỗi đau'], ['aida', 'A.I.D.A · chú ý → hành động'],
   ['ke-chuyen', 'Kể chuyện · cảm xúc'], ['chuyen-gia', 'Chuyên gia đầu tư'], ['chot-sale', 'Chốt sale mạnh']];
-const autoTone = b => (b === 'o' ? 'pas' : b === 'thue' ? 'aida' : 'chuyen-gia');
+const autoTone = b => AUTO_TONE[b] || 'pas';
+// nỗi lo thật của từng loại khách (gửi AI viết lời để câu móc / đoạn quay quanh căn đánh trúng, rồi lấy số liệu thật làm lời giải)
+const PAINS = {
+  o: ['con đi học xa, sáng nào cũng vội', 'đi chợ, khám bệnh bất tiện', 'nhà chật, không đủ phòng', 'giấy tờ không rõ ràng'],
+  vung: ['mua chỗ hạ tầng đứng yên', 'kết nối kém, xa trung tâm', 'giá mỗi mét vuông cao so với vị trí', 'pháp lý không rõ'],
+  thue: ['phòng trống, không có người thuê', 'xa nơi người thuê làm việc, đi học', 'ít phòng, khó cho thuê', 'pháp lý không rõ'],
+};
 // gắn nhãn "· Gợi ý" vào kiểu lời hợp với khách mua đang chọn (khách vẫn tự chọn)
 function syncTone() {
   const rec = autoTone(S.buyer);
@@ -349,6 +357,22 @@ function syncTone() {
     const base = (TONES.find(x => x[0] === o.value) || [])[1] || o.textContent;
     o.textContent = o.value === rec ? `${base} · Gợi ý` : o.value === 'auto' ? `${base} (${(TONES.find(x => x[0] === rec) || [])[1]?.split(' · ')[0] || rec})` : base;
   }
+  renderTones();
+}
+// Bước 2: chọn phong cách lời ngay dưới loại khách (đổi là lời Agent đổi theo; "AI viết lời" cũng theo phong cách này)
+function renderTones() {
+  const box = $('tones'); if (!box) return;
+  const rec = autoTone(S.buyer), cur = $('tone').value;
+  box.textContent = '';
+  for (const [v, t] of TONES) {
+    const b = Object.assign(document.createElement('button'), { type: 'button', className: 'rchip' + (cur === v ? ' on' : ''), textContent: (v === 'auto' ? '🤖 Tự chọn theo khách' : t.split(' · ')[0]) + (v === rec ? ' · Gợi ý' : '') });
+    b.onclick = () => setTone(v);
+    box.append(b);
+  }
+}
+function setTone(v) {
+  $('tone').value = v; S.edits.tone = v; save();
+  if (story && !$('studio').hidden) edited(); else renderTones();
 }
 const BDS = { nhapho: ['Căn nhà', 'đi xem nhà'], bietthu: ['Biệt thự', 'đi xem biệt thự'], nhavuon: ['Nhà vườn', 'đi xem nhà vườn'], canho: ['Căn hộ', 'đi xem căn hộ'], datnen: ['Lô đất', 'đi xem lô đất'] };
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -358,7 +382,7 @@ function aiPayload(st, L) {
     loai_bds: loai, tieu_de: L.title || null,
     thong_tin_nha: { gia: L.price || null, dien_tich: L.dims || (L.area ? `${L.area} m²` : null), loai_dat: L.thoCu || null, so_tang: (st.kind !== 'canho' && L.floors) || null,
       can_ho_o_tang: L.level || null, phong_ngu: L.beds || null, phap_ly: L.legal || null, duong_truoc_nha: L.road || null },
-    diem_noi_bat: L.highlights || [], khach_muc_tieu: { o: 'o', thue: 'cho_thue', vung: 'dau_tu' }[S.buyer] || null,
+    diem_noi_bat: L.highlights || [], khach_muc_tieu: { o: 'o', thue: 'cho_thue', vung: 'dau_tu' }[S.buyer] || null, noi_lo_khach_hang: PAINS[S.buyer] || null,
     xa_phuong: storeData().ward || L.ward || null, tinh_thanh: L.province || null,
     duong_lon: st.roads.map(r => ({ ten: r.name, cach: fmtKm(r.km) })),
     tien_ich: st.pois.map(p => ({ ten: p.name, cach: fmtKm(p.km), phut_xe_may: mm(p) })),
@@ -369,8 +393,8 @@ function aiPayload(st, L) {
   const put = (k, local, v) => { seg[k] = v; back[k] = local; };
   // 15/11 (Giang): mở đầu khoanh sáng tỉnh → xã/phường rồi bay xuống ghim; câu móc GIÁ / LỢI ÍCH trước, sau đó nói xã, tỉnh.
   // Cảnh căn nhà: máy lượn 360° quanh nhà, đọc ĐỦ thông tin rồi mới lùi ra tiện ích
-  put('intro', 'intro', { canh: 'Mở đầu: bản đồ khoanh sáng tỉnh/thành rồi xã/phường, máy bay xuống ghim bất động sản. Câu móc thật mạnh 2 giây đầu bằng GIÁ (nếu có) hoặc LỢI ÍCH mạnh nhất có số liệu thật, rồi nói bất động sản thuộc xã/phường, tỉnh nào' });
-  put('house', st.lot ? 'lot' : 'house', { canh: (st.lot ? 'Máy quay lượn 360 độ quanh lô đất (khoanh ranh lô)' : 'Máy quay lượn 360 độ quanh bất động sản, khối nhà nổi lên') + '. Đọc ĐẦY ĐỦ thông tin có trong dữ liệu: đường trước nhà, kích thước, diện tích, số tầng, phòng ngủ, pháp lý, điểm nổi bật' });
+  put('intro', 'intro', { canh: 'Mở đầu: bản đồ khoanh sáng tỉnh/thành rồi xã/phường, máy bay xuống ghim bất động sản. Câu móc thật mạnh 2 giây đầu đánh trúng MỘT nỗi lo trong noi_lo_khach_hang (hoặc GIÁ / LỢI ÍCH mạnh nhất có số liệu thật), rồi nói bất động sản thuộc xã/phường, tỉnh nào' });
+  put('house', st.lot ? 'lot' : 'house', { canh: (st.lot ? 'Máy quay lượn 360 độ quanh lô đất (khoanh ranh lô)' : 'Máy quay lượn 360 độ quanh bất động sản, khối nhà nổi lên') + '. Đọc ĐẦY ĐỦ thông tin có trong dữ liệu: đường trước nhà, kích thước, diện tích, số tầng, phòng ngủ, pháp lý, điểm nổi bật — mỗi thông số là lời giải cho nỗi lo của khách (noi_lo_khach_hang), đúng PHONG CÁCH được yêu cầu' });
   if (st.roads.length) put('roads', 'roads', { canh: 'Các trục đường lớn quanh nhà lần lượt sáng lên, tên đường in trên mặt đất', duong: facts.duong_lon });
   const inCl = i => st.cluster?.idx.includes(i);
   if (!st.orbit) st.pois.forEach((p, i) => { if (!inCl(i)) put('poi:' + p.id, 'poi:' + p.id, { canh: 'Tiện ích: đường đi thật từ nhà sáng lên', ten: p.name, cach: fmtKm(p.km), phut_xe_may: mm(p) }); });
@@ -953,6 +977,7 @@ $('coverColor').onclick = () => {
 };
 $('music').onchange = () => { S.music = $('music').value; save(); if (!dirty) play(); };
 for (const [v, t] of TONES) $('tone').append(Object.assign(document.createElement('option'), { value: v, textContent: t }));
+$('tone').onchange = () => setTone($('tone').value);
 $('aiWrite').onclick = aiWrite;
 $('redo').onclick = redo;
 $('loginBtn').onclick = () => goLogin();
@@ -968,4 +993,5 @@ document.querySelectorAll('.steps li').forEach(li => li.addEventListener('click'
 renderBuyers();
 $('phInput').addEventListener('change', e => addPhotos([...e.target.files]));
 restore();
+renderTones();
 window.__dd = { S, get story() { return story; }, get dir() { return dir; }, rebuild, exportVideo, setHouse, addPhotos };

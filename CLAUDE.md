@@ -221,6 +221,21 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 ## 5. Nhật ký bài học
 
+- 2026-11-15 vòng 4 (Giang xem bản 2a52b41): (1) **Hạ tầng đủ**: bỏ luật "bản ngắn chỉ 1 cảnh hạ tầng" — mua để ở / cho thuê lấy MỌI hạ tầng đủ gần
+  (metro ≤ 2 km, sân bay ≤ 20 phút, cao tốc ≤ 3 km), hạ tầng đang thi công trong 5 km luôn vào (tối đa 2 tuyến); `S.build` thêm metro đang xây
+  (`metroBuildNear(h, 3)` từ `METRO_BUILD`, như app cũ) → thẻ + lời ghi tên ga ("Tuyến Metro số 2 đang thi công, Ga Bà Quẹo chỉ cách …"). (2) **Camera chậm**:
+  bay tới tiện ích 2,5 s (điểm mốc / cao tốc 3 s), đổi góc mỗi ~4,6 s và biên độ nhỏ hơn, cảnh căn nhà ≥ 10 s lượn 360° trong max(15 s, cảnh), gom cụm
+  ≥ 3,3 s/điểm, lượn 360° góc xa ≥ 13 s, xoay ≤ 15°/giây (T ≥ 24 s), tầm nhìn tối đa bán kính 2,4 km (trước ôm tiện ích 5 km → thấy tới biển).
+  Video căn thử dài ~70–83 s (Giang muốn không nhanh). (3) **Thẻ tiện ích**: nhỏ hơn (16,5/13,5 px), LUÔN đứng thẳng trên chấm vị trí (sát mép trên
+  thì đứng dưới), đường chỉ thẳng đứng xuống chấm ĐỎ viền trắng; chạm thẻ khác thì nâng 1–2 tầng và giữ tầng (bỏ kiểu thử 6 hướng → thẻ nhảy
+  qua lại); nhãn gọn chạm > 5% là mờ đi. (4) **Loại khách**: `BUYERS` = Mua để ở / **Đầu tư sinh lời** (khoá 'vung' giữ nguyên, trước là "Kết nối khu vực")
+  / Đầu tư cho thuê; lô đất, nhà vườn gợi ý "sinh lời". (5) **Lời theo loại khách × phong cách** (`TPL` trong dd-agent.js, `edits.tone`; Tự chọn = ở P.A.S,
+  sinh lời Chuyên gia, thuê A.I.D.A): câu móc, câu căn nhà (máy lượn 360°) và câu dẫn trước kêu gọi viết riêng cho P.A.S / A.I.D.A / Kể chuyện / Chuyên gia /
+  Chốt sale × 3 loại khách, đánh trúng nỗi lo (ở: con đi học xa, chật, giấy tờ; thuê: phòng trống, xa chỗ làm; sinh lời: hạ tầng đứng yên) rồi lấy số liệu
+  thật làm lời giải; tự tính giá mỗi m² (`ppmOf`) khi có giá + diện tích. Bước 2 có hàng chip "Phong cách lời đọc" (`renderTones`, đánh dấu Gợi ý), đổi
+  phong cách là lời đổi theo (đồng bộ ô "Kiểu lời"). AI viết lời nhận thêm `facts.noi_lo_khach_hang` (`PAINS`) + mô tả cảnh dặn đánh trúng nỗi lo.
+  Thử: node in 15 tổ hợp lời (3 khách × 5 phong cách), trình duyệt rà `setFrame/draw` mỗi 0,5 s cho 4 tổ hợp khách/phong cách/kiểu hiện: 0 lỗi.
+
 - 2026-11-15 vòng 3 (Giang duyệt bản 09e52da trên web; thêm 2 việc, mặc định giữ nguyên như video đã duyệt): (1) Ô "Tìm / ghim tiện ích" có
   tab mới **"🛣 Đường lớn · sân bay"** (`renderBigList`, `openSheet('big')`, chip "🛣 Thêm đường lớn, sân bay, ga, cảng" ở thẻ tiện ích): trục đường
   lớn cấp ≥ 1 (cao tốc, quốc lộ, tỉnh lộ, kể cả trục xa — `S.scan.roads`, tối đa 5 → `edits.roads`; trục xa lấy đoạn tới khoảng cách trục + 1,5 km,
