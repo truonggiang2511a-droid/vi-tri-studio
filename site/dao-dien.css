@@ -127,6 +127,17 @@ textarea { resize: vertical; line-height: 1.45; }
 .edit .sc { background: var(--card); }
 .sel { display: flex; align-items: center; gap: 8px; color: var(--muted); }
 .sel select { width: auto; padding: 7px 10px; font-size: 14px; border-radius: 10px; }
+.sel input { width: 9.5em; padding: 7px 10px; font-size: 16px; border-radius: 10px; text-transform: uppercase; }
+.tog small { color: var(--muted); opacity: .8; }
+/* bài đăng: mô tả + bình luận ghim chép 1 chạm */
+.post { margin-top: 14px; border: 1px solid var(--line); border-radius: 16px; background: #0d1527; padding: 0 12px; text-align: left; }
+.post summary { cursor: pointer; padding: 13px 2px; font-weight: 800; font-size: 15px; list-style: none; }
+.post summary::-webkit-details-marker { display: none; }
+.post summary small { display: block; font-weight: 500; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.post[open] { padding-bottom: 12px; }
+.post .field.small { margin-top: 10px; }
+.post textarea { font-size: 14px; padding: 10px 12px; }
+.post .btn2 { margin-top: 8px; margin-right: 6px; }
 @media (min-width: 900px) {
   .studio-body { display: grid; grid-template-columns: 380px 1fr; gap: 22px; align-items: start; }
   .studio-body .left { position: sticky; top: 76px; }

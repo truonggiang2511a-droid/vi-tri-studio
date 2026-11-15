@@ -7,7 +7,9 @@ import { scanArea, routeTo, pickHubs, loadHubFx, simplifyLine, CATEGORIES, loadZ
 import { HUBS } from './hubs.js';
 import { parseListing, summaryChips, KINDS } from './dd-parse.js';
 import { BUYERS, suggestBuyer, buildStory, MUSIC_LIB } from './dd-agent.js';
-import { createDirector3D, CAT3D, kmBetween, fmtKm } from './dd3d.js';
+import { createDirector3D, CAT3D, kmBetween, fmtKm, fmtSub } from './dd3d.js';
+import { rpc } from './account.js';
+import { SB_URL, SB_KEY } from './sb.js';
 import { exportMp4, decodeAudioFile, mixAudio, canEncodeMp4 } from './export.js';
 import { token, voiceLines, voiceOf, canExport, chargeExport } from './dd-voice.js';
 import { MAX_PHOTOS, savePhotos, loadPhotoBlobs, shrink, toBitmap } from './dd-photos.js';
@@ -280,11 +282,13 @@ async function routesFor(ids) {
 }
 function storeData() {
   const sc = S.scan || { pois: [] };
-  return { house: S.house, pois: sc.pois, streets: sc.streets, roads: sc.roads, roadsAll: sc.roads, zones: S.zones, build: S.build, airportParts: S.airportParts, routes: S.routes, anchors: S.anchors, infra: S.infra, landZones: S.landZones,
+  return { house: S.house, pois: sc.pois, streets: sc.streets, roads: sc.roads, roadsAll: sc.roads, zones: S.zones, build: S.build, airportParts: S.airportParts, routes: S.routes, anchors: S.anchors, infra: S.infra, landZones: S.landZones, area: sc.area,
     ward: sc.area?.ward?.name || sc.admin?.commune || '' };
 }
 // mọi câu lời đọc của kịch bản hiện tại (theo thứ tự cảnh)
-const allLines = st => { const L = st.lines; return [L.intro, st.lot ? L.lot : L.house, L.roads, L.build, L.photos, ...L.poi, ...L.anchor, L.airport, L.metro, L.road, st.score ? L.score : null, L.cta].filter(Boolean); };
+// bản ngắn: tiện ích trong cảnh gom cụm không đọc câu riêng (chỉ đọc 1 câu cụm) → không tốn giọng cho câu không dùng
+const poiLinesUsed = st => st.lines.poi.filter((_, i) => !st.cluster?.idx.includes(i));
+const allLines = st => { const L = st.lines; return [L.intro, st.lot ? L.lot : L.house, L.roads, L.build, L.photos, ...poiLinesUsed(st), st.cluster ? L.cluster : null, ...L.anchor, L.airport, L.metro, L.road, st.score && !st.statsInCta ? L.score : null, L.cta].filter(Boolean); };
 // Giọng: đã đăng nhập thì AI đọc các câu CÒN THIẾU (câu cũ dùng lại); chưa đăng nhập thì để trống, báo đăng ký
 let voiceErr = '';
 async function voiceAll(onP) {
@@ -304,7 +308,8 @@ function currentStory() {
 function withVoice(st) {
   const L = st.lines;
   return { ...st, paceByText: true, voice: { intro: voiceOf(L.intro), house: voiceOf(L.house), lot: voiceOf(L.lot), poi: L.poi.map(voiceOf), anchor: L.anchor.map(voiceOf),
-    photos: voiceOf(L.photos), roads: voiceOf(L.roads), build: voiceOf(L.build), airport: voiceOf(L.airport), metro: voiceOf(L.metro), road: voiceOf(L.road), score: voiceOf(L.score), cta: voiceOf(L.cta) } };
+    photos: voiceOf(L.photos), roads: voiceOf(L.roads), build: voiceOf(L.build), airport: voiceOf(L.airport), metro: voiceOf(L.metro), road: voiceOf(L.road), score: voiceOf(L.score), cta: voiceOf(L.cta),
+    cluster: voiceOf(L.cluster) } };
 }
 async function rebuild(autoplay = false) {
   stop();
@@ -336,6 +341,14 @@ function edited() { story = currentStory(); renderBoard(); setDirty(true); save(
 const TONES = [['auto', '🤖 AI tự chọn theo khách'], ['pas', 'P.A.S · đánh trúng nỗi đau'], ['aida', 'A.I.D.A · chú ý → hành động'],
   ['ke-chuyen', 'Kể chuyện · cảm xúc'], ['chuyen-gia', 'Chuyên gia đầu tư'], ['chot-sale', 'Chốt sale mạnh']];
 const autoTone = b => (b === 'o' ? 'pas' : b === 'thue' ? 'aida' : 'chuyen-gia');
+// gắn nhãn "· Gợi ý" vào kiểu lời hợp với khách mua đang chọn (khách vẫn tự chọn)
+function syncTone() {
+  const rec = autoTone(S.buyer);
+  for (const o of $('tone').options) {
+    const base = (TONES.find(x => x[0] === o.value) || [])[1] || o.textContent;
+    o.textContent = o.value === rec ? `${base} · Gợi ý` : o.value === 'auto' ? `${base} (${(TONES.find(x => x[0] === rec) || [])[1]?.split(' · ')[0] || rec})` : base;
+  }
+}
 const BDS = { nhapho: ['Căn nhà', 'đi xem nhà'], bietthu: ['Biệt thự', 'đi xem biệt thự'], nhavuon: ['Nhà vườn', 'đi xem nhà vườn'], canho: ['Căn hộ', 'đi xem căn hộ'], datnen: ['Lô đất', 'đi xem lô đất'] };
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 function aiPayload(st, L) {
@@ -353,18 +366,24 @@ function aiPayload(st, L) {
   };
   const seg = {}, back = {};
   const put = (k, local, v) => { seg[k] = v; back[k] = local; };
-  put('intro', 'intro', { canh: 'Mở đầu: máy bay xuống ghim bất động sản. Câu móc thật mạnh 2 giây đầu' });
-  put('house', st.lot ? 'lot' : 'house', { canh: st.lot ? 'Cận cảnh lô đất (khoanh ranh lô)' : 'Cận cảnh bất động sản, khối nhà nổi lên' });
+  // 15/11 (Giang): mở đầu khoanh sáng tỉnh → xã/phường rồi bay xuống ghim; câu móc GIÁ / LỢI ÍCH trước, sau đó nói xã, tỉnh.
+  // Cảnh căn nhà: máy lượn 360° quanh nhà, đọc ĐỦ thông tin rồi mới lùi ra tiện ích
+  put('intro', 'intro', { canh: 'Mở đầu: bản đồ khoanh sáng tỉnh/thành rồi xã/phường, máy bay xuống ghim bất động sản. Câu móc thật mạnh 2 giây đầu bằng GIÁ (nếu có) hoặc LỢI ÍCH mạnh nhất có số liệu thật, rồi nói bất động sản thuộc xã/phường, tỉnh nào' });
+  put('house', st.lot ? 'lot' : 'house', { canh: (st.lot ? 'Máy quay lượn 360 độ quanh lô đất (khoanh ranh lô)' : 'Máy quay lượn 360 độ quanh bất động sản, khối nhà nổi lên') + '. Đọc ĐẦY ĐỦ thông tin có trong dữ liệu: đường trước nhà, kích thước, diện tích, số tầng, phòng ngủ, pháp lý, điểm nổi bật' });
   if (st.roads.length) put('roads', 'roads', { canh: 'Các trục đường lớn quanh nhà lần lượt sáng lên, tên đường in trên mặt đất', duong: facts.duong_lon });
-  st.pois.forEach(p => put('poi:' + p.id, 'poi:' + p.id, { canh: 'Tiện ích: đường đi thật từ nhà sáng lên', ten: p.name, cach: fmtKm(p.km), phut_xe_may: mm(p) }));
+  const inCl = i => st.cluster?.idx.includes(i);
+  st.pois.forEach((p, i) => { if (!inCl(i)) put('poi:' + p.id, 'poi:' + p.id, { canh: 'Tiện ích: đường đi thật từ nhà sáng lên', ten: p.name, cach: fmtKm(p.km), phut_xe_may: mm(p) }); });
+  if (st.cluster) put('poi:cum', 'cluster', { canh: 'MỘT cảnh gom nhiều tiện ích quanh nhà, ghim lần lượt bật lên. 1 câu ngắn: trong bán kính bao xa còn có những loại tiện ích nào (nói tên loại như chợ, trạm y tế, công viên; không cần đọc hết tên riêng)',
+    ban_kinh: fmtKm(st.cluster.r), tien_ich: st.cluster.idx.map(i => ({ ten: st.pois[i].name, cach: fmtKm(st.pois[i].km) })) });
   st.anchors.forEach(a => put('anchor:' + a.id, 'anchor:' + a.id, { canh: 'Điểm mốc vùng: đường đi thật', ten: a.name, duong_di_km: a.km, phut_o_to: a.min }));
   if (st.infra?.airport) put('airport', 'airport', { canh: 'Sân bay, máy bay cất cánh', ten: st.infra.airport.name, duong_di_km: st.infra.airport.km, phut_o_to: st.infra.airport.min });
   if (st.infra?.metro) put('metro', 'metro', { canh: 'Tuyến metro', ten: st.infra.metro.name, ga_gan_nhat: st.infra.metro.nearName, ga_cach: fmtKm(st.infra.metro.nearKm) });
   if (st.infra?.road) put('road', 'road', { canh: 'Tuyến cao tốc / đường lớn', ten: st.infra.road.name, cach: fmtKm(st.infra.road.km) });
   if (st.build.length) put('infra', 'build', { canh: 'Hạ tầng đang thi công gần nhà (nét đứt cam)', tuyen: facts.ha_tang_dang_thi_cong });
-  if (st.score) put('score', 'score', { canh: `Tổng kết: số tiện ích trong bán kính ${st.scoreR || 1} km quanh nhà`, so_lieu: Object.fromEntries(st.score.filter(x => x[1]).map(x => [x[0], x[1]])) });
+  if (st.score && !st.statsInCta) put('score', 'score', { canh: `Tổng kết: số tiện ích trong bán kính ${st.scoreR || 1} km quanh nhà`, so_lieu: Object.fromEntries(st.score.filter(x => x[1]).map(x => [x[0], x[1]])) });
   if (st.photos.length) put('photos', 'photos', { canh: 'Bản đồ đã xong, chuyển sang ảnh thực tế: 1 câu mời người xem cùng xem hình ảnh thực tế' });
-  put('outro', 'cta', { canh: `Kết video: nhắc giá (nếu có) và kêu gọi NHẮN TIN hẹn ${xem} (đúng chữ này). Không đọc số điện thoại.` });
+  const key = st.ctaKey.toLowerCase();
+  put('outro', 'cta', { canh: `Kết video: nhắc giá (nếu có) rồi kêu gọi ${st.ctaMode === 'binhluan' ? `BÌNH LUẬN chữ '${key}' hoặc nhắn tin` : `NHẮN TIN chữ '${key}'`} để nhận thông tin chi tiết và hẹn ${xem} (đúng các chữ này). Không đọc số điện thoại.` });
   return { facts, segments: seg, back };
 }
 async function aiWrite() {
@@ -375,6 +394,7 @@ async function aiWrite() {
     const { facts, segments, back } = aiPayload(currentStory(), S.listing || {});
     const tone = $('tone').value === 'auto' ? autoTone(S.buyer) : $('tone').value;
     const res = await fetch('/api/script', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token() },
+      // lời dài (Giang 15/11: giới thiệu đủ, không nhanh quá); máy quay tự giãn + đổi góc theo độ dài lời
       body: JSON.stringify({ facts, segments, tone, long: true, lat: S.house.lat, lng: S.house.lng }) });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(j.error || 'HTTP ' + res.status);
@@ -510,22 +530,39 @@ function renderBoard() {
   }
   b.append(sceneCard({ key: 'poipick', title: `📍 Tiện ích gần nhà · ${story.pois.length} đã chọn (tối đa ${POI_MAX})`, sub: ' · bấm ＋ để thêm', text: '', extra: poiChips(edited) }));
   b.lastChild.querySelector('textarea')?.remove();
-  story.pois.forEach((p, i) => b.append(sceneCard({ key: 'poi:' + p.id, title: p.name, sub: ' · ' + fmtKm(p.km) + (p.min ? ` · ${Math.round(p.min)} phút` : ''), text: L.poi[i], cat: p.cat, drag: true, removable: true })));
+  const sub = p => ' · ' + (p.min ? `${Math.round(p.min)} phút · ` : '') + fmtKm(p.km);
+  story.pois.forEach((p, i) => { if (!story.cluster?.idx.includes(i)) b.append(sceneCard({ key: 'poi:' + p.id, title: p.name, sub: sub(p), text: L.poi[i], cat: p.cat, drag: true, removable: true })); });
+  // bản ngắn: các tiện ích còn lại gom 1 cảnh — bấm tên để đưa tiện ích đó lên cảnh riêng (làm tiện ích chính)
+  if (story.cluster) {
+    const ex = document.createElement('div'); ex.className = 'chips road-chips';
+    for (const i of story.cluster.idx) {
+      const p = story.pois[i], c = Object.assign(document.createElement('button'), { type: 'button', className: 'rchip on', textContent: `${ICON_EMO[CAT3D[p.cat]?.[0]] || '📍'} ${p.name.length > 22 ? p.name.slice(0, 21) + '…' : p.name}${sub(p)}` });
+      c.title = 'Đưa lên cảnh riêng';
+      c.onclick = () => { S.edits.order = [p.id, ...story.pois.map(q => q.id).filter(x => x !== p.id)]; edited(); };
+      ex.append(c);
+    }
+    b.append(sceneCard({ key: 'cluster', title: `📍 Quanh nhà · gom ${story.cluster.idx.length} tiện ích vào 1 cảnh`, sub: ' · bấm tên để đưa lên cảnh riêng', text: L.cluster, extra: ex }));
+  }
   story.anchors.forEach((a, i) => b.append(sceneCard({ key: 'anchor:' + a.id, title: a.name, sub: ` · ${a.km} km · ${a.min} phút`, text: L.anchor[i], cat: a.type, drag: true, removable: true })));
   const inf = story.infra || {};
   if (story.build?.length) b.append(sceneCard({ key: 'build', title: '🚧 Hạ tầng đang thi công · ' + story.build[0].name, text: L.build, cat: 'road', removable: true }));
   if (inf.airport) b.append(sceneCard({ key: 'airport', title: 'Sân bay · máy bay cất cánh', text: L.airport, cat: 'airport', removable: true }));
   if (inf.metro) b.append(sceneCard({ key: 'metro', title: 'Metro · tàu chạy dọc tuyến', text: L.metro, cat: 'metro', removable: true }));
   if (inf.road) b.append(sceneCard({ key: 'road', title: 'Cao tốc', text: L.road, cat: 'road', removable: true }));
-  if (story.score) b.append(sceneCard({ key: 'score', title: 'Điểm sống quanh nhà', text: L.score }));
+  if (story.score && !story.statsInCta) b.append(sceneCard({ key: 'score', title: 'Điểm sống quanh nhà · 3 con số lớn', text: L.score }));
   if (S.photos.length) {
     const ex = document.createElement('div'); ex.className = 'thumbs';
     for (const ph of S.photos.slice(0, 8)) ex.append(Object.assign(document.createElement('img'), { src: ph.url, alt: '' }));
     const go = Object.assign(document.createElement('button'), { className: 'link2', textContent: 'Sửa ảnh' }); go.onclick = () => goStep(2); ex.append(go);
     b.append(sceneCard({ key: 'photos', title: `Ảnh thực tế · ${S.photos.length} ảnh, mỗi ảnh ~3 giây (cuối video)`, text: L.photos, extra: ex }));
   }
-  b.append(sceneCard({ key: 'cta', title: 'Kêu gọi nhắn tin', text: L.cta }));
+  b.append(sceneCard({ key: 'cta', title: `Kêu gọi · ${story.cta}`, text: L.cta }));
   enableDrag(b);
+  syncTone();
+  $('full').checked = !!story.full;
+  $('ctaMode').value = story.ctaMode;
+  if (document.activeElement !== $('ctaKey')) $('ctaKey').value = story.ctaKey;
+  fillPost();
 }
 function removeScene(key) {
   const [kind, id] = key.split(':');
@@ -752,7 +789,93 @@ async function exportVideo(localOnly = false) {
   } finally { xd?.destroy(); btn.disabled = false; }
 }
 
+// ---------- Bài đăng: mô tả + hashtag + bình luận ghim (chép 1 chạm), có link trang web căn để khách để lại SĐT ----------
+// Chữ lấy từ tin đăng + số liệu quét thật (không bịa). Không tự chèn số điện thoại vào mô tả.
+const tagOf = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D')
+  .replace(/^(phuong|xa|thi tran)\s+/i, '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+function postText(st, L, url) {
+  const ward = storeData().ward || L.ward || '', prov = L.province || '';
+  const title = L.title || KINDS[st.kind].label;
+  const where = [title.toLowerCase().includes(ward.toLowerCase()) ? '' : ward, prov].filter(Boolean).join(', ');
+  const info = [L.price && `💰 ${L.price}`, L.dims || (L.area && `${L.area} m²`), L.floors || L.level, L.beds && `${L.beds} phòng ngủ`, L.legal].filter(Boolean).join(' · ');
+  const tags = [...new Set(['batdongsan', 'nhadat', { nhapho: 'nhapho', bietthu: 'bietthu', nhavuon: 'nhavuon', canho: 'canho', datnen: 'datnen' }[st.kind], tagOf(prov), tagOf(ward), 'muabannhadat'].filter(Boolean))];
+  return [
+    `🏠 ${title.toUpperCase()}${where ? ` – ${where}` : ''}`, info, '',
+    ...st.pois.slice(0, 4).map(p => `📍 ${p.name}: ${fmtSub(p, st.bird)}`),
+    ...st.anchors.map(a => `🚗 ${a.min} phút tới ${a.name}`),
+    st.roads.length ? `🛣 Gần ${st.roads.slice(0, 3).map(r => r.name).join(', ')}` : null, '',
+    `👉 ${st.ctaMode === 'binhluan' ? 'Bình luận' : 'Nhắn tin'} “${st.ctaKey}” để nhận thông tin chi tiết & hẹn đi xem.`,
+    url ? `🌐 Xem ảnh, vị trí & để lại số điện thoại: ${url}` : null, '',
+    tags.map(x => '#' + x).join(' '),
+  ].filter(x => x != null && x !== false).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+const commentText = (st, url) => url ? `📌 Xem ảnh thực tế, vị trí trên bản đồ, tiện ích quanh nhà và để lại số điện thoại để được gọi lại: ${url}`
+  : `📌 Anh chị cần thông tin chi tiết: ${st.ctaMode === 'binhluan' ? 'bình luận' : 'nhắn tin'} “${st.ctaKey}”, em gửi ngay ạ.`;
+const PAGE_KEY = 'vitri.ddpages.v1';   // toạ độ căn → trang đã tạo (bấm lại = cập nhật, link giữ nguyên)
+const pageMap = () => { try { return JSON.parse(localStorage.getItem(PAGE_KEY) || '{}'); } catch { return {}; } };
+const houseKey = () => (S.house ? `${S.house.lat.toFixed(5)},${S.house.lng.toFixed(5)}` : '');
+const pageLink = () => { const r = pageMap()[houseKey()]; return r ? `${location.origin}/can/${r.slug}` : ''; };
+function fillPost() {
+  if (!story || !$('postText')) return;
+  const url = pageLink();
+  $('postText').value = postText(story, S.listing || {}, url);
+  $('postCmt').value = commentText(story, url);
+  $('pageBtn').textContent = url ? '🌐 Cập nhật trang web căn' : '🌐 Tạo trang web căn (khách để lại SĐT)';
+}
+async function copyTxt(ta, btn) {
+  try { await navigator.clipboard.writeText(ta.value); } catch { ta.select(); document.execCommand('copy'); }
+  const t0 = btn.textContent; btn.textContent = '✓ Đã chép'; setTimeout(() => { btn.textContent = t0; }, 1500);
+}
+// Trang web căn (cùng hàm vt_page_* như kiểu cũ): ảnh thực tế tải lên kho vt-pages (tối đa 8), tiện ích + trục đường quét thật
+async function makePage() {
+  const btn = $('pageBtn'), msg = $('postMsg');
+  if (!token()) { if (confirm('Đăng ký miễn phí để tạo trang web cho căn này. Đi đăng ký?')) goLogin(); return; }
+  btn.disabled = true;
+  const key = houseKey(), map = pageMap(), rec = map[key] || {};
+  try {
+    const st = story, L = S.listing || {};
+    const sig = S.photos.map(p => p.blob?.size || 0).join('|');
+    let photos = rec.photos || [];
+    if (sig !== rec.sig) {
+      photos = [];
+      if (S.photos.length) {
+        msg.textContent = 'Đang tải ảnh lên…';
+        const paths = await rpc('vt_page_upload', { p_token: token(), p_count: Math.min(8, S.photos.length) });
+        for (let i = 0; i < paths.length && i < S.photos.length; i++) {
+          const r = await fetch(`${SB_URL}/storage/v1/object/vt-pages/${paths[i]}`, { method: 'POST', headers: { apikey: SB_KEY, 'content-type': 'image/jpeg' }, body: S.photos[i].blob });
+          if (!r.ok) throw new Error('Tải ảnh lên chưa được, kiểm tra mạng rồi thử lại.');
+          photos.push(paths[i]);
+        }
+      }
+    }
+    msg.textContent = 'Đang lưu trang…';
+    const ward = storeData().ward || L.ward || '';
+    const p = await rpc('vt_page_save', { p_token: token(), p: {
+      id: rec.id || null, title: L.title || [KINDS[st.kind].label, ward].filter(Boolean).join(' · '),
+      price: L.price || '', area: L.dims || (L.area ? `${L.area} m²` : ''), beds: st.kind === 'datnen' || !L.beds ? '' : String(L.beds), legal: L.legal || '',
+      address: [ward, L.province].filter(Boolean).join(', '), lat: S.house.lat, lng: S.house.lng, phone: L.phones?.[0] || '', brand: $('brand').value.trim(),
+      style: 'vangneon', video_url: '', description: (L.highlights || []).join('\n'), photos,
+      pois: st.pois.map(x => ({ name: x.name, cat: x.cat, catName: CATEGORIES[x.cat]?.label || '', km: Math.round(x.km * 100) / 100 })),
+      roads: st.roads.map(r => ({ label: r.name, km: Math.round((r.km || 0) * 100) / 100 })),
+    } });
+    map[key] = { id: p.id, slug: p.slug, photos, sig };
+    try { localStorage.setItem(PAGE_KEY, JSON.stringify(map)); } catch { /* bỏ qua */ }
+    msg.textContent = rec.id ? '✓ Đã cập nhật trang web, link giữ nguyên.' : '✓ Đã tạo trang web — link đã nằm trong mô tả và bình luận ghim.';
+    fillPost();
+  } catch (e) {
+    // trang đã bị xoá ở máy khác: quên trang cũ, bấm lại sẽ tạo trang mới
+    if (rec.id && /Không tìm thấy/.test(e.message || '')) { delete map[key]; try { localStorage.setItem(PAGE_KEY, JSON.stringify(map)); } catch { /* bỏ qua */ } }
+    msg.textContent = 'Chưa tạo được trang: ' + (e.message || e);
+  } finally { btn.disabled = false; }
+}
+
 // ---------- gắn sự kiện ----------
+$('full').onchange = () => { S.edits.full = $('full').checked; edited(); };
+$('ctaMode').onchange = () => { S.edits.ctaMode = $('ctaMode').value; edited(); };
+$('ctaKey').addEventListener('change', () => { S.edits.ctaKey = $('ctaKey').value.trim().toUpperCase().slice(0, 18) || undefined; edited(); });
+$('copyPost').onclick = () => copyTxt($('postText'), $('copyPost'));
+$('copyCmt').onclick = () => copyTxt($('postCmt'), $('copyCmt'));
+$('pageBtn').onclick = makePage;
 $('go1').onclick = () => step1();
 $('coord').addEventListener('keydown', e => { if (e.key === 'Enter') step1(); });
 $('listing').addEventListener('input', onListing);

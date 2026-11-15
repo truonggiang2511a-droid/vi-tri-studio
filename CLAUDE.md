@@ -221,6 +221,54 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 ## 5. Nhật ký bài học
 
+- 2026-11-15 vòng 2 (Giang xem ảnh thử: thẻ tên dài che gần hết màn hình, còn đè chữ, máy quá xa; muốn máy lia theo đúng chỗ đang nói,
+  gần cận / xa lùi, lời dài thì đổi nhiều góc tới hết lời; mở đầu khoanh sáng tỉnh → xã rồi lượn 360° quanh căn đọc ĐỦ thông tin; vùng quan trọng
+  tô màu nổi + tên to, nhãn ghim như tiện ích; khán giả lớn tuổi cần chữ to) — vẫn nhánh `dd-video-gon`, chỉ file AI đạo diễn:
+  (1) **Nhãn ghim mới** (`measureLabel`/`placeLabels`/`drawLabel` thay `label`): chỉ điểm ĐANG nói có thẻ (điểm cũ còn chấm ghim, bỏ thẻ biểu tượng
+  chồng nhau), tên gọn `shortName` (bỏ "huyện …", phần sau "-"/","; hạ tầng `full: true` giữ tên đủ), tối đa 2 dòng chia cân (`wrap2`) trong 66% bề ngang,
+  chữ 18/15 px (khung 405), mũi ghim + chấm tròn chỉ đúng điểm; chỗ đặt thử 6 hướng lấy ít đè nhất với ghim nhà / thẻ trên / nút kêu gọi, nhớ hướng
+  (`labMem`) cho khỏi nhảy; ô nhãn truyền vào `groundLabels(…, reserve)` → chữ in mặt đất né hoặc mờ đi. (2) **Mở đầu có ranh** (`story.area` từ
+  `S.scan.area` = /api/map/area, đổi [lat,lng] → [lng,lat]; `tl.area`, mốc `A_PROV/A_TOWARD/A_WARD/A_DOWN/A_PIN`, ghim rơi `tl.pinT` = SH + 8 s):
+  khung tỉnh nhìn thẳng (chỉ điểm ranh ≤ 60 km quanh căn — `PROV_PTS`; ranh TP.HCM mới có cả biển/Côn Đảo, ôm cả thì máy lùi ra z6,7), viền đứt +
+  phủ xanh, ngoài tỉnh tối (`prov-*`, lớp mặt nạ có lỗ) → bay vào xã: phủ vàng nổi 260 m + viền sáng, ngoài xã tối (`ward-*`) → bay xuống căn; tên
+  tỉnh/xã chữ phẳng Montserrat 900 to (`areaName`). Độ sáng theo t ở `setArea` (setPaintProperty chỉ khi đổi). Không có ranh → mở đầu cũ.
+  (3) **Căn nhà/lô: lượn trọn 360°** (`follow`, bearing + 360·u/T, T = max(8,5 s, cảnh)), tối thiểu 8,5 s; lời căn nhà đọc đủ: đường trước nhà,
+  kích thước, diện tích, tầng, phòng ngủ, WC, hướng, loại đất, pháp lý, đường; câu mở đầu = câu móc + "Vị trí ở <xã>, <tỉnh>" (trùng lúc khoanh sáng).
+  AI viết lời gửi `long: true` lại (Giang muốn không nhanh quá), mô tả cảnh intro/house theo ý trên. (4) **Camera**: `fitCam` lề nhỏ hơn, trần z18,2;
+  `angles()` — lời dài thì sau khi tới nơi đổi góc mỗi ~3,4 s (lượn + đẩy vào / cận vào điểm đang nói / lùi ra thấy nhà + điểm), áp cho tiện ích,
+  điểm mốc, cao tốc, hạ tầng; cao tốc chỉ ôm đoạn gần nhà (≤ khoảng cách + 1,5 km). Cảnh gom cụm: máy lia tới TỪNG tiện ích (`s.beats` = vị trí chữ
+  loại tiện ích trong câu × thời lượng giọng, ≥ 1,8 s/điểm, điểm đầu lia ngay), line + nhãn của điểm đó, rồi sang điểm sau. (5) **Vùng quan trọng**: thêm
+  lớp phủ màu `zones-f` 0,38, nổi 70 m (0,62); vùng mốc (KCN gần nhà…) có nhãn ghim tên + "cách nhà" ở giữa vùng trong cảnh của nó; đang nói tới vùng
+  thì không in lặp tên trên mặt đất, sau đó tên in mặt đất to hơn (48). Đo căn thử Bình Chánh (chưa giọng): 53,8 s; lời dài 55 chữ cho 1 tiện ích → cảnh
+  20,4 s, máy đổi z 15,6–16,7, nghiêng 46–62°, xoay 100→170°. Thử: dữ liệu ranh thật lấy từ web (`curl` /api/map/area kèm Referer vitristudio.com)
+  nạp vào `S.scan.area` ở máy thử. Bài học: chụp khung bằng `__dd.dir.prepare/draw` phải dừng video tự phát trước (vòng phát gọi setFrame chen vào).
+
+- 2026-11-15 (Giang: làm cho AI đạo diễn đỡ nhàm theo bản góp ý — video dài, cảnh tiện ích lặp, 2 giây đầu yếu, chữ nhỏ, kêu gọi chỉ ở cuối,
+  thiếu bài đăng; KIỂU CŨ KHÔNG ĐỤNG; nhánh `dd-video-gon`, chỉ sửa `js/dd-agent.js`, `js/dd3d.js`, `js/dao-dien.js`, `dao-dien.html/.css` + `site/dao-dien.*`):
+  (1) **Bản ngắn mặc định** (`story.full = false`; ô `#full` "Bản đầy đủ" = như trước): tối đa 4 tiện ích (lô đất 3, kết nối vùng 2), 2 trục đường,
+  1 điểm mốc vùng (trung tâm nếu ≤ 45 phút, không thì sân bay/cảng; kết nối vùng 2), đã có cảnh hạ tầng (cao tốc/metro/sân bay) thì bỏ cảnh
+  "đang thi công", ảnh thực tế tối đa 4 × 2,3 s (`tl.photoT`), AI viết lời KHÔNG gửi `long` (giới hạn chữ thường). Đo căn thử Bình Chánh
+  (chưa giọng, nhịp ước theo chữ): 69 s → 45,9 s (bản đầy đủ 85 s). (2) **Gom cụm**: ≥ 3 tiện ích thì tiện ích đầu (mạnh nhất theo khách) có cảnh
+  riêng, còn lại MỘT cảnh `cluster` (`story.cluster.idx`): máy ôm nhà + các điểm, đường đi chạy lần lượt 0,35 s, nhãn bật mỗi 0,5 s (~120 nhịp/phút,
+  chưa bắt nhịp nhạc thật) + ding, nhãn né nhau (`label(..., avoid)`), 1 câu "Trong X km quanh đây còn có chợ, công viên…" (`catWord`); chỉ đọc giọng
+  câu cụm (không tốn giọng cho câu tiện ích không dùng — `poiLinesUsed`). Bấm tên tiện ích trong thẻ cụm = đưa lên cảnh riêng. (3) **2 giây đầu**: ảnh
+  bìa thêm dòng vàng lợi ích mạnh nhất (`cover.hook`, vd "590 m tới trường mầm non", "25 phút về trung tâm"), chữ ảnh bìa hiện đủ ngay KHUNG ĐẦU;
+  câu mở đầu nói giá + 1 lợi ích, tên xã/phường chuyển sang câu căn nhà ("Nằm ở …:"); AI nhận mô tả cảnh tương ứng (SYSTEM của lib/script.js vẫn
+  ghi intro nói phường — không sửa vì kiểu cũ dùng chung, mô tả cảnh của AI đạo diễn ghi rõ KHÔNG nói phường). (4) **Chữ to hơn** ~1,25 lần: nhãn
+  tiện ích 15/13 px (khung 405), tên dài cắt "…", dòng phụ vàng; thẻ thông tin 27/14,5; số mét lô 14. **Phút trước km** (`fmtSub`; ước lượng ghi "≈",
+  dấu "~" đứng đầu trông như dấu trừ); lời đọc ≥ 1 km nói phút, gần hơn nói mét. (5) **Tổng kết = 3 con số lớn** (`story.stats`, `statsCard`, số chạy):
+  2 nhóm nhiều tiện ích nhất (bỏ nhóm chỉ 1 điểm) + phút về trung tâm (không có thì tới tiện ích mạnh nhất). Bản ngắn hiện 3 ô ngay trong cảnh kết
+  (`statsInCta`, không có cảnh tổng kết riêng). (6) **Kêu gọi**: từ khoá + cách (`#ctaMode` Bình luận / Nhắn tin, `#ctaKey` mặc định XEM NHÀ/XEM ĐẤT/
+  XEM CĂN HỘ…), thanh nhỏ "💬 Bình luận “XEM NHÀ”" từ giây 8 tới cảnh kết ở đáy dải an toàn (dưới phụ đề), nở vàng thành cả câu 2,8 s ngay sau tiện ích
+  mạnh nhất (`tl.ctaMid`, + ding) — kêu gọi giữa video chỉ bằng chữ, không thêm câu đọc (giữ video ngắn); nút cuối 2 dòng. Không đưa SĐT lên hình.
+  (7) **Bài đăng** (`#postBox` trong khung xuất): mô tả + hashtag (bỏ dấu) + bình luận ghim, chép 1 chạm; nút "Tạo trang web căn" gọi `vt_page_upload`/
+  `vt_page_save` như kiểu cũ (ảnh tối đa 8, style vangneon, SĐT lấy từ tin đăng chỉ lên TRANG web, nhớ trang theo toạ độ ở `localStorage['vitri.ddpages.v1']`)
+  → link tự vào mô tả + bình luận. (8) Kiểu lời: thêm "· Gợi ý" theo khách (để ở P.A.S, cho thuê A.I.D.A, kết nối vùng Chuyên gia). Thử: máy chủ tĩnh
+  `site/` + trình duyệt (quét được 150 tiện ích từ OSM/Overture, `/api/*` 404 nên không có đường đi/phút thật/giọng), chụp khung bằng `__dd.dir.prepare/draw`,
+  đổi 4 kiểu khách/loại nhà, xuất thử 720p (`__dd.exportVideo(true)`, chỉ chạy ở localhost). CHƯA thử: giọng thật, AI viết lời thật, tạo trang web căn
+  (cần đăng nhập), iPhone. Build trên Windows: `python3` là bản giả của Store → PATH tới python thật + `PYTHONUTF8=1`; build làm đổi `site/admin.js`,
+  `landing.*`, icon… (khác phiên bản/dòng) → chỉ commit `site/dao-dien.*`.
+
 - 2026-11-11 (Giang duyệt, đẩy main dff9ccf): **AI đạo diễn** `/dao-dien` — chế độ MỚI cho khách mới chưa rành công nghệ, tách hẳn kiểu cũ
   (kiểu cũ chỉ thêm nút vàng `#ddEntry` ở bước 1, bấm khi đã dán toạ độ thì mang sang `?c=`). 3 bước: dán toạ độ → dán NGUYÊN tin đăng
   (`dd-parse.js` đọc loại nhà / giá / kích thước / pháp lý bằng luật, KHÔNG đưa SĐT lên video) + chọn khách (để ở / cho thuê / kết nối khu vực)

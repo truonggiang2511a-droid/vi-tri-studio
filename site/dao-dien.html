@@ -106,6 +106,15 @@ catch (e) { location.replace('/'); }
           <p class="tip">Trừ 1 lượt khi xuất xong. Xuất lại căn này trong 24 giờ không trừ thêm.</p>
           <div class="xbar" id="xbar" hidden><i id="xfill"></i><span id="xtxt"></span></div>
           <div id="out"></div>
+          <details class="post" id="postBox">
+            <summary>📋 Bài đăng TikTok / Facebook <small>mô tả, hashtag, bình luận ghim — chép 1 chạm</small></summary>
+            <label class="field small"><span>Mô tả + hashtag</span><textarea id="postText" rows="9" readonly></textarea></label>
+            <button class="btn2" id="copyPost" type="button">📋 Chép mô tả</button>
+            <label class="field small"><span>Bình luận ghim</span><textarea id="postCmt" rows="3" readonly></textarea></label>
+            <button class="btn2" id="copyCmt" type="button">📋 Chép bình luận</button>
+            <button class="btn2" id="pageBtn" type="button">🌐 Tạo trang web căn (khách để lại SĐT)</button>
+            <p class="msg" id="postMsg" role="status"></p>
+          </details>
         </div>
         <details class="edit" id="editBox">
           <summary>✏️ Sửa video <small>thêm, bỏ, đổi thứ tự tiện ích · sửa lời · nhạc</small></summary>
@@ -114,6 +123,13 @@ catch (e) { location.replace('/'); }
             <button class="btn2" id="aiWrite" type="button">✨ AI viết lời hay hơn</button>
           </div>
           <p class="msg" id="aiMsg" role="status"></p>
+          <div class="meta">
+            <label class="tog"><input type="checkbox" id="full"> Bản đầy đủ <small>(YouTube, Zalo · nhiều tiện ích hơn, dài hơn)</small></label>
+          </div>
+          <div class="meta">
+            <label class="sel">💬 Kêu gọi <select id="ctaMode"><option value="binhluan">Bình luận từ khoá</option><option value="nhantin">Nhắn tin từ khoá</option></select></label>
+            <label class="sel">Từ khoá <input id="ctaKey" maxlength="18" placeholder="XEM NHÀ" aria-label="Từ khoá kêu gọi"></label>
+          </div>
           <div class="meta">
             <label class="sel">🎵 Nhạc nền <select id="music"></select></label>
             <label class="tog"><input type="checkbox" id="bird"> Vẽ đường chim bay</label>
