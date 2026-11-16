@@ -53,14 +53,17 @@ export function countVisit(page) {
 // Mỗi bước đếm 1 lần/phiên, gộp theo ngày + nguồn vào vt_visits với tên trang 'f_<bước>' (không lưu thông tin cá nhân).
 // KHÔNG gửi gì cho Meta/TikTok — không ảnh hưởng sự kiện quảng cáo. Máy đã từng có tài khoản → nguồn 'co-tk'.
 const fnDone = new Set();
-export function funnel(step) {
-  if (fnDone.has(step)) return;
-  fnDone.add(step);
-  try {
-    const k = 'vitri.fn.' + step;
-    if (sessionStorage.getItem(k)) return;
-    sessionStorage.setItem(k, '1');
-  } catch { /* bỏ qua */ }
+// every = true: đếm MỌI lần (đo thời gian xuất video / lần văng — một phiên có thể xuất nhiều video)
+export function funnel(step, every = false) {
+  if (!every) {
+    if (fnDone.has(step)) return;
+    fnDone.add(step);
+    try {
+      const k = 'vitri.fn.' + step;
+      if (sessionStorage.getItem(k)) return;
+      sessionStorage.setItem(k, '1');
+    } catch { /* bỏ qua */ }
+  }
   let had = false;
   try { had = !!localStorage.getItem('vitri.hasAcct'); } catch { /* bỏ qua */ }
   rpcFire('vt_visit', { p_page: 'f_' + step, p_source: had ? 'co-tk' : (readSrc() || detectSource() || 'truc-tiep') });

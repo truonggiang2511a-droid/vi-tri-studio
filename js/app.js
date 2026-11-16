@@ -16,6 +16,7 @@ import { processPlan, FULL_QUAD, planNeedsAlpha } from './planimg.js';
 import { onAccountChange, initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount } from './account.js';
 import { splitVoice, joinForTts, splitAt } from './voicesplit.js';
 import { loadConfig, initTracking, countVisit, funnel } from './track.js';
+import { xuatStart, xuatCheckCrash } from './xuatlog.js';
 import { initInstall } from './install.js';
 import { enableCoach, coach, coachDone, coachOpen, coachActive } from './coach.js';
 import { initLeads, downloadPageQr, pageUrl, openLeads } from './leads.js';
@@ -3329,7 +3330,7 @@ async function doExport() {
   $('exportBtn').disabled = true; $('stepNext').disabled = true;
   $('exportBox').hidden = false;
   $('resultBox').hidden = true;
-  let wake = null;
+  let wake = null, xlog = null;
   try { wake = await navigator.wakeLock?.request('screen'); } catch { /* không bắt buộc */ }
   try {
     const xsc = buildScene();
@@ -3341,6 +3342,7 @@ async function doExport() {
     const width = state.fmt === 'h' ? Math.round(q * 16 / 9) : q;
     const height = Math.round(width * F.LH / F.LW);
     const scale = width / F.LW;
+    xlog = xuatStart('', q);   // 16/11: đo thời gian xuất + bắt văng trên máy khách (không đổi chất lượng video)
     progress(1, 'Đang chuẩn bị ảnh vệ tinh…');
     // Ô ảnh lúc xuất đi phiên bản đồ (không tính vào 2 triệu ô ArcGIS); xin phiên lỗi thì vẫn dùng khoá như cũ
     preferSession(true);
@@ -3360,6 +3362,8 @@ async function doExport() {
     }
     let blob;
     const onProgress = (stage, d, n) => {
+      if (stage === 'frames' || stage === 'tiles') xlog?.pct(30 + 66 * d / n);
+      else if (stage === 'mux') xlog?.pct(97);
       if (stage === 'frames') progress(30 + 66 * d / n, `Đang dựng video ${Math.round(100 * d / n)}%`);
       else if (stage === 'tiles') progress(30 + 66 * d / n, `Đang tải ảnh vệ tinh… (${Math.round(100 * d / n)}%)`);
       else if (stage === 'audio') progress(29, 'Đang mã hoá âm thanh…');
@@ -3399,6 +3403,7 @@ async function doExport() {
     } catch (e) { console.warn('Ảnh bìa lỗi', e); lastIssue = 'Tạo ảnh bìa lỗi: ' + (e.message || e); setCover(null); }
     progress(100, 'Xong');
     funnel('xuat_xong');
+    xlog?.done();
     if (account.profile && await saveProject({ silent: true })) toast(`Đã dựng xong video${coverFile ? ' và ảnh bìa' : ''}. Căn này đã lưu vào mục Căn đã lưu.`, 4000);
     else toast(coverFile ? 'Đã dựng xong video và ảnh bìa (nút "Lưu ảnh bìa" ngay dưới video).' : 'Đã dựng xong video.', 4000);
     $('resultBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -3407,6 +3412,7 @@ async function doExport() {
     if (e.name === 'AbortError') toast('Đã huỷ xuất video.' + keep, keep ? 5000 : 2600);
     else { console.error(e); funnel('xuat_loi'); lastIssue = 'Xuất video lỗi: ' + (e.message || e); toast('Xuất video lỗi: ' + (e.message || e) + keep + ' Bấm Hỗ trợ (Zalo) để nhắn Giang.', 8000); pulseSupport(); }
   } finally {
+    xlog?.end();
     exporting = false;
     preferSession(false);
     for (const c of media.clips) { try { c.el.pause(); } catch { /* bỏ qua */ } }
@@ -5313,6 +5319,7 @@ function init() {
     if (v) { e.preventDefault(); location.href = '/dao-dien?c=' + encodeURIComponent(v); }
   });
   initInstall({ toast, onChange: () => {} });
+  xuatCheckCrash();   // lần xuất trước không kết thúc bình thường (văng / tắt trang) → đếm cho báo cáo 7h
   setAccountLocation(state.house);
   initLeads({ toast });
   initAccount({ toast }).then(() => {

@@ -16,6 +16,7 @@ import { setImageryToken, preferSession, warmSession, onTileSource } from './ren
 import { token, voiceLines, voiceOf, prefetchVoices, canExport, chargeExport } from './dd-voice.js';
 import { MAX_PHOTOS, savePhotos, loadPhotoBlobs, shrink, toBitmap } from './dd-photos.js';
 import { track, funnel } from './track.js';
+import { xuatStart, xuatCheckCrash } from './xuatlog.js';
 
 const $ = id => document.getElementById(id);
 const S = { house: null, scan: null, scanJob: null, routes: {}, anchors: [], infra: null, listing: null, buyer: null, edits: {}, manual: [], music: 'hung-hon', photos: [] };   // photos: [{ blob, url, bmp }]
@@ -352,8 +353,8 @@ async function runAgent() {
   await rebuild();
 }
 const tick = ms => new Promise(r => setTimeout(r, ms));
-// 16/11: đo thời gian THẬT trên máy khách (phễu nội bộ, không gửi Meta/TikTok): dd_quet_10 = quét xong trong ≤ 10 s, _99 = lâu hơn mức cuối;
-// xuất video đếm theo phút (dd_xt_2 = ≤ 2 phút). Báo cáo 7h sáng đọc các bậc này.
+// 16/11: đo thời gian THẬT trên máy khách (phễu nội bộ, không gửi Meta/TikTok): dd_quet_10 = quét xong trong ≤ 10 s, _99 = lâu hơn mức cuối.
+// Thời gian xuất video + lần văng đo bằng js/xuatlog.js (dxt_* / dxv_* / dxr_*). Báo cáo 7h sáng đọc các bậc này.
 function timeBucket(name, t0, steps, unit = 1) {
   const sec = (performance.now() - t0) / 1000, b = steps.find(x => sec <= x);
   funnel(`${name}_${b != null ? b / unit : 99}`);
@@ -1020,7 +1021,7 @@ async function exportVideo(localOnly = false) {
   const bar = $('xbar'), fill = $('xfill'), txt = $('xtxt'), btn = $('exportBtn');
   bar.hidden = false; btn.disabled = true; $('out').textContent = ''; fill.style.width = '0';
   const t0 = performance.now();
-  let xd = null;
+  let xd = null, xlog = null;
   if (!localOnly) funnel('dd_xuat');
   try {
     txt.textContent = 'Đang kiểm tra lượt…';
@@ -1040,13 +1041,14 @@ async function exportVideo(localOnly = false) {
     // máy yếu (RAM ≤ 4 GB hoặc ≤ 4 nhân): 30 hình/giây kể cả bản đẹp — dựng 3D nhẹ một nửa, ít treo máy
     const weak = (navigator.deviceMemory || 8) <= 4 || (navigator.hardwareConcurrency || 8) <= 4;
     const h = best ? 1920 : 1280, w = Math.round(h * 9 / 32) * 2, fps = best && !weak ? 60 : 30;
+    if (!localOnly) xlog = xuatStart('d', best ? 1080 : 720);
     xd = makeDirector(w, h, story);
     await xd.ready;
     // phần vẽ kiểu app cũ: ô ảnh vệ tinh lúc xuất đi phiên bản đồ (như app cũ, không tốn hạn mức ô ảnh)
     if (xd.engine === 'old') { preferSession(true); await warmSession().catch(() => false); }
     const audio = await mixFor(xd);
     const blob = await exportMp4({ tl: { duration: xd.duration, LW: w }, width: w, height: h, fps, audioBuffer: audio, source: xd.frameSource(),
-      onProgress: (ph, a, b) => { if (ph === 'frames') { fill.style.width = (a / b * 100) + '%'; txt.textContent = `Đang dựng video ${Math.round(a / b * 100)}%`; } } });
+      onProgress: (ph, a, b) => { if (ph === 'frames') xlog?.pct(100 * a / b * 0.95); else if (ph === 'mux') xlog?.pct(96); if (ph === 'frames') { fill.style.width = (a / b * 100) + '%'; txt.textContent = `Đang dựng video ${Math.round(a / b * 100)}%`; } } });
     // xuất xong mới trừ lượt (1 vị trí = 1 lượt; xuất lại trong 24 giờ không trừ thêm)
     txt.textContent = 'Đang lưu lượt…';
     const r = localOnly ? { ok: true } : await chargeExport(S.house);
@@ -1055,7 +1057,7 @@ async function exportVideo(localOnly = false) {
       throw new Error(r.message || 'Không trừ được lượt, thử lại.');
     }
     if (r.charged || r.mode === 'unlimited') track('export');
-    if (!localOnly) { funnel('dd_xuat_xong'); timeBucket('dd_xt', t0, [60, 120, 240, 480], 60); }
+    if (!localOnly) { funnel('dd_xuat_xong'); xlog?.done(); }
     const url = URL.createObjectURL(blob);
     fill.style.width = '100%'; txt.textContent = `✓ Xong trong ${Math.round((performance.now() - t0) / 1000)} giây`;
     const v = Object.assign(document.createElement('video'), { src: url, controls: true, playsInline: true });
@@ -1074,7 +1076,7 @@ async function exportVideo(localOnly = false) {
     txt.textContent = 'Lỗi: ' + (e.message || e) + (best && !/720p/.test(String(e.message)) ? ' Máy yếu thì chọn "Nhanh 720p" rồi xuất lại.' : '');
     window.__lastExport = { error: String(e.stack || e) };
     if (!localOnly) funnel('dd_xuat_loi');
-  } finally { xd?.destroy(); preferSession(false); btn.disabled = false; }
+  } finally { xlog?.end(); xd?.destroy(); preferSession(false); btn.disabled = false; }
 }
 
 // ---------- Bài đăng: mô tả + hashtag + bình luận ghim (chép 1 chạm), có link trang web căn để khách để lại SĐT ----------
@@ -1207,5 +1209,6 @@ renderTones();
 fetch('/api/config').then(r => (r.ok ? r.json() : null)).then(c => setImageryToken(c?.arcgis || ''), () => setImageryToken(''));
 // nguồn ô vệ tinh (phiên tạo mới / phiên lỗi / phải dùng nguồn công khai) → phễu f_o_* như app cũ → báo cáo 7h sáng đếm đủ phiên của AI đạo diễn
 onTileSource(k => funnel('o_' + k));
+xuatCheckCrash();   // lần xuất trước không kết thúc bình thường (văng / tắt trang) → đếm cho báo cáo 7h
 funnel('dd_vao');   // phễu nội bộ AI đạo diễn: dd_nut (app cũ) → dd_vao → dd_agent → dd_xuat → dd_xuat_xong / dd_xuat_loi (không gửi Meta/TikTok)
 window.__dd = { S, get story() { return story; }, get dir() { return dir; }, rebuild, exportVideo, setHouse, addPhotos, lines: () => story ? allLines(story) : [] };
