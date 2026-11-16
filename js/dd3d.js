@@ -608,8 +608,10 @@ export function createDirector3D({ width, height, story, overlay = null }) {
     layers.push({ id, type: 'line', source: id, layout: { 'line-cap': 'butt' }, paint: { 'line-color': '#FFB703', 'line-width': 10, 'line-dasharray': [1.6, 1.1], 'line-opacity': 0 } });
   });
   layers.push(
-    // 15/11 22:54 (Giang: khối 3D nhảy lung tung, lúc to quá — thể hiện như app cũ): TẮT mọi khối nổi (nhà OSM, khối căn nhà, đoàn tàu,
+    // 15/11 22:54 (Giang: khối 3D nhảy lung tung, lúc to quá — thể hiện như app cũ): TẮT mọi khối nổi (nhà OSM, đoàn tàu,
     // khối tỉnh / xã / vùng quan trọng) — chỉ còn phủ màu phẳng + viền phát sáng + ghim vàng như app cũ. Lớp vẫn giữ (ẩn) để code cập nhật không lỗi.
+    // 16/11 vòng 13 (Giang): BẬT LẠI riêng khối căn nhà (theo kích thước + số tầng trong tin) / tấm lô đất — chỉ từ lúc ghim rơi tới hết
+    // cảnh căn nhà (houseVis), các cảnh sau không còn khối
     { id: 'bld', type: 'fill-extrusion', source: 'omt', 'source-layer': 'building', minzoom: 14, layout: { visibility: 'none' }, 
       paint: {
         'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 14, 0, 15.2, ['max', ['coalesce', ['get', 'render_height'], 0], 7]],
@@ -617,7 +619,7 @@ export function createDirector3D({ width, height, story, overlay = null }) {
         'fill-extrusion-color': ['interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 0], 0, '#e6ebf3', 20, '#b9c9e6', 60, '#7f9ed6', 150, '#5a7fd0'],
         'fill-extrusion-opacity': 0.88, 'fill-extrusion-vertical-gradient': true,
       } },
-    { id: 'house', type: 'fill-extrusion', source: 'house', layout: { visibility: 'none' }, 
+    { id: 'house', type: 'fill-extrusion', source: 'house',
       paint: { 'fill-extrusion-color': story.lot?.green ? '#7fd18b' : GOLD, 'fill-extrusion-height': 0, 'fill-extrusion-opacity': story.lot ? 0.55 : 0.92,
         'fill-extrusion-vertical-gradient': true } },
     { id: 'train', type: 'fill-extrusion', source: 'train', layout: { visibility: 'none' }, paint: { 'fill-extrusion-color': ['get', 'c'], 'fill-extrusion-height': 14, 'fill-extrusion-base': 3, 'fill-extrusion-opacity': 0.95 } },
@@ -916,6 +918,12 @@ export function createDirector3D({ width, height, story, overlay = null }) {
   const sceneIdx = t => { const i = tl.scenes.findIndex(s => t < s.t1); return i < 0 ? tl.scenes.length - 1 : i; };
   const sceneAt = t => tl.scenes[sceneIdx(t)];
   const houseH = t => (story.lot ? 2.2 : story.footprint ? story.footprint.height : story.kind === 'canho' ? 0 : 11) * easeOut(clamp01((t - PIN_T - 0.2) / 0.9));
+  // 16/11 vòng 13: khối căn nhà / tấm lô chỉ hiện tới hết cảnh căn nhà (kể cả đoạn lùi ra trung cảnh), sang cảnh sau mờ dần 1 s;
+  // kiểu ghép app cũ (OPEN): mờ hẳn trước chỗ nối vì phần vẽ kiểu app cũ không có khối
+  const HS = tl.scenes.find(s => s.kind === 'house' || s.kind === 'lot');
+  const houseVis = t => !HS ? 0 : OPEN ? 1 - clamp01((t - (HS.t1 - 2.4)) / 1.6) : 1 - clamp01((t - HS.t1) / 1.0);
+  const HOUSE_OP = story.lot ? 0.55 : 0.92;
+  let houseOpSet = -1;
 
   // tiến độ vẽ từng đường tại t (0..1)
   function routeProg(t) {
@@ -1056,7 +1064,9 @@ export function createDirector3D({ width, height, story, overlay = null }) {
     lastT = t;
     const c = camAt(t);
     map.jumpTo({ center: c.c, zoom: c.z, pitch: c.p, bearing: c.b, ...(OPEN ? { padding: { top: c.pad || 0, bottom: 0, left: 0, right: 0 } } : {}) });
-    map.setPaintProperty('house', 'fill-extrusion-height', houseH(t));
+    const hv = houseVis(t), hop = Math.round(HOUSE_OP * hv * 50) / 50;
+    map.setPaintProperty('house', 'fill-extrusion-height', hv > 0 ? houseH(t) : 0);
+    if (hop !== houseOpSet) { houseOpSet = hop; map.setPaintProperty('house', 'fill-extrusion-opacity', hop); }
     setRoutes(t);
     setZones(t);
     setBuild(t);
@@ -1378,11 +1388,17 @@ export function createDirector3D({ width, height, story, overlay = null }) {
       ctx.beginPath(); ctx.ellipse(x, y, (8 + q * 42) * k, (8 + q * 42) * squash * k, 0, 0, 7);
       ctx.strokeStyle = `rgba(245,196,81,${0.8 * (1 - q)})`; ctx.lineWidth = 2.4 * k; ctx.stroke();
     }
-    // bóng dưới chân ghim
-    ctx.beginPath(); ctx.ellipse(x, y + 1 * k, 11 * k, 4 * k, 0, 0, 7); ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fill();
     // rơi + nảy (trước lúc rơi: ghim đứng sẵn, nhỏ hơn — nhìn rõ vị trí trong cú bay xuống)
     const e = u <= 0 ? 1 : easeBounce(clamp01(u / 0.7));
-    const lift = u <= 0 ? 0 : (1 - e) * 90 * k;
+    // vòng 13: ghim đứng trên MÁI khối căn nhà (chiều cao khối × điểm ảnh/mét theo phương ngang màn hình × sin góc nghiêng)
+    let roof = 0;
+    if (!story.lot && story.kind !== 'canho') {
+      const hh = houseH(t) * houseVis(t);
+      if (hh > 0.05) { const q = proj(offM(H, 20, map.getBearing() + 90)); roof = hh * Math.hypot(q[0] - x, q[1] - y) / 20 * Math.sin(map.getPitch() * Math.PI / 180); }
+    }
+    const lift = (u <= 0 ? 0 : (1 - e) * 90 * k) + roof;
+    // bóng dưới chân ghim (trên mái khi có khối nhà)
+    ctx.beginPath(); ctx.ellipse(x, y - roof + 1 * k, 11 * k, 4 * k, 0, 0, 7); ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fill();
     goldPin(ctx, x, y - lift, (u <= 0 ? 0.8 : 1) * k, story.kind === 'datnen' || story.kind === 'nhavuon' ? 'pin' : story.kind === 'canho' ? 'city' : 'house');
   }
   // Ghim nhỏ dưới chân nhãn tiện ích: chấm màu nhóm, viền vàng

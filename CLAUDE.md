@@ -221,6 +221,16 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 ## 5. Nhật ký bài học
 
+- 2026-11-16 vòng 13 (07:51 Giang: thêm hình khối 3D khi nói về căn nhà lúc quay cận cảnh; lô đất thì khoanh vùng như lúc trước). dd3d.js: bật lại
+  RIÊNG lớp `house` (fill-extrusion; các khối khác của vòng 11 vẫn tắt): căn nhà = khối vàng theo kích thước + số tầng trong tin
+  (`story.footprint`: rectM w×l quay ra đường trước nhà, cao 3,6 m/tầng + 1, tối đa 30 m), lô đất = tấm vàng/xanh thấp 2,2 m mờ 0,55 + viền sáng
+  + số mét cạnh (`lotOverlay`, có sẵn) như trước vòng 11; căn hộ không có khối. Chỉ hiện từ lúc ghim rơi (dựng lên 0,9 s) tới hết cảnh căn nhà
+  kể cả đoạn lùi ra trung cảnh (`houseVis`), sang cảnh sau mờ dần 1 s (đổi `fill-extrusion-opacity` chỉ khi khác, bước 0,02); kiểu ghép app cũ
+  (OPEN) mờ hẳn từ 2,4 → 0,8 s trước chỗ nối (phần vẽ kiểu app cũ không có khối). Ghim vàng đứng trên MÁI khối: nâng thêm
+  chiều cao khối × điểm ảnh/mét theo phương ngang màn hình (`offM(H, 20, bearing + 90)`) × sin(nghiêng); bóng chân ghim lên mái, vòng sóng
+  vẫn trên mặt đất; khối mờ thì ghim hạ dần xuống đất. Thử: `dd_run9.py` căn Bình Chánh (nhà 5×20, 1 trệt 2 lầu → khối ~12 m; tin "lô đất nền
+  5x20" → tấm + viền + 4 số mét; kiểu `lanluot` → khối hết trước chỗ nối A = 38 s), 0 lỗi trang.
+
 - 2026-11-16 vòng 12 (06:49 Giang: cách lia máy giữ như cũ — từ chỗ lùi ra trở đi giống lúc đầu, trước khi đổi sang kiểu mới; hỏi lại thì
   Giang chọn GIỮ đoạn lùi ra trung cảnh). dd3d.js (kiểu Radar, toàn 3D): ĐẢO phần camera của vòng 11 cho các cảnh sau căn nhà — anchor/road/
   build lại dùng `angles()` (đổi góc lượn + cận + lùi), hướng `bearingDemo(nhà → điểm) − 20` / 15 / 10; metro lướt dọc tuyến; trục đường từng
