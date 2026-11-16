@@ -5308,6 +5308,7 @@ function init() {
 
   // Lối vào AI đạo diễn: khách đã dán toạ độ ở đây thì mang sang luôn (trang đó tự đọc ?c=)
   $('ddEntry')?.addEventListener('click', e => {
+    funnel('dd_nut');   // phễu nội bộ (không gửi Meta/TikTok)
     const v = $('coordInput').value.trim();
     if (v) { e.preventDefault(); location.href = '/dao-dien?c=' + encodeURIComponent(v); }
   });

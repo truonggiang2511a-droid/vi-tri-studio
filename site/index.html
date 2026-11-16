@@ -175,12 +175,6 @@
     <article class="step on" id="step1" data-step="1">
       <header class="step-head"><h2>Căn nhà nằm ở đâu?</h2></header>
       <p class="step-guide">Dán link Google Maps hoặc toạ độ căn nhà, rồi bấm <strong>Quét tiện ích</strong>.</p>
-      <!-- 11/11 tối: tạm ẩn AI đạo diễn (Giang sửa cho ưng rồi mở lại: bỏ style="display:none") -->
-      <a id="ddEntry" class="dd-entry" href="/dao-dien" style="display:none">
-        <span class="dd-entry-ico" aria-hidden="true">🎬</span>
-        <span><strong>Mới: AI đạo diễn <em>dễ nhất</em></strong><small>Dán toạ độ + tin đăng, AI dựng video 3D có giọng đọc trong 3 bước</small></span>
-        <span class="dd-entry-go" aria-hidden="true">›</span>
-      </a>
       <label class="field">
         <span class="field-label">Toạ độ hoặc link Google Maps</span>
         <div class="input-row">
@@ -189,6 +183,12 @@
         </div>
       </label>
       <p id="coordMsg" class="hint" aria-live="polite"></p>
+      <!-- AI đạo diễn (mở cho mọi khách 16/11/2026; nằm DƯỚI ô toạ độ để ô dán vị trí không bị đẩy xuống mép màn hình điện thoại; ẩn lại: thêm style="display:none") -->
+      <a id="ddEntry" class="dd-entry" href="/dao-dien">
+        <span class="dd-entry-ico" aria-hidden="true">🎬</span>
+        <span><strong>AI đạo diễn <em>MỚI</em></strong><small>Cách dễ nhất: dán vị trí + tin đăng, AI tự làm video có giọng đọc</small></span>
+        <span class="dd-entry-go" aria-hidden="true">›</span>
+      </a>
       <button id="newHouseBtn" class="link-btn new-house" type="button" hidden>＋ Làm căn mới (để trống thông tin căn này)</button>
       <button id="guideBtn" class="guide-link" type="button">▶ Xem hướng dẫn sử dụng (1 phút)</button>
       <div id="sampleBox" class="sample-box" hidden>

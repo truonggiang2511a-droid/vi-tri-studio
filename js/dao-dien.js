@@ -307,7 +307,7 @@ async function runAgent() {
   if (!S.listing) S.listing = { kind: 'nhapho' };
   if (!S.buyer) S.buyer = suggestBuyer(S.listing.kind);
   save(); goStep(3);
-  stop();
+  stop(); funnel('dd_agent');
   $('agent').hidden = false; $('studio').hidden = true;
   $('tasks').textContent = '';
   for (const t of TASKS) { const li = document.createElement('li'); li.append(document.createElement('i'), document.createTextNode(t)); $('tasks').append(li); }
@@ -985,6 +985,7 @@ async function exportVideo(localOnly = false) {
   bar.hidden = false; btn.disabled = true; $('out').textContent = ''; fill.style.width = '0';
   const t0 = performance.now();
   let xd = null;
+  if (!localOnly) funnel('dd_xuat');
   try {
     txt.textContent = 'Đang kiểm tra lượt…';
     const chk = localOnly ? { ok: true } : await canExport(S.house);
@@ -1018,6 +1019,7 @@ async function exportVideo(localOnly = false) {
       throw new Error(r.message || 'Không trừ được lượt, thử lại.');
     }
     if (r.charged || r.mode === 'unlimited') track('export');
+    if (!localOnly) funnel('dd_xuat_xong');
     const url = URL.createObjectURL(blob);
     fill.style.width = '100%'; txt.textContent = `✓ Xong trong ${Math.round((performance.now() - t0) / 1000)} giây`;
     const v = Object.assign(document.createElement('video'), { src: url, controls: true, playsInline: true });
@@ -1035,6 +1037,7 @@ async function exportVideo(localOnly = false) {
     const best = document.querySelector('input[name=q]:checked')?.value === 'best';
     txt.textContent = 'Lỗi: ' + (e.message || e) + (best && !/720p/.test(String(e.message)) ? ' Máy yếu thì chọn "Nhanh 720p" rồi xuất lại.' : '');
     window.__lastExport = { error: String(e.stack || e) };
+    if (!localOnly) funnel('dd_xuat_loi');
   } finally { xd?.destroy(); preferSession(false); btn.disabled = false; }
 }
 
@@ -1168,4 +1171,5 @@ renderTones();
 fetch('/api/config').then(r => (r.ok ? r.json() : null)).then(c => setImageryToken(c?.arcgis || ''), () => setImageryToken(''));
 // nguồn ô vệ tinh (phiên tạo mới / phiên lỗi / phải dùng nguồn công khai) → phễu f_o_* như app cũ → báo cáo 7h sáng đếm đủ phiên của AI đạo diễn
 onTileSource(k => funnel('o_' + k));
+funnel('dd_vao');   // phễu nội bộ AI đạo diễn: dd_nut (app cũ) → dd_vao → dd_agent → dd_xuat → dd_xuat_xong / dd_xuat_loi (không gửi Meta/TikTok)
 window.__dd = { S, get story() { return story; }, get dir() { return dir; }, rebuild, exportVideo, setHouse, addPhotos };
