@@ -1884,12 +1884,7 @@ export function createDirector3D({ width, height, story, overlay = null }) {
       if (cur) return;   // đang nói tới vùng: nhãn ghim (tiện ích / vùng mốc) đã ghi tên to → không in lặp tên trên mặt đất
       items.push({ key: z.id, rts: zoneText[j], text: z.name, px: fitPx(z.name, 48), color: (story.roads.length + j) % 2 ? YEL : WHITE, a: cur ? 1 : sc ? fadeTo(t, sc.t1) : DIM, pri: cur ? 2 : 0 });
     });
-    const bsn = tl.scenes.find(x => x.kind === 'build');
-    if (bsn && t >= bsn.t0) buildText.forEach((bt, j) => {
-      if (!bt) return;
-      const cur = t < bsn.t1;
-      items.push({ key: 'bd' + j, rts: [bt], text: story.build[j].name, px: fitPx(story.build[j].name, 26), color: '#FFB703', a: cur ? clamp01((t - bsn.t0 - 1.0) / 0.6) : fadeTo(t, bsn.t1), pri: cur ? 2 : 0 });
-    });
+    // 16/11 vòng 14 (Giang): tuyến hạ tầng đang thi công KHÔNG in tên chữ 3D dẹt trên mặt đất nữa — chỉ nhãn dán bám điểm (thẻ ghim ở cảnh build)
     // vùng giữ chỗ: ghim nhà, nhãn tiện ích đang nói, dải phụ đề
     const [hx, hy] = proj(H), cy = CAP_Y * height;
     const placed = [[hx - 17 * k, hy - 58 * k, hx + 17 * k, hy - 4 * k], [0, cy - 30 * k, width, cy + 30 * k]];
@@ -2018,10 +2013,13 @@ export function createDirector3D({ width, height, story, overlay = null }) {
     if (s.kind === 'airport' && t >= s.t0 + 2.6) { const rw = inf.airport; items.push({ key: 'air', full: true, at: apMid, cat: 'airport', name: rw.name, sub: fmtSub(rw, false), a: (t - s.t0 - 2.6) / 0.45 }); }
     if (s.kind === 'metro') items.push({ key: 'metro', full: true, at: inf.metro.stations[Math.min(2, inf.metro.stations.length - 1)][1], cat: 'metro', name: inf.metro.name, sub: inf.metro.sub, a: (t - s.t0 - 1.6) / 0.45 });
     if (s.kind === 'road') { const c = lineWin(s).card; if (t >= c) items.push({ key: 'road', full: true, at: roadNear, cat: 'road', name: inf.road.name, sub: `cách nhà ${fmtKm(inf.road.km)}`, a: cardA(t, s, c) }); }
-    if (s.kind === 'build' && buildText[0]) {
-      const b0 = story.build[0];
-      items.push({ key: 'build', full: true, at: atM(buildText[0].path, buildText[0].mid), cat: 'road', name: b0.name, sub: b0.station ? `🚧 Đang thi công · ${b0.station} cách ${fmtKm(b0.km)}` : `🚧 Đang thi công · cách nhà ${fmtKm(b0.km)}`, a: (t - s.t0 - 2.0) / 0.45 });
-    }
+    // hạ tầng đang thi công: mỗi tuyến 1 nhãn dán (chú thích ghim bám đúng điểm trên tuyến gần nhà nhất, máy lia thì nhãn chạy theo),
+    // tuyến sau hiện trễ 1,2 s; không có chữ in trên mặt đất (vòng 14)
+    if (s.kind === 'build') buildText.forEach((bt, j) => {
+      const b = story.build[j];
+      if (!bt || !b) return;
+      items.push({ key: 'build' + j, full: true, at: atM(bt.path, bt.mid), cat: 'road', name: b.name, sub: b.station ? `🚧 Đang thi công · ${b.station} cách ${fmtKm(b.km)}` : `🚧 Đang thi công · cách nhà ${fmtKm(b.km)}`, a: Math.min((t - s.t0 - 2.0 - 1.2 * j) / 0.45, (s.t1 - t) / 0.3) });
+    });
     // vùng mốc (KCN, cảng…) không gắn tiện ích / điểm mốc: nhãn ghim tên to ở giữa vùng trong cảnh của nó
     if (s.kind !== 'airport' && !(radSc && t >= radSc.t0)) for (const z of zones) {
       if (z.poiId || !showNow(z, s) || z.show.some(x => x.startsWith('anchor:')) || !zoneKey.split('|').includes(z.id)) continue;

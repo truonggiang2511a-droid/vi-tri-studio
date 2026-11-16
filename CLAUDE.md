@@ -221,6 +221,15 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 ## 5. Nhật ký bài học
 
+- 2026-11-16 vòng 14 (09:03 Giang: chỗ hạ tầng thi công mở rộng không cần chữ 3D nổi khối in dẹt, chỉ cần chú thích tracking kèm nhãn dán).
+  dd3d.js (kiểu Radar): bỏ chữ in mặt đất `bd*` (tên tuyến đang thi công, `layout3D`) ở cảnh `build` và các cảnh sau; mỗi tuyến đang thi công
+  (tối đa 2) có MỘT nhãn dán `build<j>` (thẻ ghim `placeLabels`/`drawLabel`, chấm đỏ + đường chỉ bám đúng điểm trên tuyến gần nhà nhất →
+  máy lia thì nhãn chạy theo) "Tên tuyến · 🚧 Đang thi công · cách nhà …" (metro đang xây ghi tên ga), tuyến 2 hiện trễ 1,2 s, mờ 0,3 s
+  cuối cảnh; 2 tuyến cùng hành lang vẫn dời điểm nhãn 1,8 km dọc tuyến. Nét đứt vàng/đen của tuyến giữ nguyên; chữ 3D tên trục đường lớn
+  (QL, cao tốc đang chạy) không đổi. Kiểu "Bay tới từng tiện ích" (render.js app cũ) vốn chỉ có thẻ `infraCard`, không có chữ in mặt đất →
+  không đổi. Thử: `dd_run9.py` căn Bình Chánh, cảnh build 93,3–102,8 s: 2 nhãn (Cao tốc TP.HCM – Trung Lương mở rộng 3,6 km; Mở rộng
+  Quốc lộ 1 770 m), không còn chữ in dẹt, 0 lỗi trang.
+
 - 2026-11-16 vòng 13 (07:51 Giang: thêm hình khối 3D khi nói về căn nhà lúc quay cận cảnh; lô đất thì khoanh vùng như lúc trước). dd3d.js: bật lại
   RIÊNG lớp `house` (fill-extrusion; các khối khác của vòng 11 vẫn tắt): căn nhà = khối vàng theo kích thước + số tầng trong tin
   (`story.footprint`: rectM w×l quay ra đường trước nhà, cao 3,6 m/tầng + 1, tối đa 30 m), lô đất = tấm vàng/xanh thấp 2,2 m mờ 0,55 + viền sáng
