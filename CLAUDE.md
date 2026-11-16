@@ -221,6 +221,28 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 ## 5. Nhật ký bài học
 
+- 2026-11-16 vòng 16 (10:03 Giang chốt: AI đạo diễn dùng PHIÊN BẢN ĐỒ cho ảnh vệ tinh; kịch bản phải trả lời 2 câu hỏi của người mua —
+  "Sống ở đây có tiện không?" và "Vì sao nên mua?" — thuyết phục, gần gũi, TẠO NIỀM TIN). (1) Ảnh vệ tinh dd3d (`satTile`): trước đây gọi
+  thẳng máy chủ Esri công khai (không khoá — vùng xám điều khoản với app thu tiền). Nay `render.js imageryUrls(z,x,y)` trả lần lượt phiên
+  (`getSession`, dùng chung `localStorage['vitri.arcSess']` với app cũ, 12 h, ô không giới hạn, 1.000 phiên miễn phí/tháng) → khoá → công khai;
+  404 ở phiên/khoá = chỗ chưa có ảnh mức đó → lấy ô cha như cũ (không đếm lỗi); `imageryResult` đếm: phiên lỗi 6 lần chưa lần nào được →
+  `dropSession` + phễu `f_o_phien_loi`; đi công khai → `f_o_congkhai`. dao-dien.js nối `onTileSource → funnel('o_' + …)` nên phiên tạo mới đếm
+  vào `f_o_phien_tao` như app cũ (báo cáo 7h có số). App cũ KHÔNG đổi (chỉ thêm 2 hàm export). Đo căn Bình Chánh: 1 phiên, 78–95 ô qua phiên,
+  0 khoá, 0 công khai. (2) Câu hỏi 1: chip vàng "SỐNG Ở ĐÂY CÓ TIỆN KHÔNG?" trên cùng suốt cảnh trục đường + radar (`qChip`, `story.ask1`; thẻ
+  đếm radar dời xuống 30 px); lời trục đường mở bằng câu hỏi (không có trục thì radar mở bằng câu hỏi); kiểu app cũ: cảnh bán kính mở bằng câu hỏi.
+  (3) Câu hỏi 2 (cảnh tổng kết, cả 2 kiểu): `dd-agent.js` chọn 3 LÝ DO chỉ từ dữ liệu thật — pháp lý (sổ hồng/sổ riêng trong tin đăng) đứng ĐẦU
+  để tạo niềm tin, lý do mạnh nhất theo loại khách đứng CUỐI (`PRI`: để ở = trường ≤ 1,5 km > chợ > trung tâm > số tiện ích > bệnh viện > trục lớn >
+  KCN; cho thuê = KCN > đại học > trung tâm > chợ…; sinh lời = hạ tầng đang thi công > trung tâm > trục lớn > sân bay > cảng > KCN). Lời: "Vậy vì
+  sao nên chọn căn nhà này? Thứ nhất, … Thứ hai, … Và lý do lớn nhất: … Số liệu từ bản đồ thực tế, anh chị kiểm tra được." (~62 chữ ≈ 17 s giọng
+  thật); KHÔNG hứa tăng giá / sinh lời / rẻ hơn khu vực. Thẻ 3 ô thành "VÌ SAO NÊN MUA?" (`statsTitle`), ô pháp lý là dấu ✓ vẽ tay, ô lý do lớn nhất
+  viền vàng phát sáng (`statsHi`); mỗi ô bật đúng lúc giọng nói "Thứ nhất / Thứ hai / lý do lớn nhất" (`s.rev` trong buildTimeline, tìm chữ trong
+  lời; không thấy — khách/AI sửa lời — thì hiện lần lượt như cũ) + 1 tiếng ding (lý do cuối to hơn). Kiểu app cũ hiện 3 ô lần lượt như cũ.
+  (4) AI viết lời: cảnh score/summary nhận `ly_do` (đúng thứ tự) + dặn mở bằng câu hỏi, lý do cuối là lý do lớn nhất, giữ số, không thêm lý do,
+  gần gũi chân thành, mời kiểm tra số liệu; overview/roads/radar dặn trả lời câu hỏi 1; `LONG.score` 56 chữ (chỉ AI đạo diễn gửi `long`).
+  Bảng phân cảnh ghi "❓ Sống ở đây có tiện không?" / "❓ Vì sao nên mua?". CHƯA thử AI viết lời thật (cần đăng nhập). Thử: `/tmp/vt/dd_run10.py`
+  (= dd_run9 + chuyển ô ArcGIS qua máy thử kèm Referer vitristudio.com, đếm phiên/khoá/công khai; `PTS='score+1.6,…'` chụp theo tên cảnh),
+  `lines2.mjs` (9 tổ hợp tin đăng × loại khách × phong cách), 0 lỗi trang.
+
 - 2026-11-16 vòng 15 (09:14 Giang: AI đạo diễn thiếu cảnh kết nối vùng — mặc định trung tâm thành phố, sân bay, cảng biển, khách bỏ tick / chọn
   thêm được nhưng video Agent dựng phải có đủ; các bước "Agent đang dựng" chạy nhanh quá, cho quay 1–2 s rồi tick; video tự phát, bấm Phát nữa
   bị trùng nhạc). (1) dd-agent.js: điểm mốc mặc định = trung tâm + sân bay gần nhất + cảng gần nhất cho MỌI khách (trước: trung tâm + sân bay,

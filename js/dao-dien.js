@@ -12,10 +12,10 @@ import { rpc } from './account.js';
 import { SB_URL, SB_KEY } from './sb.js';
 import { exportMp4, decodeAudioFile, mixAudio, canEncodeMp4 } from './export.js';
 import { createHybrid } from './dd-old.js';
-import { setImageryToken, preferSession, warmSession } from './render.js';
+import { setImageryToken, preferSession, warmSession, onTileSource } from './render.js';
 import { token, voiceLines, voiceOf, canExport, chargeExport } from './dd-voice.js';
 import { MAX_PHOTOS, savePhotos, loadPhotoBlobs, shrink, toBitmap } from './dd-photos.js';
-import { track } from './track.js';
+import { track, funnel } from './track.js';
 
 const $ = id => document.getElementById(id);
 const S = { house: null, scan: null, scanJob: null, routes: {}, anchors: [], infra: null, listing: null, buyer: null, edits: {}, manual: [], music: 'hung-hon', photos: [] };   // photos: [{ blob, url, bmp }]
@@ -466,18 +466,21 @@ function aiPayload(st, L) {
   if (st.infra?.road) put('road', 'road', { canh: 'Kết nối vùng: tuyến cao tốc / đường lớn', ten: st.infra.road.name, cach: fmtKm(st.infra.road.km) });
   const OLD = st.engine === 'old';
   // vòng 9 (vẽ như app cũ): cảnh bán kính + mỗi trục đường một cảnh riêng + bảng tổng kết
-  if (OLD) put('overview', 'overview', { canh: `Toàn cảnh: vòng bán kính ${String(st.oldR).replace('.', ',')} km quanh nhà vẽ ra. 1 câu ngắn: trong bán kính này có đủ những loại tiện ích nào (nói tên loại như trường học, chợ, bệnh viện), cùng mấy trục đường lớn`,
+  // 16/11 (Giang): kịch bản trả lời 2 câu khách hay hỏi — "Sống ở đây có tiện không?" và "Vì sao nên mua?"; giọng gần gũi, chân thành, tạo niềm tin
+  if (OLD) put('overview', 'overview', { canh: `Toàn cảnh: vòng bán kính ${String(st.oldR).replace('.', ',')} km quanh nhà vẽ ra. Mở bằng ĐÚNG câu hỏi "Sống ở đây có tiện không?" rồi 1 câu trả lời ngắn: trong bán kính này có đủ những loại tiện ích nào (nói tên loại như trường học, chợ, bệnh viện), cùng mấy trục đường lớn`,
     ban_kinh_km: st.oldR, loai_tien_ich: [...new Set(st.pois.map(p => CATEGORIES[p.cat]?.label || p.cat))], so_truc_duong: st.roads.length });
   if (OLD) st.roads.forEach(r => put('rd:' + r.id, 'rd:' + r.id, { canh: 'Một trục đường lớn: line trục sáng lên, tên đường chữ 3D trên mặt đường. 1 câu ngắn, gọi đúng tên trong "ten": cach_nha dưới 120 m thì nói nằm ngay trục này, không thì nói từ nhà ra trục bao nhiêu phút (dùng đúng phut_xe)',
     ten: r.name, cach_nha: fmtKm(r.km), phut_xe: r.km < 0.12 ? null : r.min }));
-  if (OLD && st.pois.length) put('summary', 'summary', st.stats?.length >= 2
+  const whyCanh = 'Trả lời câu hỏi "Vì sao nên mua?": mở bằng ĐÚNG câu hỏi đó (có thể thêm tên loại bất động sản), rồi nêu ĐÚNG các lý do trong ly_do theo ĐÚNG thứ tự, lý do CUỐI là lý do lớn nhất (nói rõ là lý do lớn nhất), giữ nguyên mọi con số; KHÔNG thêm lý do khác, KHÔNG hứa tăng giá, lời lãi, rẻ hơn khu vực. Giọng gần gũi, chân thành như người môi giới có tâm đang tư vấn, tạo niềm tin. Kết bằng 1 câu ngắn mời kiểm tra số liệu trên bản đồ';
+  if (OLD && st.pois.length && st.statsTitle) put('summary', 'summary', { canh: 'Tổng kết trước lời kêu gọi: thẻ "VÌ SAO NÊN MUA?" với các ô lý do hiện trên cùng. ' + whyCanh, ly_do: st.reasons });
+  else if (OLD && st.pois.length) put('summary', 'summary', st.stats?.length >= 2
     ? { canh: 'Tổng kết trước lời kêu gọi: thẻ 3 con số lớn hiện trên cùng, bảng tiện ích ở dưới. 1–2 câu đọc đúng 3 con số này rồi chốt giá trị vị trí (không hứa lời lãi)', con_so: st.stats.map(x => `${x.n} ${x.unit} ${x.sub}`) }
     : { canh: `Tổng kết: bảng các tiện ích vừa giới thiệu kèm khoảng cách, vòng bán kính ${String(st.oldR).replace('.', ',')} km. 1 câu chốt ngắn: mọi tiện ích đều trong bán kính này, sống tiện, đi lại dễ (không hứa lời lãi)`, ban_kinh_km: st.oldR });
   // vòng 7: trục đường hiện TỪNG trục một đúng lúc giọng nói tên → mỗi trục MỘT câu ngắn, đúng thứ tự, gọi đúng tên trong "ten"
-  if (!OLD && st.roads.length) put('roads', 'roads', { canh: 'Các trục đường lớn quanh nhà hiện LẦN LƯỢT từng trục (máy bay tới trục, đường đi thật từ nhà ra trục chạy ra kèm số phút). Mỗi trục MỘT câu ngắn theo ĐÚNG thứ tự danh sách, gọi đúng tên trong "ten": trục cach_nha dưới 120 m là nằm ngay trục đó, trục khác nói từ nhà ra bao nhiêu phút (dùng đúng phut_xe)',
+  if (!OLD && st.roads.length) put('roads', 'roads', { canh: 'Trên hình hiện câu hỏi "SỐNG Ở ĐÂY CÓ TIỆN KHÔNG?". Câu đầu đọc ĐÚNG câu hỏi "Sống ở đây có tiện không?". Sau đó các trục đường lớn quanh nhà hiện LẦN LƯỢT từng trục (máy bay tới trục, đường đi thật từ nhà ra trục chạy ra kèm số phút). Mỗi trục MỘT câu ngắn theo ĐÚNG thứ tự danh sách, gọi đúng tên trong "ten": trục cach_nha dưới 120 m là nằm ngay trục đó, trục khác nói từ nhà ra bao nhiêu phút (dùng đúng phut_xe)',
     duong: st.roads.map(r => ({ ten: r.name, cach_nha: fmtKm(r.km), phut_xe: r.km < 0.12 ? null : r.min })) });
   // vòng 8: radar = cả phần tiện ích; nhãn tiện ích bật đúng lúc giọng nói TÊN (dd3d tìm tên trong câu) → AI kể đúng tên ngắn, đúng thứ tự
-  if (st.radar) put('radar', 'radar', { canh: `MỘT cảnh radar: máy xoay chậm, tia quét vòng bán kính ${String(st.radar.r).replace('.', ',')} km quanh nhà, tiện ích hiện lần lượt kèm tên. Câu 1 rất ngắn: trong bán kính này có so_tien_ich tiện ích tiêu biểu. Sau đó kể LẦN LƯỢT các tiện ích trong doc_ten theo ĐÚNG thứ tự, gọi đúng tên ngắn trong "ten" (không đổi tên) kèm số phút hoặc khoảng cách, mỗi tiện ích một câu ngắn, có thể gắn với nỗi lo của khách (noi_lo_khach_hang)`,
+  if (st.radar) put('radar', 'radar', { canh: `MỘT cảnh radar: máy xoay chậm, tia quét vòng bán kính ${String(st.radar.r).replace('.', ',')} km quanh nhà, tiện ích hiện lần lượt kèm tên. Đây là phần TRẢ LỜI tiếp câu hỏi "Sống ở đây có tiện không?"${st.roads.length ? '' : ' (chưa hỏi ở cảnh trước → câu đầu đọc đúng câu hỏi này)'}. Câu 1 rất ngắn: trong bán kính này có so_tien_ich tiện ích tiêu biểu. Sau đó kể LẦN LƯỢT các tiện ích trong doc_ten theo ĐÚNG thứ tự, gọi đúng tên ngắn trong "ten" (không đổi tên) kèm số phút hoặc khoảng cách, mỗi tiện ích một câu ngắn, có thể gắn với nỗi lo của khách (noi_lo_khach_hang)`,
     ban_kinh_km: st.radar.r, so_tien_ich: st.radar.n, doc_ten: st.radar.pts.map((p, i) => p.named ? { ten: st.radar.words[i], cach: p.label.split(' · ')[1] } : null).filter(Boolean) });
   const inCl = i => st.cluster?.idx.includes(i);
   if (!st.orbit && st.flow !== 'radar') st.pois.forEach((p, i) => { if (!inCl(i)) put('poi:' + p.id, 'poi:' + p.id, { canh: 'Tiện ích: đường đi thật từ nhà sáng lên', ten: p.name, cach: fmtKm(p.km), phut_xe_may: mm(p) }); });
@@ -487,8 +490,9 @@ function aiPayload(st, L) {
   if (st.cluster) put('poi:cum', 'cluster', { canh: 'MỘT cảnh gom nhiều tiện ích quanh nhà, ghim lần lượt bật lên. 1 câu ngắn: trong bán kính bao xa còn có những loại tiện ích nào (nói tên loại như chợ, trạm y tế, công viên; không cần đọc hết tên riêng)',
     ban_kinh: fmtKm(st.cluster.r), tien_ich: st.cluster.idx.map(i => ({ ten: st.pois[i].name, cach: fmtKm(st.pois[i].km) })) });
   if (st.build.length) put('infra', 'build', { canh: 'Hạ tầng đang thi công gần nhà (nét đứt cam). Không nói năm hoàn thành, không hứa tăng giá', tuyen: facts.ha_tang_dang_thi_cong });
-  if (!OLD && st.score && !st.statsInCta) put('score', 'score', { canh: 'Tổng kết trước lời kêu gọi: 3 con số lớn hiện trên hình. 1–2 câu đọc đúng 3 con số này rồi chốt giá trị vị trí (không hứa lời lãi)',
-    con_so: st.stats.map(x => `${x.n} ${x.unit} ${x.sub}`) });
+  if (!OLD && st.score && !st.statsInCta) put('score', 'score', st.statsTitle
+    ? { canh: 'Tổng kết trước lời kêu gọi: thẻ "VÌ SAO NÊN MUA?" với các ô lý do hiện trên hình. ' + whyCanh, ly_do: st.reasons }
+    : { canh: 'Tổng kết trước lời kêu gọi: 3 con số lớn hiện trên hình. 1–2 câu đọc đúng 3 con số này rồi chốt giá trị vị trí (không hứa lời lãi)', con_so: st.stats.map(x => `${x.n} ${x.unit} ${x.sub}`) });
   if (st.photos.length) put('photos', 'photos', { canh: 'Bản đồ đã xong, chuyển sang ảnh thực tế: 1 câu mời người xem cùng xem hình ảnh thực tế' });
   const key = st.ctaKey.toLowerCase();
   put('outro', 'cta', { canh: `Kết video: nhắc giá (nếu có) rồi kêu gọi ${st.ctaMode === 'binhluan' ? `BÌNH LUẬN chữ '${key}' hoặc nhắn tin` : `NHẮN TIN chữ '${key}'`} để nhận thông tin chi tiết và hẹn ${xem} (đúng các chữ này). Không đọc số điện thoại.` });
@@ -641,7 +645,7 @@ function renderBoard() {
   else b.append(sceneCard({ key: 'house', title: `${KINDS[story.kind].label} · ${story.info.price || ''}`, text: L.house }));
   const OLD = story.engine === 'old';
   // vòng 9 (vẽ như app cũ): thứ tự thẻ = thứ tự cảnh app cũ — bán kính → kết nối vùng → hạ tầng → từng trục đường → từng tiện ích → tổng kết → kết → ảnh
-  if (OLD) b.append(sceneCard({ key: 'overview', title: `⭕ Toàn cảnh · vòng bán kính ${String(story.oldR).replace('.', ',')} km`, text: L.overview }));
+  if (OLD) b.append(sceneCard({ key: 'overview', title: `❓ Sống ở đây có tiện không? · ⭕ vòng bán kính ${String(story.oldR).replace('.', ',')} km`, text: L.overview }));
   // vòng 7: kết nối vùng ngay sau căn nhà (trung tâm, sân bay, cảng, metro, cao tốc) — đúng thứ tự trong video
   story.anchors.forEach((a, i) => b.append(sceneCard({ key: 'anchor:' + a.id, title: '🧭 ' + a.name, sub: ` · ${a.km} km · ${a.min} phút`, text: L.anchor[i], cat: a.type, drag: true, removable: true })));
   const inf = story.infra || {};
@@ -665,7 +669,7 @@ function renderBoard() {
       };
       ex.append(c);
     }
-    if (!OLD) b.append(sceneCard({ key: 'roads', title: `🛣 Trục đường lớn · ${sel.length} trục, hiện từng trục (tối đa 5)`, text: L.roads, extra: ex }));
+    if (!OLD) b.append(sceneCard({ key: 'roads', title: `❓ Sống ở đây có tiện không? · 🛣 ${sel.length} trục đường lớn (tối đa 5)`, text: L.roads, extra: ex }));
     else {
       // như app cũ: mỗi trục một cảnh riêng (line sáng + chữ 3D tên đường), mỗi trục một câu
       b.append(sceneCard({ key: 'roadpick', title: `🛣 Trục đường lớn · ${sel.length} trục (tối đa 5)`, sub: ' · bấm ＋ để thêm', text: '', extra: ex }));
@@ -701,8 +705,8 @@ function renderBoard() {
     b.append(sceneCard({ key: 'cluster', title: `📍 Quanh nhà · gom ${story.cluster.idx.length} tiện ích vào 1 cảnh`, sub: ' · bấm tên để đưa lên cảnh riêng', text: L.cluster, extra: ex }));
   }
   if (!OLD && story.build?.length) b.append(sceneCard({ key: 'build', title: '🚧 Hạ tầng đang thi công · ' + story.build[0].name, text: L.build, cat: 'road', removable: true }));
-  if (!OLD && story.score && !story.statsInCta) b.append(sceneCard({ key: 'score', title: '📊 Tổng kết · 3 con số lớn', text: L.score }));
-  if (OLD && story.pois.length) b.append(sceneCard({ key: 'summary', title: story.stats?.length >= 2 ? '📊 Tổng kết · 3 con số lớn + bảng tiện ích' : '📋 Tổng kết · bảng tiện ích + khoảng cách', text: L.summary }));
+  if (!OLD && story.score && !story.statsInCta) b.append(sceneCard({ key: 'score', title: story.statsTitle ? `❓ Vì sao nên mua? · ${story.stats.length} lý do từ số liệu thật` : '📊 Tổng kết · 3 con số lớn', text: L.score }));
+  if (OLD && story.pois.length) b.append(sceneCard({ key: 'summary', title: story.statsTitle ? `❓ Vì sao nên mua? · ${story.stats.length} lý do + bảng tiện ích` : story.stats?.length >= 2 ? '📊 Tổng kết · 3 con số lớn + bảng tiện ích' : '📋 Tổng kết · bảng tiện ích + khoảng cách', text: L.summary }));
   if (OLD) b.append(sceneCard({ key: 'cta', title: `Kết · ${story.cta}`, text: L.cta }));
   if (S.photos.length) {
     const ex = document.createElement('div'); ex.className = 'thumbs';
@@ -1124,4 +1128,6 @@ restore();
 renderTones();
 // ô ảnh vệ tinh phần vẽ kiểu app cũ: dùng khoá ArcGIS như app cũ (xem trước), xuất video đi phiên bản đồ
 fetch('/api/config').then(r => (r.ok ? r.json() : null)).then(c => setImageryToken(c?.arcgis || ''), () => setImageryToken(''));
+// nguồn ô vệ tinh (phiên tạo mới / phiên lỗi / phải dùng nguồn công khai) → phễu f_o_* như app cũ → báo cáo 7h sáng đếm đủ phiên của AI đạo diễn
+onTileSource(k => funnel('o_' + k));
 window.__dd = { S, get story() { return story; }, get dir() { return dir; }, rebuild, exportVideo, setHouse, addPhotos };

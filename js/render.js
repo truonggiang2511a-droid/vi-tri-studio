@@ -250,6 +250,26 @@ export async function warmSession() {
 }
 const PUBLIC_TILE = (z, x, y) =>
   `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+// 16/11: AI đạo diễn (dd3d, MapLibre) lấy ô vệ tinh theo thứ tự PHIÊN BẢN ĐỒ → khoá → máy chủ công khai (chỉ dự phòng — Esri chỉ cho
+// app không thu tiền dùng nguồn công khai). Phiên dùng cho cả xem trước lẫn xuất (ô không giới hạn), chung phiên 12 giờ với app cũ.
+// App cũ không gọi 2 hàm này → không đổi.
+let ddSessOk = 0, ddSessFail = 0;
+export async function imageryUrls(z, x, y) {
+  if (!keyKnown) await keyGate;
+  const out = [];
+  const st = await getSession().catch(() => null);
+  if (st) out.push({ mode: 'phien', url: `https://ibasemaps-api.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}?token=${encodeURIComponent(st)}` });
+  if (IMG_TOKEN) out.push({ mode: 'khoa', url: KEYED_TILE(z, x, y) });
+  out.push({ mode: 'congkhai', url: PUBLIC_TILE(z, x, y) });
+  return out;
+}
+// báo kết quả tải 1 ô: phiên lỗi 6 lần mà chưa lần nào được → bỏ phiên (ô sau đi khoá); phải dùng nguồn công khai → báo phễu
+export function imageryResult(mode, ok) {
+  if (mode === 'phien') {
+    if (ok) ddSessOk++;
+    else if (++ddSessFail >= 6 && !ddSessOk && !sessDead) { dropSession(); tileReport?.('phien_loi'); }
+  } else if (mode === 'congkhai' && ok) tileReport?.('congkhai');
+}
 const ESRI = svc => (z, x, y) => `https://server.arcgisonline.com/ArcGIS/rest/services/${svc}/MapServer/tile/${z}/${y}/${x}`;
 
 // ---------- Nền bản đồ ----------

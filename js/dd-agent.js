@@ -462,7 +462,8 @@ export function buildStory(S, L, buyer, edits = {}) {
     if (w) whyUsed.add(c);
     return w ? `, ${w}` : '';
   };
-  const radarLine = radar ? `Quét bán kính <b>${fmtNum(rR)} km</b> quanh nhà: <b>${radar.n} tiện ích</b> tiêu biểu.`
+  // 16/11: radar là phần trả lời câu hỏi "Sống ở đây có tiện không?" (câu hỏi đã hỏi ở đầu phần trục đường; không có trục đường thì hỏi ở đây)
+  const radarLine = radar ? `${roads.length ? '' : 'Sống ở đây có tiện không? '}Trong bán kính <b>${fmtNum(rR)} km</b> quanh ${kw} có <b>${radar.n} tiện ích</b> tiêu biểu.`
     + rPts.filter(p => p.named).map(p => ` ${cap(shortName(p.name))}, <b>${rdist(p)}</b>${poiWhy(p)}.`).join('') : '';
   // Tổng kết (vòng 7: cảnh riêng trước lời kêu gọi, mọi bản): đọc đúng 3 con số lớn đang hiện trên hình
   const st3 = stats.slice(0, 3), inR = st3.filter(x => x.sub === `trong ${scoreR} km`), unitV = x => x.unit.replace(' & ', ' và ');
@@ -471,11 +472,57 @@ export function buildStory(S, L, buyer, edits = {}) {
     + (buyer === 'thue' ? ' Người thuê ở đây sống tiện, đi đâu cũng gần.' : buyer === 'vung' ? ' Một vị trí kết nối đủ đầy.' : ' Mọi nhu cầu hằng ngày đều trong tầm tay.') : '';
   // app cũ (vòng 9): bán kính vòng tròn = nhỏ nhất trong 1 / 2 / 3 / 5 km ôm hết tiện ích đã chọn
   const oldR = [1, 2, 3, 5].find(r => pois.every(p => p.km <= r * 1.05)) || 5;
+  // ---- 16/11 (Giang): kịch bản trả lời 2 câu khách hay hỏi — "Sống ở đây có tiện không?" (trục đường + tiện ích) và "Vì sao nên mua?"
+  // (tổng kết = 3 lý do). Lý do CHỈ từ số liệu thật (tin đăng + quét + đường đi), xếp theo loại khách; lý do mạnh nhất đọc CUỐI, pháp lý
+  // rõ ràng (nếu có) đứng đầu để tạo niềm tin. KHÔNG hứa tăng giá / lời lãi / rẻ hơn khu vực (app không có dữ liệu giá khu vực) —
+  // tiềm năng nói bằng sự việc kiểm chứng được (hạ tầng đang thi công cách bao xa, bao nhiêu phút về trung tâm).
+  const nearestOf = (test, maxKm) => {
+    const a = pois.filter(test).sort((x, y) => x.km - y.km)[0], b = (S.pois || []).filter(test).sort((x, y) => x.km - y.km)[0];
+    const p = a && (!b || a.km <= b.km * 1.3) ? a : b ? { name: b.name, cat: b.cat, km: b.km, min: null } : null;   // tiện ích đã chọn có phút theo đường đi thật
+    return p && p.km <= maxKm ? p : null;
+  };
+  const dist = p => p.km >= 1 && mins(p) ? { n: mins(p), unit: 'phút' } : p.km < 1 ? { n: Math.max(10, Math.round(p.km * 100) * 10), unit: 'mét' }
+    : { n: fmtNum(Math.round(p.km * 10) / 10), unit: 'km' };
+  const dSay = d => `<b>${d.n} ${d.unit}</b>`;
+  const school = nearestOf(p => p.cat === 'truong' && !RX.daihoc.test(p.name), 1.5), uni = nearestOf(p => p.cat === 'truong' && RX.daihoc.test(p.name), 3);
+  const market = nearestOf(p => p.cat === 'cho', 1.5), hosp = nearestOf(p => p.cat === 'yte' && RX.benhvien.test(p.name), 3), kcnN = nearestOf(p => p.cat === 'kcn', 6);
+  const bigRoad = roads.filter(r => ((S.roadsAll || []).find(x => x.id === r.id)?.level || 0) >= 2).sort((a, b) => a.min - b.min)[0];
+  const apA = anchors.find(a => a.type === 'airport'), portA = anchors.find(a => a.type === 'port');
+  const nCnt = radar ? radar.n : elig.filter(p => p.km <= oldR).length, rCnt = radar ? rR : oldR;
+  const legalTile = String(L.legal || '').replace(/\s+/g, ' ').trim();
+  const RS = {};
+  if (school) { const d = dist(school), w = catWord(school); RS.truong = { ...d, sub: 'tới ' + w, say: `${w} chỉ cách ${dSay(d)}${buyer === 'o' ? ', con đi học gần, ba mẹ đỡ vất vả' : ''}` }; }
+  if (market) { const d = dist(market), w = catWord(market); RS.cho = { ...d, sub: 'tới ' + w, say: `${w} cách ${dSay(d)}, đi chợ mỗi ngày tiện` }; }
+  if (hosp) { const d = dist(hosp); RS.yte = { ...d, sub: 'tới bệnh viện', say: `bệnh viện cách ${dSay(d)}, có việc gấp yên tâm` }; }
+  if (center && center.min <= 60) RS.center = { n: center.min, unit: 'phút', sub: 'về trung tâm', say: `về <b>${center.name}</b> chỉ <b>${center.min} phút</b>` };
+  if (nCnt >= 6) RS.count = { n: nCnt, unit: 'tiện ích', sub: `trong ${fmtNum(rCnt)} km`, say: `<b>${nCnt} tiện ích</b> thiết yếu trong bán kính <b>${fmtNum(rCnt)} km</b>` };
+  if (bigRoad) RS.road = bigRoad.km < 0.12 ? { n: '✓', unit: shortName(bigRoad.name), sub: 'nằm ngay trục đường', say: `nằm ngay <b>${bigRoad.name}</b>, ra vào thuận tiện` }
+    : { n: bigRoad.min, unit: 'phút', sub: 'ra ' + shortName(bigRoad.name), say: `ra <b>${bigRoad.name}</b> chỉ khoảng <b>${bigRoad.min} phút</b>` };
+  if (kcnN) { const d = dist(kcnN), z = zoneName(kcnN.name); RS.kcn = { ...d, sub: 'tới ' + z, say: buyer === 'thue' ? `cách <b>${z}</b> chỉ ${dSay(d)}, người đi làm luôn cần chỗ ở gần` : buyer === 'vung' ? `gần <b>${z}</b>, chỉ ${dSay(d)}` : `đi làm ở <b>${z}</b> chỉ ${dSay(d)}` }; }
+  if (uni && buyer === 'thue') { const d = dist(uni); RS.uni = { ...d, sub: 'tới trường ĐH', say: `<b>${shortName(uni.name)}</b> cách ${dSay(d)}, sinh viên luôn cần thuê chỗ ở` }; }
+  if (b0) { const d = dist({ km: b0.km, min: null }); RS.build = { ...d, sub: 'tới tuyến đang thi công', say: b0.station ? `${b0.station} tuyến <b>${b0.name}</b> đang thi công, chỉ cách ${dSay(d)}` : `<b>${b0.name}</b> đang thi công, chỉ cách ${dSay(d)}` }; }
+  if (apA && apA.min <= 45) RS.airport = { n: apA.min, unit: 'phút', sub: 'ra sân bay', say: `ra <b>${apA.name}</b> chỉ <b>${apA.min} phút</b>` };
+  if (portA && portA.min <= 45) RS.port = { n: portA.min, unit: 'phút', sub: 'ra cảng biển', say: `ra <b>${portA.name}</b> chỉ <b>${portA.min} phút</b>` };
+  // thứ tự mạnh → yếu theo khách (phần tử đầu = lý do lớn nhất)
+  const PRI = { o: ['truong', 'cho', 'center', 'count', 'yte', 'road', 'kcn'], thue: ['kcn', 'uni', 'center', 'cho', 'road', 'count'],
+    vung: ['build', 'center', 'road', 'airport', 'port', 'kcn', 'count'] }[buyer] || [];
+  const locR = PRI.filter(k2 => RS[k2]).map(k2 => RS[k2]);
+  const legalR = (legalOk || /sổ\s*riêng/i.test(legalTile)) && legalTile.length <= 22 ? { n: '✓', unit: cap(legalTile), sub: 'pháp lý rõ ràng', say: `<b>${legal}</b>, giấy tờ rõ ràng, an tâm xuống tiền` } : null;
+  // đọc theo thứ tự: pháp lý (nền tảng niềm tin) → lý do thứ 2 → lý do LỚN NHẤT cuối cùng
+  const reasons = legalR && locR.length >= 1 ? [legalR, ...locR.slice(1, 2), locR[0]] : locR.length >= 2 ? [locR[1], locR[2], locR[0]].filter(Boolean) : [];
+  const RW = ['Thứ nhất', 'Thứ hai'];
+  const whyQ = { 'chuyen-gia': `${reasons.length} lý do nên chọn ${kwFull} này.`, 'chot-sale': `Vì sao nên xuống tiền ${kwFull} này?`,
+    'ke-chuyen': `Vậy vì sao nên chọn nơi này?` }[tone] || `Vậy vì sao nên chọn ${kwFull} này?`;
+  const reasonLine = reasons.length >= 2 ? `${whyQ} ${reasons.slice(0, -1).map((r, i) => `${RW[i]}, ${r.say}.`).join(' ')} Và lý do lớn nhất: ${reasons.at(-1).say}.`
+    + ' Số liệu từ bản đồ thực tế, anh chị kiểm tra được.' : '';
+  const reasonTiles = reasons.map(r => ({ n: r.n, unit: r.unit, sub: r.sub }));
+  // câu hỏi 1 mở đầu phần trục đường (kiểu Radar) / cảnh bán kính (kiểu app cũ); radar nối tiếp phần trả lời
+  const askQ1 = 'Sống ở đây có tiện không?';
   const OCAT = ['truong', 'cho', 'yte', 'kcn', 'khudothi', 'congvien', 'hanhchinh', 'giaothong', 'nganhang'];
   const OWORD = { truong: 'trường học', cho: 'chợ', yte: 'bệnh viện', kcn: 'khu công nghiệp', khudothi: 'khu đô thị', congvien: 'công viên', hanhchinh: 'cơ quan hành chính', giaothong: 'bến xe', nganhang: 'ngân hàng' };
   const ocats = OCAT.filter(c => pois.some(p => p.cat === c)).slice(0, 4).map(c => OWORD[c]);
   const olist = ocats.length > 1 ? ocats.slice(0, -1).join(', ') + ' và ' + ocats.at(-1) : ocats[0];
-  const overviewLine = olist ? `Trong bán kính <b>${fmtNum(oldR)} km</b> có đủ ${olist}${roads.length ? `, cùng <b>${roads.length} trục đường lớn</b>` : ''}.`
+  const overviewLine = olist ? `${askQ1} Trong bán kính <b>${fmtNum(oldR)} km</b> có đủ ${olist}${roads.length ? `, cùng <b>${roads.length} trục đường lớn</b>` : ''}.`
     : roads.length ? `Cùng xem <b>${roads.length} trục đường lớn</b> quanh ${kw}.` : `Cùng xem xung quanh ${kw} có gì nhé.`;
   // 15/11 22:21: thêm vế cho biết trục đó là gì (theo TÊN trục — cao tốc / quốc lộ / tỉnh lộ / đại lộ), không đoán gì thêm
   const roadWhy = r => /cao\s*tốc/i.test(r.name) ? ', lên cao tốc đi các tỉnh thuận tiện' : /quốc\s*lộ|^ql\s?\d/i.test(r.name) ? ', trục quốc lộ nối các tỉnh'
@@ -483,7 +530,7 @@ export function buildStory(S, L, buyer, edits = {}) {
   const rdLines = roads.map((r, j) => r.id === roadFront?.id ? `Nằm ngay <b>${r.name}</b>${roadWhy(r)}.`
     : `${j === (roadFront ? 1 : 0) ? 'Từ nhà ra' : 'Ra'} <b>${r.name}</b> ${j === (roadFront ? 1 : 0) ? 'chỉ khoảng' : 'khoảng'} <b>${r.min} phút</b>${roadWhy(r)}.`);
   // tổng kết (vòng 9, Giang: đoạn kết có thẻ 3 con số lớn): đọc đúng 3 con số trên thẻ; không đủ số liệu thì câu kiểu app cũ
-  const summaryLine = sumLine ? sumLine : buyer === 'thue' ? `Tất cả chỉ trong bán kính <b>${fmtNum(oldR)} km</b>, ở tiện, đi làm đi học đều gần.`
+  const summaryLine = reasonLine ? reasonLine : sumLine ? sumLine : buyer === 'thue' ? `Tất cả chỉ trong bán kính <b>${fmtNum(oldR)} km</b>, ở tiện, đi làm đi học đều gần.`
     : `Tất cả chỉ trong bán kính <b>${fmtNum(oldR)} km</b> quanh ${kind === 'canho' ? 'căn hộ' : 'nhà'}, sống tiện, đi lại dễ.`;
   const lines = {
     intro, overview: overviewLine, rd: rdLines, summary: summaryLine,
@@ -494,7 +541,7 @@ export function buildStory(S, L, buyer, edits = {}) {
       : a.type === 'airport' ? `Ra ${a.name} khoảng <b>${a.min} phút</b>, bay đi công tác, về quê nhanh gọn.`
         : a.type === 'port' ? `Ra ${a.name} khoảng <b>${a.min} phút</b>, quãng đường <b>${fmtNum(a.km)} km</b>${buyer === 'vung' ? ', thuận lợi kho bãi, vận chuyển hàng hoá' : ''}.`
           : `${cap('Tới ' + a.name)} cách <b>${fmtNum(a.km)} km</b>, khoảng <b>${a.min} phút</b> ô tô.`),
-    score: sumLine,
+    score: reasonLine || sumLine,
     airport: infra?.airport && `${infra.airport.name}: <b>${fmtNum(infra.airport.km)} km</b>, khoảng <b>${infra.airport.min} phút</b>, bay đi mọi miền.`,
     metro: infra?.metro && `${infra.metro.name} đã chạy, ga ${infra.metro.nearName} cách khoảng <b>${fmtNum(Math.round(infra.metro.nearKm * 10) / 10)} km</b> đường chim bay.`,
     road: infra?.road && `${infra.road.name} cách nhà <b>${fmtNum(Math.round(infra.road.km * 10) / 10)} km</b>.`,
@@ -507,7 +554,7 @@ export function buildStory(S, L, buyer, edits = {}) {
     photos: (edits.photos || []).length ? `Đây là hình ảnh thực tế của ${kwFull}, mời anh chị xem qua.` : '',
     // từ nhà ra từng trục đường lớn bao nhiêu phút (đường đi thật; trục ngay trước nhà thì nói "nằm ngay") → nhìn tổng thể vị trí
     // 15/11 vòng 7: MỖI trục một câu, đúng thứ tự hiện (trục trước nhà → trục gần nhất) → máy bay tới từng trục đúng lúc giọng nói tên
-    roads: rdLines.join(' '),
+    roads: rdLines.length ? `${askQ1} ${rdLines.join(' ')}` : '',
     build: build.length ? (build[0].station ? `Tuyến <b>${build[0].name}</b> đang thi công, ${build[0].station} chỉ cách <b>${km(build[0].km)}</b>.`
       : `Hạ tầng đang thi công gần nhà: <b>${build[0].name}</b>, cách <b>${km(build[0].km)}</b>.`)
       + (build[1] ? ` Thêm <b>${build[1].name}</b> cách <b>${km(build[1].km)}</b>.` : '') + (full ? ' Khi xong, khu vực kết nối càng thuận tiện.' : '') : '',
@@ -522,7 +569,11 @@ export function buildStory(S, L, buyer, edits = {}) {
   return {
     kind, buyer, persona: `${KINDS[kind].label} · ${BUYERS[buyer].label}`,
     house: H, info: { price: L.price || KINDS[kind].label, chips: infoChips(L) }, footprint, lot,
-    pois, anchors, infra, score: sumLine ? score : null, scoreR, stats: stats.slice(0, 3), lines, radar, frontStreet,
+    pois, anchors, infra, score: reasonLine || sumLine ? score : null, scoreR, lines, radar, frontStreet,
+    // 16/11: thẻ tổng kết = "VÌ SAO NÊN MUA?" + 3 lý do (ô cuối = lý do lớn nhất, viền sáng); thiếu số liệu thì 3 con số lớn như trước
+    stats: reasons.length >= 2 ? reasonTiles : stats.slice(0, 3), statsTitle: reasons.length >= 2 ? 'VÌ SAO NÊN MUA?' : '', statsHi: reasons.length >= 2 ? reasons.length - 1 : -1,
+    reasons: reasons.map(r => r.say.replace(/<[^>]+>/g, '')),
+    ask1: OLD ? '' : 'SỐNG Ở ĐÂY CÓ TIỆN KHÔNG?',   // viên chữ câu hỏi 1 trên hình (kiểu Radar); kiểu app cũ chỉ hỏi bằng lời
     // vòng 7 (Giang): tổng kết là cảnh riêng ngay trước lời kêu gọi (mọi bản) — không gộp 3 con số vào cảnh kết nữa
     full, cluster, orbit, flow: radar ? 'radar' : 'lanluot', engine: OLD ? 'old' : '3d', oldR, statsInCta: false, ctaKey, ctaMode, cta: ctaAsk, area,
     // mở đầu từ quả địa cầu bay xuống tỉnh (mặc định bật, khách tắt ở "Sửa video")

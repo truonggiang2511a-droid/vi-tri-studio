@@ -5,10 +5,12 @@
 // Nền: MapLibre GL (BSD-3) + ảnh vệ tinh Esri + khối nhà OpenStreetMap (OpenFreeMap).
 import maplibregl from 'maplibre-gl';
 import { drawIcon } from './icons.js';
+import { imageryUrls, imageryResult } from './render.js';
 
 // Ảnh vệ tinh Esri: vùng chưa có ảnh ở mức zoom sát (nông thôn, ven đô) máy chủ trả ô xám "Map data not yet available"
 // → nhận ra ô xám (cách app cũ render.js isPlaceholder) và lấy ô cha zoom thấp hơn, cắt đúng phần, phóng to.
-const ESRI_SAT = (z, y, x) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+// 16/11 (Giang duyệt): ô vệ tinh đi PHIÊN BẢN ĐỒ ArcGIS (ô không giới hạn, 1 phiên/máy/12 giờ, chung với app cũ) → khoá → máy chủ công khai
+// (render.js imageryUrls). Trước đó lấy thẳng máy chủ công khai — Esri chỉ cho app không thu tiền dùng nguồn này.
 let phCv = null;
 function isPlaceholder(bm) {
   const N = 64;
@@ -37,10 +39,17 @@ const parentBlobs = new Map();   // ô cha vừa dùng (4 ô con cùng cần 1 �
 async function satTile(z, y, x, signal) {
   const key = z + '/' + y + '/' + x;
   if (parentBlobs.has(key)) return parentBlobs.get(key);
-  const r = await fetch(ESRI_SAT(z, y, x), { signal });
-  if (!r.ok) throw new Error('tile ' + r.status);
-  const blob = await r.blob();
-  if (z <= 12 || !isPlaceholder(await loadImg(blob))) return blob;
+  // phiên / khoá: nơi chưa có ảnh ở mức zoom này trả 404 (= không có ảnh, lấy ô cha); máy chủ công khai trả ô xám (isPlaceholder)
+  let blob = null, missing = false;
+  for (const src of await imageryUrls(z, x, y)) {
+    let r;
+    try { r = await fetch(src.url, { signal }); } catch (e) { if (signal?.aborted) throw e; imageryResult(src.mode, false); continue; }
+    if (r.status === 404 && src.mode !== 'congkhai') { missing = true; imageryResult(src.mode, true); break; }
+    if (!r.ok) { imageryResult(src.mode, false); continue; }
+    blob = await r.blob(); imageryResult(src.mode, true); break;
+  }
+  if (!blob && (!missing || z <= 2)) throw new Error('tile ' + key);
+  if (blob && (z <= 12 || !isPlaceholder(await loadImg(blob)))) return blob;
   const pb = await satTile(z - 1, y >> 1, x >> 1, signal);
   parentBlobs.set((z - 1) + '/' + (y >> 1) + '/' + (x >> 1), pb);
   if (parentBlobs.size > 48) parentBlobs.delete(parentBlobs.keys().next().value);
@@ -372,7 +381,18 @@ export function buildTimeline(story) {
     }
   }
   if (story.build?.length) add('build', 5.2, v.build);
-  if (story.score && !story.statsInCta) add('score', 5.6, v.score);
+  if (story.score && !story.statsInCta) {
+    add('score', 5.6, v.score);
+    // 16/11 vòng 16: ô "VÌ SAO NÊN MUA?" bật lên đúng lúc giọng nói "Thứ nhất / Thứ hai / lý do lớn nhất" (không thấy chữ → hiện lần lượt như cũ)
+    const s = scenes.at(-1), n = (story.stats || []).length;
+    if (story.statsTitle && n >= 2) {
+      const plain = String(L.score || '').replace(/<[^>]+>/g, '').toLowerCase(), say = s.vo ? s.vo.buffer.duration : est(L.score);
+      const keys = [...['thứ nhất', 'thứ hai'].slice(0, n - 1), 'lý do lớn nhất'];
+      let from = 0;
+      const at = keys.map(w => { const i = plain.indexOf(w, from); if (i >= 0) from = i + w.length; return i; });
+      if (say && at.every(i => i >= 0)) s.rev = at.map(i => s.t0 + VO_AT + say * i / Math.max(1, plain.length) - 0.15);
+    }
+  }
   // ảnh thực tế của căn: dồn xuống cuối, ngay trước lời kêu gọi (lời đọc chỉ giới thiệu "hình ảnh thực tế", không tả bịa từng ảnh)
   if (story.photos?.length) add('photos', PT * story.photos.length + 0.3, v.photos);
   add('cta', 3.8, v.cta);
@@ -427,7 +447,11 @@ export function sfxEvents3D(tl) {
     }
     if (s.kind === 'airport') { add(s.t0, 'whoosh', 0.45, 1.4); add(s.t0 + 0.2, 'shimmer', 0.3, 2.4); add(s.t0 + 2.7, 'ding', 0.3); add(s.t0 + AP_OFF, 'whoosh', 0.5, 1.6); add(s.t0 + AP_OFF + 1.9, 'jet', 0.75, Math.min(5.5, d - AP_OFF - 1.9)); }
     if (s.kind === 'metro') { add(s.t0, 'whoosh', 0.45, 1.4); add(s.t0 + 1.2, 'rail', 0.5, d - 1.6); add(s.t1 - 1.2, 'ding', 0.25); }
-    if (s.kind === 'score') { add(s.t0, 'whoosh', 0.55, 1.4); for (let r = 0; r < 5; r++) add(s.t0 + 1.3 + r * 0.14, 'tick', 0.14); }
+    if (s.kind === 'score') {
+      add(s.t0, 'whoosh', 0.55, 1.4);
+      if (s.rev) s.rev.forEach((r, j) => add(Math.max(s.t0 + 1.0, r), 'ding', j === s.rev.length - 1 ? 0.42 : 0.3));   // mỗi lý do bật 1 tiếng, lý do lớn nhất to hơn
+      else for (let r = 0; r < 5; r++) add(s.t0 + 1.3 + r * 0.14, 'tick', 0.14);
+    }
     if (s.kind === 'cta') { add(s.t0, 'whoosh', 0.5, 1.2); add(s.t0 + 0.45, 'ding', 0.45); }
   }
   if (tl.ctaMid != null) add(tl.ctaMid + 0.05, 'ding', 0.32);   // thanh kêu gọi nở to giữa video
@@ -508,26 +532,46 @@ export function goldRings(ctx, x, y, t, k, squash) {
 
 // Thẻ tổng kết 3 con số lớn (số chạy từ 0): dùng chung cho cảnh tổng kết 3D và đoạn kết vẽ kiểu app cũ (dd-old.js, vòng 9 — Giang:
 // "đoạn kết phải có thẻ như thế này"). y = mép trên thẻ (mặc định dưới vùng an toàn phía trên), khung width × height px.
-export function drawStats(ctx, S3, a, grow, width, height, y = null) {
+// opt.title: dòng tiêu đề phía trên các ô ("VÌ SAO NÊN MUA?", 16/11); opt.hi: ô được nhấn (lý do lớn nhất) — viền vàng sáng
+export const STATS_TITLE_H = 30;
+export function drawStats(ctx, S3, a, grow, width, height, y = null, opt = {}) {
   if (a <= 0 || !S3?.length) return;
   const k = width / W0, f = (w, px) => `${w} ${px * k}px ${FONT}`;
   const fit = (txt, maxW) => { if (ctx.measureText(txt).width <= maxW) return txt; let s2 = txt; while (s2.length > 2 && ctx.measureText(s2 + '…').width > maxW) s2 = s2.slice(0, -1); return s2.trimEnd() + '…'; };
-  const y0 = y ?? SAFE.top * height + 8 * k, x0 = SAFE.x * width, x1 = width - SAFE.x * width, h = 112 * k, gap = 8 * k;
+  const yT = y ?? SAFE.top * height + 8 * k, y0 = yT + (opt.title ? STATS_TITLE_H * k : 0), x0 = SAFE.x * width, x1 = width - SAFE.x * width, h = 112 * k, gap = 8 * k;
   const tw = (x1 - x0 - gap * (S3.length - 1)) / S3.length;
   ctx.save(); ctx.globalAlpha = clamp01(a);
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  if (opt.title) {
+    ctx.font = f(900, 16); const tW = ctx.measureText(opt.title).width + 28 * k;
+    ctx.beginPath(); ctx.roundRect(width / 2 - tW / 2, yT, tW, 24 * k, 12 * k); ctx.fillStyle = GOLD; ctx.fill();
+    ctx.fillStyle = '#1a1205'; ctx.fillText(opt.title, width / 2, yT + 17.5 * k);
+  }
   S3.forEach((s3, j) => {
-    const e = clamp01((grow - j * 0.15) / 0.5), tx = x0 + j * (tw + gap), cx = tx + tw / 2;
+    const st = opt.at?.[j] ?? j * 0.15, e = clamp01((grow - st) / 0.5), tx = x0 + j * (tw + gap), cx = tx + tw / 2;
     if (e <= 0) return;
     ctx.save();
     ctx.globalAlpha = clamp01(a) * clamp01(e * 2);
     ctx.translate(cx, y0 + h / 2); const sc = 0.7 + 0.3 * POP(e); ctx.scale(sc, sc); ctx.translate(-cx, -(y0 + h / 2));
     const g = ctx.createLinearGradient(tx, y0, tx, y0 + h); g.addColorStop(0, 'rgba(11,18,32,.94)'); g.addColorStop(1, 'rgba(26,36,64,.94)');
-    ctx.beginPath(); ctx.roundRect(tx, y0, tw, h, 14 * k); ctx.fillStyle = g; ctx.fill(); ctx.lineWidth = 1.2 * k; ctx.strokeStyle = 'rgba(245,196,81,.55)'; ctx.stroke();
-    // số: chạy từ 0 tới giá trị thật (số thập phân dạng "1,2" giữ nguyên chữ)
-    const num = typeof s3.n === 'number' ? String(Math.round(s3.n * EASE(clamp01((grow - j * 0.15) / 1.1)))) : String(s3.n);
-    ctx.font = `900 ${42 * k}px Montserrat, ${FONT}`; ctx.fillStyle = GOLD;
-    ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = 10 * k; ctx.fillText(num, cx, y0 + 52 * k); ctx.shadowColor = 'transparent';
+    const hi = opt.hi === j;
+    ctx.beginPath(); ctx.roundRect(tx, y0, tw, h, 14 * k); ctx.fillStyle = g; ctx.fill();
+    if (hi) { ctx.shadowColor = GOLD; ctx.shadowBlur = 14 * k; }
+    ctx.lineWidth = (hi ? 2.4 : 1.2) * k; ctx.strokeStyle = hi ? GOLD : 'rgba(245,196,81,.55)'; ctx.stroke(); ctx.shadowColor = 'transparent';
+    if (s3.n === '✓') {   // ô không có số (pháp lý rõ ràng, nằm ngay trục đường): dấu tích vẽ tay (phông số không có ký tự ✓)
+      const e2 = clamp01((grow - st) / 0.6), cy = y0 + 38 * k, r = 17 * k;
+      ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fillStyle = 'rgba(245,196,81,.16)'; ctx.fill(); ctx.lineWidth = 2 * k; ctx.strokeStyle = GOLD; ctx.stroke();
+      const P2 = [[cx - 8 * k, cy + 0.5 * k], [cx - 2.5 * k, cy + 6 * k], [cx + 9 * k, cy - 6.5 * k]], L1 = Math.hypot(5.5, 5.5), L2 = Math.hypot(11.5, 12.5), q = e2 * (L1 + L2);
+      ctx.beginPath(); ctx.moveTo(...P2[0]);
+      if (q <= L1) ctx.lineTo(P2[0][0] + (P2[1][0] - P2[0][0]) * q / L1, P2[0][1] + (P2[1][1] - P2[0][1]) * q / L1);
+      else { ctx.lineTo(...P2[1]); const u = (q - L1) / L2; ctx.lineTo(P2[1][0] + (P2[2][0] - P2[1][0]) * u, P2[1][1] + (P2[2][1] - P2[1][1]) * u); }
+      ctx.lineWidth = 4 * k; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = GOLD; ctx.stroke();
+    } else {
+      // số: chạy từ 0 tới giá trị thật (số thập phân dạng "1,2" giữ nguyên chữ)
+      const num = typeof s3.n === 'number' ? String(Math.round(s3.n * EASE(clamp01((grow - st) / 1.1)))) : String(s3.n);
+      ctx.font = `900 ${42 * k}px Montserrat, ${FONT}`; ctx.fillStyle = GOLD;
+      ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = 10 * k; ctx.fillText(num, cx, y0 + 52 * k); ctx.shadowColor = 'transparent';
+    }
     ctx.font = f(800, 13.5); ctx.fillStyle = '#fff'; ctx.fillText(fit(s3.unit, tw - 10 * k), cx, y0 + 76 * k);
     ctx.font = f(600, 11); ctx.fillStyle = '#cfe0ff'; ctx.fillText(fit(s3.sub, tw - 8 * k), cx, y0 + 96 * k);
     ctx.restore();
@@ -1349,6 +1393,20 @@ export function createDirector3D({ width, height, story, overlay = null }) {
     }
     ctx.restore();
   }
+  // 16/11 (Giang: kịch bản trả lời câu khách hay hỏi): câu hỏi 1 "SỐNG Ở ĐÂY CÓ TIỆN KHÔNG?" — viên vàng trên cùng suốt phần trục đường + radar
+  // (radar: thẻ đếm tiện ích nằm ngay dưới); câu hỏi 2 "VÌ SAO NÊN MUA?" là tiêu đề thẻ tổng kết (drawStats opt.title)
+  const Q1 = story.ask1 || '', q1Sc = tl.scenes.filter(x => x.kind === 'roads' || x.kind === 'radar');
+  const q1A = t => !Q1 || !q1Sc.length ? 0 : clamp01(Math.min((t - q1Sc[0].t0) / 0.4, (q1Sc[q1Sc.length - 1].t1 - t) / 0.3));
+  function qChip(ctx, text, a) {
+    if (!text || a <= 0) return;
+    ctx.save(); ctx.globalAlpha = a; ctx.translate(0, (1 - easeOut(a)) * -8 * k);
+    ctx.font = font(900, 16); ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    const w = ctx.measureText(text).width + 28 * k, y = PANEL_Y();
+    ctx.beginPath(); ctx.roundRect(width / 2 - w / 2, y, w, 24 * k, 12 * k); ctx.fillStyle = GOLD;
+    ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = 8 * k; ctx.fill(); ctx.shadowColor = 'transparent';
+    ctx.fillStyle = '#1a1205'; ctx.fillText(text, width / 2, y + 17.5 * k);
+    ctx.restore();
+  }
   // 16/11 (Giang: thiếu cảnh kết nối vùng): thẻ "KẾT NỐI VÙNG" trên cùng suốt các cảnh điểm mốc + cảnh tổng; dòng dưới kể các điểm
   // (Trung tâm · Sân bay · Cảng biển), điểm đang nói chữ trắng, điểm chưa tới mờ
   const A_WORD = { center: 'Trung tâm', airport: 'Sân bay', port: 'Cảng biển', metro: 'Ga metro', station: 'Ga tàu' };
@@ -1379,7 +1437,10 @@ export function createDirector3D({ width, height, story, overlay = null }) {
     ctx.restore();
   }
   // Tổng kết = 3 con số lớn (15/11, thay bảng 5 dòng chữ nhỏ): số chạy từ 0, mỗi ô bật lần lượt
-  function statsCard(ctx, a, grow) { drawStats(ctx, story.stats || [], a, grow, width, height); }
+  function statsCard(ctx, a, grow, s) {
+    const g0 = s ? s.t0 + 1.0 : 0;   // grow tính từ s.t0 + 1 s (xem chỗ gọi)
+    drawStats(ctx, story.stats || [], a, grow, width, height, null, { title: story.statsTitle, hi: story.statsHi, at: s?.rev ? s.rev.map(r => Math.max(0, r - g0)) : null });
+  }
   // nút kêu gọi cuối: trên phụ đề, trong dải an toàn (né cột nút bên phải của nền tảng); 2 dòng: từ khoá + "để nhận …"
   function cta(ctx, a) {
     if (a <= 0) return;
@@ -1541,7 +1602,7 @@ export function createDirector3D({ width, height, story, overlay = null }) {
     });
     ctx.globalAlpha = 1;
     // thẻ đếm trên cùng: "BÁN KÍNH 2 KM" + số tiện ích đã sáng (tăng dần theo tia quét)
-    const txt = `${n}`, sub = `tiện ích trong bán kính ${String(R).replace(".", ",")} km`, y0 = PANEL_Y();
+    const txt = `${n}`, sub = `tiện ích trong bán kính ${String(R).replace(".", ",")} km`, y0 = PANEL_Y() + (Q1 ? STATS_TITLE_H * k : 0);   // dưới câu hỏi 1
     ctx.font = font(900, 34); const w1 = ctx.measureText(txt).width; ctx.font = font(700, 13); const w2 = ctx.measureText(sub).width;
     const W = w1 + w2 + 34 * k, x0 = (width - W) / 2;
     ctx.globalAlpha = clamp01(a * Math.min(1, (t - s.hits[0]) / 0.3));   // thẻ đếm hiện khi tiện ích đầu tiên sáng (không đứng "0" mấy giây)
@@ -2073,8 +2134,9 @@ export function createDirector3D({ width, height, story, overlay = null }) {
     const [hx, hy] = proj(H);
     const reserved = [[hx - 22 * k, hy - 64 * k, hx + 22 * k, hy + 6 * k]];
     if (s.kind === 'house' || s.kind === 'lot') reserved.push([0, PANEL_Y(), width, PANEL_Y() + 90 * k]);
-    if (s.kind === 'score' || s.kind === 'cta') reserved.push([0, PANEL_Y(), width, PANEL_Y() + 116 * k]);
-    if (s.kind === 'radar' || ((s.kind === 'anchor' || s.kind === 'region') && !overlay)) reserved.push([0, PANEL_Y(), width, PANEL_Y() + 56 * k]);
+    if (s.kind === 'score' || s.kind === 'cta') reserved.push([0, PANEL_Y(), width, PANEL_Y() + (116 + (story.statsTitle ? STATS_TITLE_H : 0)) * k]);
+    if (s.kind === 'radar' || ((s.kind === 'anchor' || s.kind === 'region') && !overlay)) reserved.push([0, PANEL_Y(), width, PANEL_Y() + (56 + (s.kind === 'radar' && Q1 ? STATS_TITLE_H : 0)) * k]);
+    if (s.kind === 'roads' && Q1) reserved.push([0, PANEL_Y(), width, PANEL_Y() + STATS_TITLE_H * k]);
     if (s.kind === 'cta') reserved.push([0, height * CAP_Y - 100 * k, width, height]);
     const labs = placeLabels(ctx, items, reserved, t);
     // bộ thử (tools / Playwright): nhãn + chữ mặt đất của khung vừa vẽ, để đo đè nhau / đổi cỡ
@@ -2103,7 +2165,8 @@ export function createDirector3D({ width, height, story, overlay = null }) {
     if (s.kind === 'house') infoCard(ctx, Math.min((t - s.t0) / 0.45, (s.t1 - t) / 0.35), story.info.price, story.info.chips);
     if (s.kind === 'lot') infoCard(ctx, Math.min((t - s.t0 - 0.5) / 0.45, (s.t1 - t) / 0.35), story.lot.label, story.lot.chips || []);
     if (s.kind === 'anchor' || s.kind === 'region') regionChip(ctx, t, s);
-    if (s.kind === 'score') statsCard(ctx, Math.min((t - s.t0 - 1.0) / 0.4, (s.t1 - t) / 0.35), t - s.t0 - 1.0);
+    if (s.kind === 'roads' || s.kind === 'radar') qChip(ctx, Q1, q1A(t));
+    if (s.kind === 'score') statsCard(ctx, Math.min((t - s.t0 - 1.0) / 0.4, (s.t1 - t) / 0.35), t - s.t0 - 1.0, s);
     if (s.kind === 'cta') { if (story.statsInCta) statsCard(ctx, (t - s.t0 - 0.3) / 0.4, t - s.t0 - 0.3); cta(ctx, (t - s.t0) / 0.4); }
     if (s.kind === 'photos') photos(ctx, t, s);
     ctaBar(ctx, t, s);

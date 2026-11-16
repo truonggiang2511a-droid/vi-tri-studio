@@ -148,7 +148,7 @@ export function createHybrid({ width, height, story, src, voiceOf }) {
     }
     if (sm && S3.length >= 2 && to > sm.t0 + 0.5 && to < ou.t0 + 0.5) {
       const a = Math.min(1, (to - sm.t0 - 0.5) / 0.4, (ou.t0 + 0.5 - to) / 0.4);
-      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); drawStats(ctx, S3, a, to - sm.t0 - 0.5, width, height); ctx.restore();
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); drawStats(ctx, S3, a, to - sm.t0 - 0.5, width, height, null, { title: story.statsTitle, hi: story.statsHi }); ctx.restore();
     }
   };
   function overlay(ctx, t, api) {
