@@ -16,7 +16,7 @@ import { setImageryToken, preferSession, warmSession, onTileSource } from './ren
 import { token, voiceLines, voiceOf, prefetchVoices, canExport, chargeExport } from './dd-voice.js';
 import { MAX_PHOTOS, savePhotos, loadPhotoBlobs, shrink, toBitmap } from './dd-photos.js';
 import { track, funnel } from './track.js';
-import { xuatStart, xuatCheckCrash } from './xuatlog.js';
+import { xuatStart, xuatCheckCrash, devClass } from './xuatlog.js';
 
 const $ = id => document.getElementById(id);
 const S = { house: null, scan: null, scanJob: null, routes: {}, anchors: [], infra: null, listing: null, buyer: null, edits: {}, manual: [], music: 'hung-hon', photos: [] };   // photos: [{ blob, url, bmp }]
@@ -417,9 +417,9 @@ const allLines = st => {
 const hybridSrc = () => ({ house: S.house, pois: S.scan?.pois || [], routes: S.routes, roads: S.scan?.roads || [], streets: S.scan?.streets || null, admin: S.scan?.admin || null,
   ward: storeData().ward, anchors: (S.anchors || []).map(a => a.type === 'airport' ? { ...a, fx: null } : a), build: S.build || [], zones: S.zones || [], listing: S.listing || {}, brand: $('brand').value.trim() });
 // đạo diễn theo kiểu đã chọn: mặc định mở đầu 3D + phần sau vẽ như app cũ; radar = toàn bộ 3D (dd3d)
-const makeDirector = (width, height, st) => st.engine === 'old'
-  ? createHybrid({ width, height, story: withVoice(st), src: hybridSrc(), voiceOf })
-  : createDirector3D({ width, height, story: withVoice(st) });
+const makeDirector = (width, height, st, lite = false) => st.engine === 'old'
+  ? createHybrid({ width, height, story: withVoice(st), src: hybridSrc(), voiceOf, lite })
+  : createDirector3D({ width, height, story: withVoice(st), lite });
 // Giọng: đã đăng nhập thì AI đọc các câu CÒN THIẾU (câu cũ dùng lại); chưa đăng nhập thì để trống, báo đăng ký
 let voiceErr = '';
 async function voiceAll(onP) {
@@ -1014,6 +1014,73 @@ function goLogin(hash = '#dangky') { save(); location.href = '/?dd=1' + hash; }
 // ---------- Xuất MP4: kiểm tra lượt trước, TRỪ LƯỢT SAU KHI XUẤT XONG ----------
 // localOnly: chỉ trên máy dev (localhost) — xuất thử không qua tài khoản/lượt, để kiểm tra hình
 const DEV = /^(localhost|127.0.0.1)$/.test(location.hostname);
+// Nguồn khung hình lúc xuất, chịu được mất WebGL (16/11, Giang xuất 1080p trên điện thoại báo "hết bộ nhớ đồ hoạ"): iPhone thu hồi
+// WebGL khi thiếu bộ nhớ đồ hoạ hoặc khi khoá màn hình / chuyển app. Mất thì chờ trang hiện lại → chờ MapLibre tự dựng lại (≤ 6 s) →
+// không được thì bỏ bản đồ cũ, tạo bản đồ mới (lần 2 trở đi bản nhẹ, không MSAA) và dựng tiếp ĐÚNG khung đang dở; tối đa 3 lần.
+// Mỗi khung độc lập theo thời gian t nên video không bị đứt (khung đã mã hoá giữ nguyên).
+const untilVisible = () => document.visibilityState === 'visible' ? Promise.resolve() : new Promise(r => {
+  const f = () => { if (document.visibilityState === 'visible') { document.removeEventListener('visibilitychange', f); r(); } };
+  document.addEventListener('visibilitychange', f);
+});
+function exportSource(w, h, st, onLost) {
+  const out = document.createElement('canvas'); out.width = w; out.height = h;
+  const ctx = out.getContext('2d', { alpha: false });
+  let d = null, fs = null, lost = 0, wasHidden = false;
+  const onVis = () => { if (document.visibilityState === 'hidden') wasHidden = true; };
+  document.addEventListener('visibilitychange', onVis);
+  const open = async lite => { d = makeDirector(w, h, st, lite); await d.ready; fs = d.engine === 'old' ? d.frameSource() : null; };
+  const needGl = t => d.glUntil == null || t < d.glUntil;
+  return {
+    canvas: out, open, get dir() { return d; }, get lost() { return lost; },
+    async prepare(t) {
+      for (;;) {
+        try {
+          const p = fs ? fs.prepare(t) : d.prepare(t);
+          if (p) await p;
+          if (!(d.glLost?.() && needGl(t))) return;
+        } catch (e) { if (!e?.glLost) throw e; }
+        lost++;
+        const bg = wasHidden || document.visibilityState === 'hidden';
+        funnel(`dd_xgl_${devClass()}${bg ? '_bg' : ''}`, true);
+        if (lost > 3) throw Object.assign(new Error('Máy hết bộ nhớ đồ hoạ khi dựng 3D. Đóng bớt ứng dụng rồi xuất lại (hoặc chọn "Nhanh 720p").'), { glLost: true });
+        onLost?.(lost);
+        await untilVisible();
+        wasHidden = false;
+        if (await d.restored?.(6000)) { funnel('dd_xgl_hoi', true); continue; }
+        try { d.destroy(); } catch { /* đã gỡ */ }
+        await new Promise(r => setTimeout(r, 400));   // cho trình duyệt thu dọn bộ nhớ đồ hoạ cũ
+        await open(lost >= 2);
+        funnel('dd_xgl_moi', true);
+      }
+    },
+    draw(_tl, t) {
+      if (fs) { fs.draw(_tl, t); ctx.drawImage(fs.canvas, 0, 0); } else d.draw(ctx, t);
+    },
+    destroy() { document.removeEventListener('visibilitychange', onVis); try { d?.destroy(); } catch { /* đã gỡ */ } },
+  };
+}
+// giữ màn hình sáng trong lúc xuất (khoá máy = iPhone thu hồi WebGL); trang ẩn thì trình duyệt tự nhả → hiện lại thì xin lại
+function keepAwake() {
+  let lock = null, on = true;
+  const get = async () => { try { if (on && document.visibilityState === 'visible' && !lock) { lock = await navigator.wakeLock?.request('screen'); lock?.addEventListener?.('release', () => { lock = null; }); } } catch { lock = null; } };
+  const onVis = () => { if (document.visibilityState === 'visible') get(); };
+  document.addEventListener('visibilitychange', onVis);
+  get();
+  return () => { on = false; document.removeEventListener('visibilitychange', onVis); try { lock?.release(); } catch { /* bỏ qua */ } lock = null; };
+}
+// xuất xong dựng lại khung xem trước (đã gỡ lúc xuất để trả bộ nhớ đồ hoạ cho bản xuất)
+async function revivePreview() {
+  if (dir || !story) return;
+  const cv = $('cv');
+  try {
+    dir = makeDirector(cv.width, cv.height, story);
+    await dir.ready;
+    dir.live(cv.getContext('2d'));
+    dir.setFrame(0.01);
+    mixReady();
+  } catch { /* xem trước lỗi: bấm Tạo lại video */ }
+}
+
 async function exportVideo(localOnly = false) {
   localOnly = localOnly === true && DEV;
   if (!canEncodeMp4()) { alert('Trình duyệt này chưa xuất được video. Mở bằng Chrome hoặc Safari mới nhất.'); return; }
@@ -1021,7 +1088,7 @@ async function exportVideo(localOnly = false) {
   const bar = $('xbar'), fill = $('xfill'), txt = $('xtxt'), btn = $('exportBtn');
   bar.hidden = false; btn.disabled = true; $('out').textContent = ''; fill.style.width = '0';
   const t0 = performance.now();
-  let xd = null, xlog = null;
+  let xs = null, xlog = null, unwake = null;
   if (!localOnly) funnel('dd_xuat');
   try {
     txt.textContent = 'Đang kiểm tra lượt…';
@@ -1042,13 +1109,19 @@ async function exportVideo(localOnly = false) {
     const weak = (navigator.deviceMemory || 8) <= 4 || (navigator.hardwareConcurrency || 8) <= 4;
     const h = best ? 1920 : 1280, w = Math.round(h * 9 / 32) * 2, fps = best && !weak ? 60 : 30;
     if (!localOnly) xlog = xuatStart('d', best ? 1080 : 720);
-    xd = makeDirector(w, h, story);
-    await xd.ready;
+    unwake = keepAwake();
+    // gỡ bản đồ xem trước trong lúc xuất: điện thoại chỉ giữ MỘT bản đồ 3D (đỡ ~45 MB bộ nhớ đồ hoạ); xuất xong dựng lại
+    const keepPreview = dir;
+    dir = null; mixMemo = null; keepPreview?.destroy();
+    let note = '';
+    xs = exportSource(w, h, story, () => { note = ' · máy vừa thiếu bộ nhớ, đang dựng lại 3D'; txt.textContent = 'Đang dựng lại 3D (máy vừa thiếu bộ nhớ đồ hoạ)…'; });
+    await xs.open(false);
+    const xd = xs.dir;
     // phần vẽ kiểu app cũ: ô ảnh vệ tinh lúc xuất đi phiên bản đồ (như app cũ, không tốn hạn mức ô ảnh)
     if (xd.engine === 'old') { preferSession(true); await warmSession().catch(() => false); }
     const audio = await mixFor(xd);
-    const blob = await exportMp4({ tl: { duration: xd.duration, LW: w }, width: w, height: h, fps, audioBuffer: audio, source: xd.frameSource(),
-      onProgress: (ph, a, b) => { if (ph === 'frames') xlog?.pct(100 * a / b * 0.95); else if (ph === 'mux') xlog?.pct(96); if (ph === 'frames') { fill.style.width = (a / b * 100) + '%'; txt.textContent = `Đang dựng video ${Math.round(a / b * 100)}%`; } } });
+    const blob = await exportMp4({ tl: { duration: xd.duration, LW: w }, width: w, height: h, fps, audioBuffer: audio, source: xs,
+      onProgress: (ph, a, b) => { if (ph === 'frames') xlog?.pct(100 * a / b * 0.95); else if (ph === 'mux') xlog?.pct(96); if (ph === 'frames') { fill.style.width = (a / b * 100) + '%'; txt.textContent = `Đang dựng video ${Math.round(a / b * 100)}% · giữ màn hình mở${note}`; } } });
     // xuất xong mới trừ lượt (1 vị trí = 1 lượt; xuất lại trong 24 giờ không trừ thêm)
     txt.textContent = 'Đang lưu lượt…';
     const r = localOnly ? { ok: true } : await chargeExport(S.house);
@@ -1066,17 +1139,17 @@ async function exportVideo(localOnly = false) {
     // ảnh bìa (khung đầu video) để đăng kèm / làm thumbnail
     try {
       const cc = document.createElement('canvas'); cc.width = w; cc.height = h;
-      const p0 = xd.prepare(1.6); if (p0) await p0; xd.draw(cc.getContext('2d'), 1.6);
+      const cd = xs.dir, p0 = cd.prepare(1.6); if (p0) await p0; cd.draw(cc.getContext('2d'), 1.6);
       const cb = await new Promise(r => cc.toBlob(r, 'image/jpeg', 0.92));
       $('out').append(Object.assign(document.createElement('a'), { href: URL.createObjectURL(cb), download: 'anh-bia.jpg', textContent: '🖼 Tải ảnh bìa' }));
     } catch { /* không có ảnh bìa vẫn xong video */ }
-    window.__lastExport = { blob, sec: (performance.now() - t0) / 1000 };
+    window.__lastExport = { blob, sec: (performance.now() - t0) / 1000, lost: xs.lost };
   } catch (e) {
     const best = document.querySelector('input[name=q]:checked')?.value === 'best';
     txt.textContent = 'Lỗi: ' + (e.message || e) + (best && !/720p/.test(String(e.message)) ? ' Máy yếu thì chọn "Nhanh 720p" rồi xuất lại.' : '');
-    window.__lastExport = { error: String(e.stack || e) };
-    if (!localOnly) funnel('dd_xuat_loi');
-  } finally { xlog?.end(); xd?.destroy(); preferSession(false); btn.disabled = false; }
+    window.__lastExport = { error: String(e.stack || e), lost: xs?.lost || 0 };
+    if (!localOnly) { funnel('dd_xuat_loi'); funnel(`dd_xloi_${e?.glLost ? 'gl_' : ''}${devClass()}`, true); }
+  } finally { xlog?.end(); unwake?.(); if (window.__lastExport && xs) window.__lastExport.lost = xs.lost; xs?.destroy(); preferSession(false); btn.disabled = false; revivePreview(); }
 }
 
 // ---------- Bài đăng: mô tả + hashtag + bình luận ghim (chép 1 chạm), có link trang web căn để khách để lại SĐT ----------
@@ -1211,4 +1284,5 @@ fetch('/api/config').then(r => (r.ok ? r.json() : null)).then(c => setImageryTok
 onTileSource(k => funnel('o_' + k));
 xuatCheckCrash();   // lần xuất trước không kết thúc bình thường (văng / tắt trang) → đếm cho báo cáo 7h
 funnel('dd_vao');   // phễu nội bộ AI đạo diễn: dd_nut (app cũ) → dd_vao → dd_agent → dd_xuat → dd_xuat_xong / dd_xuat_loi (không gửi Meta/TikTok)
-window.__dd = { S, get story() { return story; }, get dir() { return dir; }, rebuild, exportVideo, setHouse, addPhotos, lines: () => story ? allLines(story) : [] };
+window.__dd = { S, get story() { return story; }, get dir() { return dir; }, rebuild, exportVideo, setHouse, addPhotos, lines: () => story ? allLines(story) : [],
+  ...(DEV ? { exportSource: (w, h) => exportSource(w, h, story) } : {}) };

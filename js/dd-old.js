@@ -87,7 +87,7 @@ function oldTexts(story, scene) {
 // Đạo diễn ghép: cùng giao diện với createDirector3D (ready, duration, voiceSegs, sfx, setFrame, live, prepare, draw, frameSource, destroy)
 // src = dữ liệu quét thật (house, pois, routes, roads, streets, admin, anchors có fx, build, zones, listing, brand)
 // voiceOf(text) → AudioBuffer đã đọc (hoặc null: nhịp ước theo số chữ, như dd3d paceByText)
-export function createHybrid({ width, height, story, src, voiceOf }) {
+export function createHybrid({ width, height, story, src, voiceOf, lite = false }) {
   const sc = width / LW;
   const scene = oldScene(src, story);
   const texts = oldTexts(story, scene);
@@ -114,7 +114,7 @@ export function createHybrid({ width, height, story, src, voiceOf }) {
   const P = camPose(old, T0);
   const seam = { c: [P.lng, P.lat], z: P.zoom - 1 + Math.log2(sc), p: P.pitch, b: 0, pad: Math.max(0, 2 * (P.fy * height - height / 2)) };
   const ddStory = { ...story, cover: null, zones: [], opening: { seam } };
-  const dd = createDirector3D({ width, height, story: ddStory, overlay: (ctx, t, api) => overlay(ctx, t, api) });
+  const dd = createDirector3D({ width, height, story: ddStory, overlay: (ctx, t, api) => overlay(ctx, t, api), lite });
   const A = dd.duration;
   const toOld = t => T0 + (t - A);
   const duration = A + old.duration - T0;
@@ -221,6 +221,8 @@ export function createHybrid({ width, height, story, src, voiceOf }) {
   };
   const draw = (ctx, t) => { if (t < A) dd.draw(ctx, t); else drawOld(ctx, t, false); };
   function destroy() { liveCtx = null; cancelAnimationFrame(raf); dd.destroy(); }
+  // WebGL (bản đồ 3D) chỉ dùng cho phần mở đầu t < A; phần sau vẽ bằng canvas 2D như app cũ → mất WebGL sau A thì không sao
   return { engine: 'old', tl: { A, T0, old, dd: dd.tl }, duration, voiceSegs, sfx, ready: dd.ready, setFrame, live, prepare, draw, frameSource, destroy, map: dd.map,
+    glLost: () => dd.glLost(), restored: ms => dd.restored(ms), glUntil: A,
     debug: () => ({ ...(dd.debug() || {}), A, T0, seam, phases: old.phases.map(p => ({ type: p.type, vkey: p.vkey, t0: +(p.t0 - T0 + A).toFixed(2), t1: +(p.t1 - T0 + A).toFixed(2) })) }) };
 }

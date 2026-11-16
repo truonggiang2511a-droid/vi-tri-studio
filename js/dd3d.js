@@ -591,7 +591,7 @@ export function drawStats(ctx, S3, a, grow, width, height, y = null, opt = {}) {
   ctx.restore();
 }
 
-export function createDirector3D({ width, height, story, overlay = null }) {
+export function createDirector3D({ width, height, story, overlay = null, lite = false }) {
   const k = width / W0;
   const OPEN = !!story.opening;   // vòng 9: chỉ dựng phần mở đầu (js/dd-old.js vẽ phần còn lại kiểu app cũ)
   const tl = buildTimeline(story);
@@ -726,11 +726,18 @@ export function createDirector3D({ width, height, story, overlay = null }) {
     { id: 'zones-g', type: 'line', source: 'zones', filter: ['in', ['get', 'zid'], ['literal', []]], paint: { 'line-color': ['get', 'col'], 'line-width': 28, 'line-blur': 10, 'line-opacity': 0.9 } },
     { id: 'zones-l', type: 'line', source: 'zones', filter: ['in', ['get', 'zid'], ['literal', []]], paint: { 'line-color': '#FFFFFF', 'line-width': 4, 'line-opacity': 1 } },
   );
+  // 16/11 (Giang xuất 1080p trên điện thoại báo "hết bộ nhớ đồ hoạ"): khung xuất (720p, 1080p) giữ ít ô ảnh đã ra khỏi khung
+  // hơn — mặc định MapLibre giữ ~270 ô ở 1080×1920 (≈ 95 MB bộ nhớ đồ hoạ), ~120 ô ở 720p; ô cần lại thì tải lại từ bộ nhớ đệm
+  // trình duyệt. Không đổi hình (ô đang thấy luôn đủ), chỉ tải lại khi máy quay quay về chỗ cũ.
+  // lite = dựng lại sau khi máy đã mất bộ nhớ đồ hoạ 1 lần: bỏ khử răng cưa MSAA (lớp bản đồ tự làm mịn nét trong shader,
+  // MapLibre mặc định cũng tắt) + giữ ít ô hơn nữa → nhẹ hơn ~70 MB.
+  const big = width * height >= 8e5;   // khung xuất (khung xem trước 540×960 = 0,52 triệu điểm giữ mặc định)
   const map = new maplibregl.Map({
     container: box, center: H, zoom: 12.6, pitch: 0, bearing: 0, maxPitch: 75, pixelRatio: 1, interactive: false,
-    attributionControl: false, fadeDuration: 0, preserveDrawingBuffer: true, antialias: true,
+    attributionControl: false, fadeDuration: 0, preserveDrawingBuffer: true, antialias: !lite,
+    ...(lite ? { maxTileCacheSize: 16 } : big ? { maxTileCacheSize: 48 } : {}),
     // MapLibre 5: thuộc tính WebGL nằm ở canvasContextAttributes (giữ khung để chép sang canvas xuất video)
-    canvasContextAttributes: { preserveDrawingBuffer: true, antialias: true },
+    canvasContextAttributes: { preserveDrawingBuffer: true, antialias: !lite },
     style: {
       version: 8, sources, layers,
       // vòng 7: mở đầu từ quả địa cầu → chiếu "globe" (MapLibre tự chuyển dần sang phẳng khi zoom ≥ 12, các cảnh sau như cũ)
@@ -1142,23 +1149,41 @@ export function createDirector3D({ width, height, story, overlay = null }) {
     setArea(t);
   }
   // Xuất: chờ bản đồ vẽ xong khung này với đủ ô ảnh + dữ liệu (tối đa 20 s/khung khi mạng treo)
-  // điện thoại hết bộ nhớ đồ hoạ (WebGL bị mất) → báo lỗi rõ ngay, không treo chờ từng khung
-  let glLost = false;
-  map.getCanvas().addEventListener('webglcontextlost', () => { glLost = true; });
+  // điện thoại hết bộ nhớ đồ hoạ / khoá màn hình, chuyển app (iPhone thu hồi WebGL) → báo ngay (lỗi có cờ glLost), không treo chờ
+  // từng khung. Người gọi (dao-dien.js exportSource) chờ MapLibre tự dựng lại (restored) hoặc tạo bản đồ mới rồi dựng tiếp đúng khung đó.
+  let glLost = false, glBack = false;
+  const glErr = () => Object.assign(new Error('Máy hết bộ nhớ đồ hoạ khi dựng 3D. Đóng bớt ứng dụng, chọn "Nhanh 720p" rồi xuất lại.'), { glLost: true });
+  map.getCanvas().addEventListener('webglcontextlost', () => { glLost = true; glBack = false; });
+  map.on('webglcontextrestored', () => { glBack = true; });
+  // true = trình duyệt trả lại WebGL và MapLibre đã nạp lại kiểu bản đồ (cùng nét vẽ, cùng nguồn dữ liệu) → dùng tiếp được
+  function restored(ms) {
+    return new Promise(res => {
+      const t0 = performance.now();
+      const tick = () => {
+        let ok = false;
+        try { ok = glBack && map.isStyleLoaded(); } catch { ok = false; }
+        if (ok) { glLost = false; glBack = false; houseOpSet = -1; return res(true); }
+        if (performance.now() - t0 > ms) return res(false);
+        setTimeout(tick, 100);
+      };
+      tick();
+    });
+  }
   function prepare(t) {
-    if (glLost) return Promise.reject(new Error('Máy hết bộ nhớ đồ hoạ khi dựng 3D. Đóng bớt ứng dụng, chọn "Nhanh 720p" rồi xuất lại.'));
+    if (glLost) return Promise.reject(glErr());
     setFrame(t);
     // vẽ ngay (đồng bộ) — đủ ô ảnh + dữ liệu thì xong luôn, khỏi chờ nhịp vẽ của trình duyệt
     map.redraw();
     if (map.isStyleLoaded() && map.areTilesLoaded()) return null;
     // còn thiếu ô: hỏi lại sau mỗi lần có dữ liệu mới (hoặc 40 ms), vẽ lại đồng bộ khi đủ
-    return new Promise(res => {
+    return new Promise((res, rej) => {
       const t0 = performance.now();
       let fin = false;
       const step = () => {
         if (fin) return;
-        map.redraw();
-        if (glLost || (map.isStyleLoaded() && map.areTilesLoaded()) || performance.now() - t0 > 20000) { fin = true; map.off('data', kick); res(); return; }
+        if (!glLost) map.redraw();
+        if (glLost) { fin = true; map.off('data', kick); rej(glErr()); return; }
+        if ((map.isStyleLoaded() && map.areTilesLoaded()) || performance.now() - t0 > 20000) { fin = true; map.off('data', kick); res(); return; }
         timer = setTimeout(step, 40);
       };
       let timer = setTimeout(step, 40);
@@ -2253,5 +2278,6 @@ export function createDirector3D({ width, height, story, overlay = null }) {
   }
   function destroy() { liveCtx = null; try { map.remove(); } catch { /* đã gỡ */ } box.remove(); }
 
-  return { map, tl, duration: tl.duration, voiceSegs: tl.voiceSegs, sfx: sfxEvents3D(tl), ready, setFrame, prepare, draw, live, frameSource, destroy, debug: () => dbg };
+  return { map, tl, duration: tl.duration, voiceSegs: tl.voiceSegs, sfx: sfxEvents3D(tl), ready, setFrame, prepare, draw, live, frameSource, destroy, debug: () => dbg,
+    glLost: () => glLost, restored };
 }
