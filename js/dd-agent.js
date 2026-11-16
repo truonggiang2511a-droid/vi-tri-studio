@@ -152,15 +152,13 @@ export function buildStory(S, L, buyer, edits = {}) {
   }
   // Kết nối vùng (đường thật + số phút ô tô): MỌI khách đều có — về trung tâm + ra sân bay (không có thì cảng biển);
   // "Kết nối khu vực" tới 3 điểm. Sân bay đã có cảnh máy bay riêng thì không lặp.
-  const avail = (S.anchors || []).filter(a => a.min <= 70 && !(edits.anchorsOff || []).includes(a.id) && !(a.type === 'airport' && infra?.airport));
-  const ctr = avail.find(a => a.type === 'center'), far = avail.find(a => a.type === 'airport') || avail.find(a => a.type === 'port');
-  // bản ngắn: mua để ở / cho thuê chỉ 1 điểm mốc (trung tâm nếu ≤ 45 phút, không thì sân bay / cảng)
-  // app cũ (vòng 9): về trung tâm + ra sân bay gần nhất (≤ 60 phút, có máy bay cất cánh) — không có sân bay thì cảng
-  const ap60 = avail.find(a => a.type === 'airport' && a.min <= 60);
-  // 15/11 22:54 (Giang: kết nối vùng như app cũ — trung tâm, sân bay, cảng biển; không còn cảnh máy bay riêng): cả 2 kiểu vẽ dùng chung
-  // trung tâm + sân bay gần nhất ≤ 60 phút (không có thì cảng / điểm khác); khách "đầu tư sinh lời" thêm cảng ≤ 45 phút
-  const port = avail.find(a => a.type === 'port' && a.min <= 45);
-  let anc = (buyer === 'vung' ? [ctr, ap60 || far, port] : [ctr, ap60 || far]).filter((a, i, A) => a && A.indexOf(a) === i);
+  // 16/11 (Giang: AI đạo diễn thiếu cảnh kết nối vùng): MẶC ĐỊNH 3 điểm mốc cho MỌI khách — trung tâm thành phố, sân bay gần nhất,
+  // cảng biển gần nhất (mỗi điểm ≤ ANC_MAX phút ô tô; xa hơn đọc lên video thành điểm trừ nên Agent bỏ, khách tick thêm được).
+  // Khách bỏ tick / thêm điểm khác (ga, trung tâm khác…) ở ô "Đường lớn · sân bay". dd3d có thêm cảnh tổng lùi ra thấy cả các đường đi.
+  const ANC_MAX = 90;
+  const avail = (S.anchors || []).filter(a => a.min <= ANC_MAX && !(edits.anchorsOff || []).includes(a.id) && !(a.type === 'airport' && infra?.airport));
+  const ctr = avail.find(a => a.type === 'center'), ap = avail.find(a => a.type === 'airport'), port = avail.find(a => a.type === 'port');
+  let anc = [ctr, ap, port].filter(Boolean);
   // khách tự thêm điểm mốc (sân bay, ga, cảng, trung tâm khác) — kể cả điểm xa hơn 70 phút
   for (const id of edits.anchorsAdd || []) {
     const a = (S.anchors || []).find(x => x.id === id);
@@ -494,7 +492,8 @@ export function buildStory(S, L, buyer, edits = {}) {
     // kết nối vùng: số phút ô tô theo đường đi thật
     anchor: anchors.map((a, i) => a.type === 'center' ? `Về ${a.name} chỉ khoảng <b>${a.min} phút</b> ô tô, quãng đường <b>${fmtNum(a.km)} km</b>${a.min <= 60 && anchors.findIndex(x => x.type === 'center') === i ? (buyer === 'thue' ? ', người thuê đi làm trung tâm thuận tiện' : buyer === 'vung' ? ', kết nối về lõi đô thị thuận tiện' : ', đi làm, mua sắm, giải trí đều thuận tiện') : ''}.`
       : a.type === 'airport' ? `Ra ${a.name} khoảng <b>${a.min} phút</b>, bay đi công tác, về quê nhanh gọn.`
-        : `${cap(a.type === 'port' ? a.name : 'Tới ' + a.name)} cách <b>${fmtNum(a.km)} km</b>, khoảng <b>${a.min} phút</b> ô tô.`),
+        : a.type === 'port' ? `Ra ${a.name} khoảng <b>${a.min} phút</b>, quãng đường <b>${fmtNum(a.km)} km</b>${buyer === 'vung' ? ', thuận lợi kho bãi, vận chuyển hàng hoá' : ''}.`
+          : `${cap('Tới ' + a.name)} cách <b>${fmtNum(a.km)} km</b>, khoảng <b>${a.min} phút</b> ô tô.`),
     score: sumLine,
     airport: infra?.airport && `${infra.airport.name}: <b>${fmtNum(infra.airport.km)} km</b>, khoảng <b>${infra.airport.min} phút</b>, bay đi mọi miền.`,
     metro: infra?.metro && `${infra.metro.name} đã chạy, ga ${infra.metro.nearName} cách khoảng <b>${fmtNum(Math.round(infra.metro.nearKm * 10) / 10)} km</b> đường chim bay.`,

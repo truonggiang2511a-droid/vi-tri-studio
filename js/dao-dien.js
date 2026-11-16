@@ -100,17 +100,30 @@ function startScan() {
   })().catch(e => { st.className = 'scan'; st.textContent = 'Quét chưa xong: ' + (e.message || e) + '. Bấm Agent dựng video để thử lại.'; S.scanJob = null; return null; });
 }
 // Điểm mốc vùng (trung tâm, sân bay, ga…) + hạ tầng (sân bay có đường băng, metro đang chạy, cao tốc)
-let regionJob = null;
+let regionJob = null, anchorJob = null;
+// điểm mốc → { km, phút, đường đi } (chưa có đường đi thật thì ước lượng ×1,35 đường chim bay)
+function anchorOf(x, r) {
+  const kmv = r ? r.km : x.km0 * 1.35;
+  const typical = kmv / Math.max(26, Math.min(70, 24 + 0.5 * kmv)) * 60;   // như app cũ: không phụ thuộc giờ kẹt xe lúc quét
+  return { id: x.id, type: x.type, name: x.name, lat: x.lat, lng: x.lng, km: Math.round(kmv * 10) / 10,
+    min: Math.max(1, Math.round(r && r.min > 0 ? Math.min(r.min, typical) : typical)), coords: r ? simplifyLine(r.coords, 0.015) : null };
+}
 function loadRegion(h) {
+  const hubs = pickHubs(h);
+  // 16/11: kết nối vùng mặc định có cảng biển — pickHubs (dùng chung với app cũ, không đổi) chỉ lấy cảng ≤ 40 km chim bay;
+  // AI đạo diễn tìm thêm cảng gần nhất ≤ 70 km (buildStory vẫn bỏ nếu > 90 phút ô tô)
+  if (!hubs.some(x => x.type === 'port')) {
+    const p = HUBS.filter(x => x[0] === 'port').map(([type, name, lat, lng]) => ({ type, name, lat, lng, d: haversineKm(h, { lat, lng }) }))
+      .filter(x => x.d >= 0.6 && x.d <= 70).sort((a, b) => a.d - b.d)[0];
+    if (p) hubs.push({ id: 'port:' + p.name, type: 'port', name: p.name, lat: p.lat, lng: p.lng, km0: Math.round(p.d * 100) / 100 });
+  }
+  // có ngay số ước lượng → Agent luôn có cảnh kết nối vùng kể cả khi mạng chậm; đường đi thật về thì thay vào
+  S.anchors = hubs.map(x => anchorOf(x, null));
+  anchorJob = Promise.all(hubs.map(x => routeTo(h, x).catch(() => null)))
+    .then(routes => { if (S.house === h) S.anchors = hubs.map((x, i) => anchorOf(x, routes[i])); }).catch(() => {});
   regionJob = (async () => {
-    const hubs = pickHubs(h);
-    const routes = await Promise.all(hubs.map(x => routeTo(h, x).catch(() => null)));
-    S.anchors = hubs.map((x, i) => {
-      const r = routes[i], kmv = r ? r.km : x.km0 * 1.35;
-      const typical = kmv / Math.max(26, Math.min(70, 24 + 0.5 * kmv)) * 60;   // như app cũ: không phụ thuộc giờ kẹt xe lúc quét
-      return { id: x.id, type: x.type, name: x.name, lat: x.lat, lng: x.lng, km: Math.round(kmv * 10) / 10,
-        min: Math.max(1, Math.round(r && r.min > 0 ? Math.min(r.min, typical) : typical)), coords: r ? simplifyLine(r.coords, 0.015) : null };
-    });
+    await anchorJob;
+    if (S.house !== h) return;
     const H = [h.lng, h.lat], infra = {};
     // ga metro (điểm mốc ≤ 4 km): đoàn tàu chạy trên tuyến thật như app cũ
     await Promise.all(S.anchors.filter(a => a.type === 'metro').map(async a => { a.fx = await loadHubFx(a).catch(() => null); }));
@@ -241,45 +254,59 @@ function photosChanged() {
 }
 
 // ---------- Bước 3: Agent ----------
-const TASKS = ['Quét tiện ích quanh nhà', 'Tìm đường đi thật tới tiện ích', 'Chọn tiện ích hợp với khách mua', 'Viết lời đọc theo số liệu thật', 'AI đọc lời bằng giọng thật', 'Dựng cảnh 3D'];
+// 16/11 (Giang: các bước Agent chạy nhanh quá, khách không kịp thấy): mỗi bước quay ~1,2–1,6 s rồi mới tick xong (việc thật lâu hơn
+// thì chờ việc thật); thêm bước "Kết nối vùng" cho khách thấy Agent tính đường lên trung tâm, sân bay, cảng biển
+const TASKS = ['Quét tiện ích quanh nhà', 'Tìm đường đi thật tới tiện ích', 'Kết nối vùng: trung tâm, sân bay, cảng biển', 'Chọn tiện ích hợp với khách mua', 'Viết lời đọc theo số liệu thật', 'AI đọc lời bằng giọng thật', 'Dựng cảnh 3D'];
 function setTask(i, extra = '') {
   const lis = $('tasks').children;
   for (let j = 0; j < lis.length; j++) { lis[j].className = j < i ? 'done' : j === i ? 'run' : ''; lis[j].dataset.x = j === i ? extra : ''; }
   if (lis[i]) lis[i].lastChild.textContent = TASKS[i] + (extra ? ` · ${extra}` : '');
+}
+let taskAt = 0;
+async function nextTask(i, extra) {
+  const w = 1200 + 400 * Math.random() - (performance.now() - taskAt);
+  if (w > 0) await tick(w);
+  taskAt = performance.now(); setTask(i, extra);
 }
 async function runAgent() {
   if (!S.house) { goStep(1); return; }
   if (!S.listing) S.listing = { kind: 'nhapho' };
   if (!S.buyer) S.buyer = suggestBuyer(S.listing.kind);
   save(); goStep(3);
+  stop();
   $('agent').hidden = false; $('studio').hidden = true;
   $('tasks').textContent = '';
   for (const t of TASKS) { const li = document.createElement('li'); li.append(document.createElement('i'), document.createTextNode(t)); $('tasks').append(li); }
-  setTask(0);
+  taskAt = performance.now(); setTask(0);
   if (!S.scan) { if (!S.scanJob) startScan(); await S.scanJob; }
   if (!S.scan) { $('tasks').lastChild.after(Object.assign(document.createElement('li'), { textContent: 'Quét chưa được, kiểm tra mạng rồi bấm lại.' })); return; }
-  setTask(1);
+  await nextTask(1);
   const st0 = buildStory(storeData(), S.listing, S.buyer, S.edits), chosen = st0.pois.map(p => p.id);
   await routesFor(chosen);
   // ranh vùng quan trọng của tiện ích đã chọn + tiện ích trong vòng radar (khu công nghiệp, bệnh viện, đại học, công viên…, tối đa 3)
   const zIds = new Set([...chosen, ...(st0.radar?.pts || []).map(p => p.id)]);
   S.zones = await loadZones(S.scan.pois.filter(p => zIds.has(p.id))).catch(() => []);
+  await nextTask(2);
+  // đường đi thật lên trung tâm / sân bay / cảng (chưa về sau 12 s thì dùng số ước lượng đã có sẵn trong S.anchors)
+  if (anchorJob) await Promise.race([anchorJob, tick(12000)]);
   // vùng mốc lớn: KCN gần nhà nhất (≤ 6 km) + cảng biển trong điểm mốc vùng — khoanh ranh, in tên trên vùng
   if (regionJob) await Promise.race([regionJob, tick(6000)]);
   const kcn = S.scan.pois.filter(p => p.cat === 'kcn' && p.km <= 6 && !chosen.includes(p.id)).sort((a, b) => a.km - b.km).slice(0, 2);
   const ports = (S.anchors || []).filter(a => a.type === 'port').slice(0, 1).map(a => ({ id: a.id, cat: 'kcn', name: a.name, lat: a.lat, lng: a.lng, km: a.km }));
   S.landZones = await loadZones([...kcn, ...ports]).catch(() => []);
-  setTask(2); await tick(300);
-  setTask(3); if (regionJob) await Promise.race([regionJob, tick(6000)]);
+  await nextTask(3);
+  await nextTask(4);
+  if (regionJob) await Promise.race([regionJob, tick(6000)]);
   await roadRoutesFor(currentStory());
   story = currentStory();
-  setTask(4);
-  await voiceAll(n => setTask(4, n));
-  setTask(5); await tick(250);
-  setTask(6);
+  await nextTask(5);
+  await voiceAll(n => setTask(5, n));
+  await nextTask(6);
+  await nextTask(7);
+  await tick(650);   // dấu tick cuối kịp hiện rồi mới mở bảng dựng
   $('agent').hidden = true; $('studio').hidden = false;
   fillMusic();
-  await rebuild(true);
+  await rebuild();
 }
 const tick = ms => new Promise(r => setTimeout(r, ms));
 async function routesFor(ids) {
@@ -344,7 +371,9 @@ function withVoice(st) {
     photos: voiceOf(L.photos), roads: voiceOf(L.roads), radar: voiceOf(L.radar), build: voiceOf(L.build), airport: voiceOf(L.airport), metro: voiceOf(L.metro), road: voiceOf(L.road), score: voiceOf(L.score), cta: voiceOf(L.cta),
     cluster: voiceOf(L.cluster), orbit: voiceOf(L.orbit) } };
 }
-async function rebuild(autoplay = false) {
+// 16/11 (Giang: video tự phát, bấm Phát nữa bị trùng nhạc): dựng xong KHÔNG tự phát — khách bấm ▶ mới phát; nhạc + giọng trộn sẵn
+// ngay sau khi dựng (mixReady) nên bấm là phát liền
+async function rebuild() {
   stop();
   story = currentStory();
   renderBoard();
@@ -359,7 +388,7 @@ async function rebuild(autoplay = false) {
   setDirty(false);
   const missing = allLines(story).some(t => !voiceOf(t));
   $('voiceNote').hidden = !(missing && (!token() || voiceErr === 'login'));
-  if (autoplay) play();
+  mixReady();
 }
 // Khách sửa (thứ tự / thêm / bỏ / lời): cập nhật bảng ngay, video tạo lại khi bấm "Tạo lại video" (đọc lại câu đã sửa)
 let dirty = false;
@@ -495,7 +524,7 @@ async function redo() {
   await routesFor(story.pois.map(p => p.id));
   await roadRoutesFor(story); story = currentStory();   // trục đường khách vừa thêm: tính đường đi + số phút
   await voiceAll(n => { if (n) b.textContent = `🎙 AI đang đọc lại… ${n}`; });
-  await rebuild(true);
+  await rebuild();
   b.disabled = false; b.textContent = '🔄 Tạo lại video';
 }
 async function getMusic(name) {
@@ -508,17 +537,32 @@ function fillMusic() {
   const sug = story?.style?.suggest;
   for (const [id, label] of MUSIC_LIB) m.append(Object.assign(document.createElement('option'), { value: id, textContent: label + (id === sug && id !== 'hung-hon' ? ' · AI gợi ý' : ''), selected: id === S.music }));
 }
+// bản trộn nhạc + giọng + SFX của video đang dựng (nhớ theo dir + bài nhạc): trộn 1 lần, bấm phát lại không trộn lại
+let mixMemo = null;
+function mixReady() {
+  if (!dir) return null;
+  if (mixMemo?.dir !== dir || mixMemo.music !== S.music) {
+    const d = dir, m = S.music;
+    mixMemo = { dir: d, music: m, p: mixFor(d).catch(() => null) };
+  }
+  return mixMemo.p;
+}
+// mỗi lần bấm Phát / Dừng tăng playGen: lần phát cũ đang chờ trộn nhạc thấy số khác thì thôi, không phát chồng lên lần mới
+let playGen = 0;
 async function play() {
   if (!dir || dirty) return;
   stop();
+  const gen = ++playGen;
   actx = actx || new AudioContext(); actx.resume();
-  playing = true; $('play').classList.add('hide');
-  const buf = await mixFor(dir);
-  if (!playing) return;
+  playing = true; $('play').textContent = '⏳'; $('play').classList.add('busy');
+  const buf = await mixReady();
+  if (gen !== playGen || !playing || !dir || !buf) { if (gen === playGen) stop(); return; }
+  try { src?.stop(); } catch { /* đã dừng */ }
   src = actx.createBufferSource(); src.buffer = buf; src.connect(actx.destination);
   const a0 = actx.currentTime + 0.05; src.start(a0);
+  $('play').classList.remove('busy'); $('play').classList.add('hide'); $('play').textContent = '▶';
   const loop = () => {
-    if (!playing || !dir) return;
+    if (!playing || !dir || gen !== playGen) return;
     const t = Math.max(0, actx.currentTime - a0);
     dir.setFrame(Math.min(t, dir.duration));
     $('barFill').style.width = (Math.min(1, t / dir.duration) * 100) + '%';
@@ -527,8 +571,10 @@ async function play() {
   raf = requestAnimationFrame(loop);
 }
 function stop() {
+  playGen++;
   playing = false; cancelAnimationFrame(raf);
   try { src?.stop(); } catch { /* đã dừng */ } src = null;
+  $('play').textContent = '▶'; $('play').classList.remove('busy');
   if (!dirty) $('play').classList.remove('hide');
 }
 
@@ -756,9 +802,9 @@ function renderBigList() {
   });
   if (!roads.length) box.append(Object.assign(document.createElement('p'), { className: 'tip', textContent: 'Chưa thấy trục đường lớn trong bán kính quét.' }));
   // điểm mốc vùng
-  grp('✈️ Trung tâm · sân bay · ga · cảng — vẽ đường đi thật + số phút');
+  grp('🧭 Kết nối vùng: trung tâm · sân bay · cảng biển (Agent chọn sẵn 3) · ga — vẽ đường đi thật + số phút');
   const selA = st.anchors.map(a => a.id), anc = (S.anchors || []).filter(a => a.min <= 150);
-  for (const a of anc) row(A_ICON[a.type] || '📍', a.name, `${a.min} phút · ${fmtKm(a.km)}`, selA.includes(a.id), () => toggle('anchorsOff', 'anchorsAdd', a.id, selA.includes(a.id), 4, selA.length));
+  for (const a of anc) row(A_ICON[a.type] || '📍', a.name, `${a.min} phút · ${fmtKm(a.km)}`, selA.includes(a.id), () => toggle('anchorsOff', 'anchorsAdd', a.id, selA.includes(a.id), 5, selA.length));
   if (!anc.length) box.append(Object.assign(document.createElement('p'), { className: 'tip', textContent: regionJob && !S.anchors?.length ? 'Đang tải điểm mốc vùng… mở lại sau vài giây.' : 'Chưa có điểm mốc vùng.' }));
   // cảnh hạ tầng
   const I = S.infra || {}, inf = st.infra || {};
@@ -1036,7 +1082,7 @@ $('full').onchange = () => { S.edits.full = $('full').checked; edited(); };
 $('globe').onchange = () => { S.edits.globe = $('globe').checked ? undefined : false; edited(); };
 $('flow').onchange = () => { S.edits.flow = $('flow').value === 'lanluot' ? 'lanluot' : undefined; edited(); };
 // mẫu thẻ tiện ích: không đổi lời → dựng lại ngay, không cần đọc lại giọng
-$('labelStyle').onchange = () => { S.edits.labelStyle = $('labelStyle').value; save(); if (dirty) edited(); else rebuild(true); };
+$('labelStyle').onchange = () => { S.edits.labelStyle = $('labelStyle').value; save(); if (dirty) edited(); else rebuild(); };
 $('ctaMode').onchange = () => { S.edits.ctaMode = $('ctaMode').value; edited(); };
 $('ctaKey').addEventListener('change', () => { S.edits.ctaKey = $('ctaKey').value.trim().toUpperCase().slice(0, 18) || undefined; edited(); });
 $('copyPost').onclick = () => copyTxt($('postText'), $('copyPost'));
@@ -1055,9 +1101,9 @@ $('bird').onchange = edited;
 $('coverColor').onclick = () => {
   const base = Math.abs(Math.round(S.house.lat * 1e4 + S.house.lng * 1e4));
   S.edits.palette = (S.edits.palette ?? base) + 1;
-  if (dirty) edited(); else rebuild(true);
+  if (dirty) edited(); else rebuild();
 };
-$('music').onchange = () => { S.music = $('music').value; save(); if (!dirty) play(); };
+$('music').onchange = () => { S.music = $('music').value; save(); if (!dirty && playing) play(); else mixReady(); };
 for (const [v, t] of TONES) $('tone').append(Object.assign(document.createElement('option'), { value: v, textContent: t }));
 $('tone').onchange = () => setTone($('tone').value);
 $('aiWrite').onclick = aiWrite;

@@ -221,6 +221,26 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 ## 5. Nhật ký bài học
 
+- 2026-11-16 vòng 15 (09:14 Giang: AI đạo diễn thiếu cảnh kết nối vùng — mặc định trung tâm thành phố, sân bay, cảng biển, khách bỏ tick / chọn
+  thêm được nhưng video Agent dựng phải có đủ; các bước "Agent đang dựng" chạy nhanh quá, cho quay 1–2 s rồi tick; video tự phát, bấm Phát nữa
+  bị trùng nhạc). (1) dd-agent.js: điểm mốc mặc định = trung tâm + sân bay gần nhất + cảng gần nhất cho MỌI khách (trước: trung tâm + sân bay,
+  cảng chỉ khách "sinh lời"), mỗi điểm ≤ `ANC_MAX` 90 phút ô tô (xa hơn đọc lên thành điểm trừ — khách tick thêm được trong ô "Đường lớn ·
+  sân bay", tối đa 5). Câu cảng: "Ra Cảng … khoảng N phút, quãng đường X km" (+ "thuận lợi kho bãi, vận chuyển hàng hoá" cho khách sinh lời).
+  dao-dien.js `loadRegion`: pickHubs (chung với app cũ, KHÔNG đổi) chỉ lấy cảng ≤ 40 km chim bay → AI đạo diễn tự thêm cảng gần nhất ≤ 70 km;
+  `S.anchors` có ngay số ước lượng (×1,35 chim bay) rồi thay bằng đường đi thật khi về (`anchorJob`, Agent chờ tối đa 12 s) → mạng chậm vẫn
+  có cảnh kết nối vùng. (2) dd3d.js (kiểu Radar): ≥ 2 điểm mốc thì thêm cảnh `region` `REGION_OV` 4,2 s không lời sau điểm mốc cuối — máy lùi
+  ra thấy nhà + mọi đường đi (giữ hướng nhìn cảnh trước, không xoay), nhãn gọn từng điểm (tên + phút · km) bật lần lượt, vùng sân bay/cảng
+  sáng; thẻ "KẾT NỐI VÙNG" trên cùng suốt các cảnh điểm mốc + cảnh tổng (`regionChip`, dòng dưới "Trung tâm · Sân bay · Cảng biển", điểm
+  đang nói chữ trắng). Kiểu "Bay tới từng tiện ích" (phần vẽ app cũ) vốn có cảnh kết nối vùng của app cũ — nay nhận đủ 3 điểm. (3) Bước Agent:
+  thêm bước "Kết nối vùng: trung tâm, sân bay, cảng biển"; mỗi bước quay tối thiểu 1,2–1,6 s rồi mới tick (`nextTask`; việc thật lâu hơn thì chờ
+  việc thật), vòng tròn xong có dấu ✓ nảy nhẹ, 0,65 s sau tick cuối mới mở bảng dựng. (4) KHÔNG tự phát nữa (`rebuild()` bỏ autoplay ở mọi chỗ:
+  Agent xong, Tạo lại video, đổi mẫu thẻ, đổi màu ảnh bìa); nhạc + giọng + SFX trộn sẵn ngay sau khi dựng (`mixReady`, nhớ theo dir + bài nhạc)
+  → bấm ▶ là phát liền (nút hiện ⏳ nếu chưa trộn xong). Lỗi trùng nhạc: `play()` chờ trộn nhạc xong mới tạo nguồn âm — bấm Dừng rồi Phát trong
+  lúc chờ thì lần phát cũ vẫn tạo thêm 1 nguồn (2 nhạc chồng nhau). Sửa: số `playGen` tăng mỗi lần Phát/Dừng, lần cũ thấy số khác thì thôi.
+  Đổi nhạc chỉ phát lại khi đang phát. Đo căn thử Bình Chánh (chưa giọng): kết nối vùng 44,2–68,0 s (Trung tâm 36 phút, Tân Sơn Nhất 38 phút,
+  Cảng Hiệp Phước 36 phút + cảnh tổng), cả video 122,7 → 132,1 s. Thử: `/tmp/vt/dd_run9.py`, `/tmp/vt/dd_play.py` (đếm nguồn âm đang phát qua
+  vá `AudioBufferSourceNode.prototype.start` + đo thời điểm tick từng bước).
+
 - 2026-11-16 vòng 14 (09:03 Giang: chỗ hạ tầng thi công mở rộng không cần chữ 3D nổi khối in dẹt, chỉ cần chú thích tracking kèm nhãn dán).
   dd3d.js (kiểu Radar): bỏ chữ in mặt đất `bd*` (tên tuyến đang thi công, `layout3D`) ở cảnh `build` và các cảnh sau; mỗi tuyến đang thi công
   (tối đa 2) có MỘT nhãn dán `build<j>` (thẻ ghim `placeLabels`/`drawLabel`, chấm đỏ + đường chỉ bám đúng điểm trên tuyến gần nhà nhất →
