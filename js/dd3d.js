@@ -746,9 +746,23 @@ export function createDirector3D({ width, height, story, overlay = null }) {
             : { ...base, z: base.z - 0.4, p: 46, b: f.b - 34 }, EASE);
       }
     };
-    // 15/11 22:54 (Giang: bay quay vòng chóng mặt — thể hiện như app cũ): các cảnh sau căn nhà giữ HƯỚNG BẮC LÊN; tới nơi chỉ đẩy máy vào
-    // thật nhẹ + lia vài độ (như push/side của app cũ), không đổi góc lớn / không quay vòng
-    const drift = (t0, t1, sgn = 1) => { const D = t1 - t0; if (D > 0.05) ease(t0, D, f => ({ ...f, z: Math.min(18.2, f.z + Math.min(0.3, 0.05 * D)), b: f.b + sgn * Math.min(6, 0.8 * D) }), LIN); };
+    // 16/11 vòng 12 (Giang: lia máy như cũ): hướng nhìn đầu tiên của từng cảnh (đúng công thức các khối bên dưới) — đoạn lùi ra trung cảnh
+    // cuối cảnh căn nhà xoay sẵn về hướng này → cảnh sau bay ra không phải quay vòng gắt từ cận cảnh
+    const firstBear = x => {
+      if (!x) return null;
+      if (x.kind === 'anchor') return bearingDemo(H, story.anchors[x.i].at) - 20;
+      if (x.kind === 'airport' && apMid) return bearingDemo(H, apMid) - 20;
+      if (x.kind === 'metro') { const P = metroPath.pts; return bearingGeo(P[0], P[P.length - 1]) - 30; }
+      if (x.kind === 'road') return 15;
+      if (x.kind === 'roads') return bearingDemo(H, story.roads[0]?.near || H) - 30;
+      if (x.kind === 'radar') return -6;
+      if (x.kind === 'poi') return bearingDemo(H, story.pois[x.i].at) - 20;
+      if (x.kind === 'cluster') return bearingDemo(H, story.pois[x.idx[0]].at) - 32;
+      if (x.kind === 'build') return 10;
+      if (x.kind === 'orbit' || x.kind === 'score') return 0;
+      if (x.kind === 'cta') return 60;
+      return null;
+    };
     // cảnh ngay sau căn nhà: lùi ra (zoom) trước rồi mới lướt tâm khung tới nơi → căn nhà không trôi khỏi khung giữa chặng bay
     const zoomFirst = (t0, fd, base) => follow(t0, fd, (t, from) => {
       const u = clamp01((t - t0) / fd), ez = EASE(clamp01(u / 0.75)), ec = EASE(clamp01((u - 0.2) / 0.8));
@@ -790,9 +804,11 @@ export function createDirector3D({ width, height, story, overlay = null }) {
         // 15/11 22:21 (Giang: "phải bay hết vòng căn nhà, đủ 1 vòng cận cảnh, chưa lùi ra sớm"): lượn ĐÚNG 360° trong cả cảnh (tăng/giảm tốc
         // êm hai đầu như vòng 9), giữ cận suốt vòng — bỏ kiểu lùi ra từ 22% cảnh của vòng 7; cảnh sau tự bay ra từ tư thế cuối vòng.
         // Nhịp zoom thở nhẹ ±0,22 cho khỏi đơ. Tên đường trước nhà vẫn in trên mặt đường (groundLabels) vì máy đang cận.
-        // 15/11 22:54 (Giang): hết vòng cận cảnh → s.mid giây cuối lùi ra TRUNG CẢNH + lia nhẹ về hướng Bắc (như app cũ), từ đó các cảnh sau
-        // giữ bản đồ hướng Bắc lên, chỉ lia vài độ — không còn bay quay vòng từ cận cảnh ra thẳng kết nối vùng (chóng mặt, ô bản đồ tải không kịp)
+        // 15/11 22:54 (Giang): hết vòng cận cảnh → s.mid giây cuối lùi ra TRUNG CẢNH + lia nhẹ (như app cũ), không bay quay vòng từ cận cảnh
+        // ra thẳng kết nối vùng (chóng mặt, ô bản đồ tải không kịp). 16/11 vòng 12: lia nhẹ về đúng hướng nhìn của cảnh sau (firstBear;
+        // đường ngắn nhất, tối đa ±100° — phần còn lại xoay trong lúc bay sang cảnh sau), các cảnh sau lia đổi góc như trước vòng 11
         const MID = s.mid || 0, D = Math.max(4, d - MID), zMid = lot ? 17.0 : 15.7, pMid = 48;
+        const nb = firstBear(tl.scenes[tl.scenes.indexOf(s) + 1]);
         follow(s.t0, d, (t, from) => {
           const u = t - s.t0, rot = 360 * rotProg(Math.min(u, D), D, Math.min(2.2, D / 4));
           if (u <= D) {
@@ -801,7 +817,8 @@ export function createDirector3D({ width, height, story, overlay = null }) {
             return e >= 1 ? tgt : mixCam(from, tgt, e);
           }
           const b0 = from.b + 360, w = EASE(clamp01((u - D) / MID));
-          return { c: H, z: lerp(z0, zMid, w), p: lerp(p0, pMid, w), b: b0 + ((360 - (b0 % 360)) % 360) * w };
+          const db = nb == null ? 0 : Math.max(-100, Math.min(100, ((nb - b0) % 360 + 540) % 360 - 180));
+          return { c: H, z: lerp(z0, zMid, w), p: lerp(p0, pMid, w), b: b0 + db * w };
         });
       } else if (s.kind === 'poi') {
         // vòng 6 (như app cũ): khung ôm nhà + tiện ích + cả đường đi (line không chạy ra ngoài khung), bay êm hai đầu ~nửa cảnh
@@ -828,9 +845,9 @@ export function createDirector3D({ width, height, story, overlay = null }) {
         });
       } else if (s.kind === 'anchor') {
         const a = story.anchors[s.i], P = ancPaths[s.i].pts, step = Math.max(1, Math.floor(P.length / 30));
-        const fd = Math.max(3.4, flyD(d)), base = fitCam([H, a.at, ...P.filter((_, j) => j % step === 0)], 0, 46);
+        const fd = Math.max(afterHouse ? 3.4 : 2.8, flyD(d)), base = fitCam([H, a.at, ...P.filter((_, j) => j % step === 0)], bearingDemo(H, a.at) - 20, 50);
         if (afterHouse) zoomFirst(s.t0, fd, base); else ease(s.t0, fd, base, EASE);
-        drift(s.t0 + fd, s.t1, s.i % 2 ? -1 : 1);
+        angles(s.t0 + fd, s.t1, base, a.at);
       } else if (s.kind === 'airport') {
         const rw = inf.airport, mid = apMid, side = bearingGeo(rw.a, rw.b) - 55, T0 = s.t0 + AP_OFF;
         // 15/11 vòng 5 (Giang): trước hết lùi ra thấy CẢ quãng đường từ nhà lên sân bay (đường đi thật chạy ra + số phút), rồi mới bay vào đường băng
@@ -846,16 +863,18 @@ export function createDirector3D({ width, height, story, overlay = null }) {
         });
       } else if (s.kind === 'metro') {
         // lướt tới đầu đoạn tuyến rồi lia dọc theo tuyến (hướng nhìn cố định theo chiều tuyến → không xoay giật)
-        // 15/11 22:54: khung ôm nhà + đoạn tuyến, hướng Bắc lên (trước: lia dọc tuyến theo hướng tuyến → máy xoay mạnh)
-        const P = metroPath.pts, base = fitCam([H, ...P], 0, 48);
-        ease(s.t0, Math.max(3, flyD(d)), base, EASE);
-        drift(s.t0 + Math.max(3, flyD(d)), s.t1);
+        const P = metroPath.pts, dir = bearingGeo(P[0], P[P.length - 1]);
+        ease(s.t0, 1.6, { c: pointAt(metroPath, 0.05).pt, z: 15.2, p: 62, b: dir - 30 });
+        follow(s.t0 + 1.6, d - 1.6, (t, from) => {
+          const u = clamp01((t - s.t0 - 1.6) / (d - 1.6));
+          return mixCam(from, { c: pointAt(metroPath, 0.05 + 0.8 * u).pt, z: 15.2 - 0.25 * u, p: 62, b: dir - 30 + 8 * u }, EASE(clamp01((t - s.t0 - 1.6) / 1.2)));
+        });
       } else if (s.kind === 'road') {
         // đoạn tuyến gần nhà (≤ khoảng cách tuyến + 1,5 km), không lấy cả tuyến dài vài chục km → máy không lùi quá xa
         const all = inf.road.ways.flat().filter((p, j) => j % 3 === 0 && kmBetween(H, p) <= (inf.road.km || 0) + 1.5);
-        const fd = Math.max(3, flyD(d)), base = fitCam([H, ...all.length ? all : inf.road.ways.flat()], 0, 48);
+        const fd = Math.max(afterHouse ? 3.4 : 2.8, flyD(d)), base = fitCam([H, ...all.length ? all : inf.road.ways.flat()], 15, 50);
         if (afterHouse) zoomFirst(s.t0, fd, base); else ease(s.t0, fd, base);
-        drift(s.t0 + fd, s.t1, -1);
+        angles(s.t0 + fd, s.t1, base, all[Math.floor(all.length / 2)] || H);
       } else if (s.kind === 'roads') {
         // 15/11 vòng 7 (Giang): TỪNG trục một như app cũ — mỗi trục một cú máy ôm nhà + đoạn trục gần nhà + đường đi từ nhà ra trục,
         // bay êm đúng lúc giọng nói tên trục; hết các trục thì lùi ra toàn cảnh thấy đủ các trục + tên
@@ -863,32 +882,35 @@ export function createDirector3D({ width, height, story, overlay = null }) {
         story.roads.forEach((r, j) => {
           const b0 = s.beats[j], b1 = j + 1 < story.roads.length ? s.beats[j + 1] : s.ovT;
           const pts = [H, ...seg(r, 0.9).filter((_, q) => q % 2 === 0), ...(rcPaths[j]?.pts || [])];
-          const base = fitCam(pts, j % 2 ? 4 : -4, 52);
-          const fd = Math.min(2.2, b1 - b0);
+          // 16/11 vòng 12: góc nhìn như trước (trục nằm phía trên nhà), nhưng mỗi cú chỉ xoay tối đa ±60° so với góc đang có
+          // (cú 1,8 s mà xoay 140° = quay vút ~150°/giây, chóng mặt)
+          const want = bearingDemo(H, r.near || H) - 20 + (j % 2 ? 16 : -10), fb = camAt(b0).b;
+          const base = fitCam(pts, fb + Math.max(-60, Math.min(60, ((want - fb) % 360 + 540) % 360 - 180)), 54);
+          const fd = Math.min(1.8, b1 - b0);
           ease(b0, fd, base, EASE);
-          if (b1 - b0 - fd > 0.05) ease(b0 + fd, b1 - b0 - fd, f => ({ ...f, b: f.b + (j % 2 ? 2 : -2), z: Math.min(18.2, f.z + 0.06) }), LIN);
+          if (b1 - b0 - fd > 0.05) ease(b0 + fd, b1 - b0 - fd, f => ({ ...f, b: f.b + 5, z: Math.min(18.2, f.z + 0.06) }), LIN);
         });
         const near = story.roads.flatMap(r => seg(r, 1.2)).filter((_, j) => j % 2 === 0);
         for (const p of rcPaths) if (p) near.push(...p.pts);   // đường đi từ nhà ra các trục cũng lọt khung
-        ease(s.ovT, 2.0, fitCam([H, ...near.length ? near : [H]], 0, 48), EASE);
-        if (s.t1 - s.ovT > 2.05) ease(s.ovT + 2.0, s.t1 - s.ovT - 2.0, f => ({ ...f, b: f.b + 3 }), LIN);
+        ease(s.ovT, 2.0, fitCam([H, ...near.length ? near : [H]], -10, 50), EASE);
+        if (s.t1 - s.ovT > 2.05) ease(s.ovT + 2.0, s.t1 - s.ovT - 2.0, f => ({ ...f, b: f.b + 6 }), LIN);
       } else if (s.kind === 'radar') {
         // radar: lùi lên thấy trọn vòng bán kính, nghiêng nhẹ, xoay chậm suốt lúc quét
         // vòng 8: nhìn gần thẳng xuống (nghiêng 24°) → vòng tròn to, tròn, các tiện ích cách xa nhau hơn → đủ chỗ cho nhãn tên từng điểm
-        const base = fitCam(circleKm(H, story.radar.r * 1.02, 24), 0, 24, { top: 0.19 * height, bottom: 0.27 * height, left: 0.03 * width, right: 0.03 * width });
+        const base = fitCam(circleKm(H, story.radar.r * 1.02, 24), -6, 24, { top: 0.19 * height, bottom: 0.27 * height, left: 0.03 * width, right: 0.03 * width });
         ease(s.t0, 1.8, base, EASE);
         // vòng 8 (Giang: xoay chậm lại để thấy hết tiện ích): ~1,5°/giây, khung luôn ôm trọn vòng bán kính
         ease(s.t0 + 1.8, d - 1.8, f => ({ ...f, b: f.b + 1.5 * (d - 1.8) }), LIN);
       } else if (s.kind === 'build') {
         const pts = story.build.flatMap(b => b.ways.flat()).filter(p => kmBetween(H, p) <= story.build[0].km + 2.5).filter((_, j) => j % 2 === 0);
-        const fd = fly(3, d), base = fitCam([H, ...pts], 0, 48);
+        const fd = fly(2.8, d), base = fitCam([H, ...pts], 10, 50);
         ease(s.t0, fd, base);
-        drift(s.t0 + fd, s.t1);
+        angles(s.t0 + fd, s.t1, base, pts[Math.floor(pts.length / 2)] || H);
       } else if (s.kind === 'score') {
         const all = [H, ...(story.pois || []).map(p => p.at), ...circleKm(H, story.scoreR || 1).filter((_, i) => i % 24 === 0)];
-        ease(s.t0, 2.6, fitCam(all, 0, 45));
-        if (d > 2.7) ease(s.t0 + 2.6, d - 2.6, f => ({ ...f, b: f.b + 5 }), LIN);
-      } else if (s.kind === 'cta') ease(s.t0, 3.5, { c: H, z: 16.4, p: 58, b: 10 });
+        ease(s.t0, 2.4, fitCam(all, 0, 45));
+        ease(s.t0 + 1.2, d - 1.2, f => ({ ...f, b: 25 }), LIN);
+      } else if (s.kind === 'cta') ease(s.t0, 3.5, { c: H, z: 16.4, p: 60, b: 60 });
     }
   }
   const sceneIdx = t => { const i = tl.scenes.findIndex(s => t < s.t1); return i < 0 ? tl.scenes.length - 1 : i; };

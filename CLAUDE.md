@@ -221,6 +221,17 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 ## 5. Nhật ký bài học
 
+- 2026-11-16 vòng 12 (06:49 Giang: cách lia máy giữ như cũ — từ chỗ lùi ra trở đi giống lúc đầu, trước khi đổi sang kiểu mới; hỏi lại thì
+  Giang chọn GIỮ đoạn lùi ra trung cảnh). dd3d.js (kiểu Radar, toàn 3D): ĐẢO phần camera của vòng 11 cho các cảnh sau căn nhà — anchor/road/
+  build lại dùng `angles()` (đổi góc lượn + cận + lùi), hướng `bearingDemo(nhà → điểm) − 20` / 15 / 10; metro lướt dọc tuyến; trục đường từng
+  trục ±16/−10 + lùi toàn cảnh −10; radar −6; tổng kết xoay tới 25°; kết 60° — đúng code bản 5ed41c9. GIỮ của vòng 11: `HOUSE_MID` 4,2 s
+  lùi ra trung cảnh (z 15,7, nghiêng 48°), bỏ máy bay cất cánh, tắt khối 3D, kết nối vùng = trung tâm + sân bay (+ cảng). Đoạn lùi ra nay
+  xoay về ĐÚNG hướng nhìn đầu tiên của cảnh sau (`firstBear` — công thức phải khớp từng khối camera; đổi hướng một cảnh thì đổi cả ở đây),
+  đường ngắn nhất, tối đa ±100° (phần dư xoay trong lúc bay sang cảnh sau); cảnh đầu sau căn nhà vẫn `zoomFirst` (lùi ra trước, lướt tâm sau).
+  Đo căn thử Bình Chánh: lùi ra xoay −25° → 27° trong 4,2 s, bay sang trung tâm 0 xoay. Thêm: cú máy từng trục đường xoay tối đa ±60° so với
+  góc đang có (bản cũ có cú 1,8 s xoay ~140° ≈ 150°/giây). Thử: `/tmp/vt/dd_cam.py` (như dd_run9, ghi `cam.json` = [t, hướng, zoom, nghiêng]
+  mỗi STEP) → tính °/giây lớn nhất từng cảnh.
+
 - 2026-11-15 vòng 11 (22:54 Giang: app cũ hết vòng cận cảnh thì lùi ra trung cảnh, lia nhẹ rồi mới tới kết nối vùng; AI đạo diễn từ cận cảnh bay
   quay vòng rất chóng mặt + lỗi bản đồ; sân bay bị vẽ 2 lần → bỏ hiệu ứng máy bay cất cánh; khối 3D nhảy lung tung, lúc to quá → thể hiện như
   app cũ). (1) dd3d cảnh house/lot (kiểu Radar): thêm `HOUSE_MID` 4,2 s không lời cuối cảnh (`s.mid`, buildTimeline cộng vào t1) — hết vòng 360°
