@@ -13,7 +13,7 @@ import { SB_URL, SB_KEY } from './sb.js';
 import { exportMp4, decodeAudioFile, mixAudio, canEncodeMp4 } from './export.js';
 import { createHybrid } from './dd-old.js';
 import { setImageryToken, preferSession, warmSession, onTileSource } from './render.js';
-import { token, voiceLines, voiceOf, canExport, chargeExport } from './dd-voice.js';
+import { token, voiceLines, voiceOf, prefetchVoices, canExport, chargeExport } from './dd-voice.js';
 import { MAX_PHOTOS, savePhotos, loadPhotoBlobs, shrink, toBitmap } from './dd-photos.js';
 import { track, funnel } from './track.js';
 
@@ -88,10 +88,12 @@ function setHouse(h) {
 function startScan() {
   const h = S.house, st = $('scanState');
   st.className = 'scan'; st.textContent = '⏳ Đang quét tiện ích quanh nhà…';
+  const t0 = performance.now();
   S.scanJob = (async () => {
     const res = await scanArea(h, 5, null, m => { if (S.house === h) st.textContent = '⏳ ' + m; });
     if (S.house !== h) return null;
     S.scan = res;
+    timeBucket('dd_quet', t0, [5, 10, 20, 40]);
     for (const m of S.manual) if (!res.pois.some(p => p.id === m.id)) res.pois.push(m);   // tiện ích khách đã ghim tay (giữ qua tải lại trang)
     st.className = 'scan ok'; st.textContent = `✓ Đã quét ${res.pois.length} tiện ích quanh nhà`;
     renderPoiPick();
@@ -304,6 +306,7 @@ async function nextTask(i, extra) {
 }
 async function runAgent() {
   if (!S.house) { goStep(1); return; }
+  const tA = performance.now();
   if (!S.listing) S.listing = { kind: 'nhapho' };
   if (!S.buyer) S.buyer = suggestBuyer(S.listing.kind);
   save(); goStep(3);
@@ -316,6 +319,10 @@ async function runAgent() {
   if (!S.scan) { $('tasks').lastChild.after(Object.assign(document.createElement('li'), { textContent: 'Quét chưa được, kiểm tra mạng rồi bấm lại.' })); return; }
   await nextTask(1);
   const st0 = buildStory(storeData(), S.listing, S.buyer, S.edits), chosen = st0.pois.map(p => p.id);
+  // 16/11 chiều (Giang: trên điện thoại chờ lâu): đọc giọng TRƯỚC các câu chắc chắn không đổi (mở đầu, căn nhà, kêu gọi, ảnh…)
+  // song song với tìm đường đi / kết nối vùng; đường ra trục đường lớn cũng chạy song song luôn (trước chạy sau cùng)
+  if (token()) prefetchVoices(stableLines(), S.house);
+  const roadJob = roadRoutesFor(st0);
   await routesFor(chosen);
   // ranh vùng quan trọng của tiện ích đã chọn + tiện ích trong vòng radar (khu công nghiệp, bệnh viện, đại học, công viên…, tối đa 3)
   const zIds = new Set([...chosen, ...(st0.radar?.pts || []).map(p => p.id)]);
@@ -331,7 +338,8 @@ async function runAgent() {
   await nextTask(3);
   await nextTask(4);
   if (regionJob) await Promise.race([regionJob, tick(6000)]);
-  await roadRoutesFor(currentStory());
+  await roadJob;
+  await roadRoutesFor(currentStory());   // trục khác lúc đầu (ít gặp): chỉ gọi phần còn thiếu
   story = currentStory();
   await nextTask(5);
   await voiceAll(n => setTask(5, n));
@@ -339,23 +347,51 @@ async function runAgent() {
   await nextTask(7);
   await tick(650);   // dấu tick cuối kịp hiện rồi mới mở bảng dựng
   $('agent').hidden = true; $('studio').hidden = false;
+  timeBucket(token() ? 'dd_dung' : 'dd_dung_kg', tA, [15, 25, 40, 60]);   // kg = chưa đăng nhập (không đọc giọng)
   fillMusic();
   await rebuild();
 }
 const tick = ms => new Promise(r => setTimeout(r, ms));
+// 16/11: đo thời gian THẬT trên máy khách (phễu nội bộ, không gửi Meta/TikTok): dd_quet_10 = quét xong trong ≤ 10 s, _99 = lâu hơn mức cuối;
+// xuất video đếm theo phút (dd_xt_2 = ≤ 2 phút). Báo cáo 7h sáng đọc các bậc này.
+function timeBucket(name, t0, steps, unit = 1) {
+  const sec = (performance.now() - t0) / 1000, b = steps.find(x => sec <= x);
+  funnel(`${name}_${b != null ? b / unit : 99}`);
+}
+// Câu nào KHÔNG phụ thuộc đường đi / số phút / kết nối vùng: dựng kịch bản 2 lần — dữ liệu hiện có và dữ liệu giả lệch hẳn
+// (đường đi, phút, điểm mốc, hạ tầng khác) — câu giống hệt nhau ở cả 2 bản là câu chắc chắn không đổi → đọc trước được, không phí lượt giọng
+function stableLines() {
+  try {
+    const d = storeData(), fake = {};
+    for (const p of d.pois) fake[p.id] = { km: p.km * 1.7 + 0.37, min: 23, coords: null };
+    const roadFake = Object.fromEntries((d.roads || []).map(r => [r.id, { km: 7.7, min: 19, coords: null }]));
+    const d2 = { ...d, routes: fake, roadRoutes: roadFake, anchors: (d.anchors || []).map(a => ({ ...a, km: a.km + 3.3, min: a.min + 7 })),
+      infra: {}, build: [] };
+    const e = { ...S.edits, tone: $('tone').value, bird: $('bird').checked, watermark: $('brand').value.trim(), photos: S.photos.map(p => p.bmp),
+      photoQ: S.photos.map(p => p.q ?? (p.q = photoScore(p.bmp))) };
+    const a = allLines(buildStory(d, S.listing, S.buyer, e)), b = new Set(allLines(buildStory(d2, S.listing, S.buyer, e)));
+    return a.filter(t => b.has(t));
+  } catch { return []; }
+}
+// 16/11 chiều (đo: có lúc máy chủ chỉ đường chậm tới 11 s ở chỗ mới quét lần đầu): chờ tối đa ROUTE_WAIT; đường nào chưa về thì dùng
+// số ước lượng (như khi không tìm được đường) và BỎ kết quả về trễ — để lời đọc không đổi sau khi đã đọc giọng
+const ROUTE_WAIT = 7000;
+async function settle(jobs, onLate) {
+  let late = false;
+  await Promise.race([Promise.all(jobs.map(j => j.run().then(r => { if (!late) j.set(r); }))), tick(ROUTE_WAIT)]);
+  late = true;
+  for (const j of jobs) if (!j.isSet()) { j.set(null); onLate?.(); }
+}
 async function routesFor(ids) {
   const byId = new Map(S.scan.pois.map(p => [p.id, p]));
-  await Promise.all(ids.filter(id => !(id in S.routes)).map(async id => {
-    const p = byId.get(id); if (!p) return;
-    S.routes[id] = await routeTo(S.house, p).catch(() => null);
-  }));
+  await settle(ids.filter(id => !(id in S.routes) && byId.has(id)).map(id => ({
+    run: () => routeTo(S.house, byId.get(id)).catch(() => null), set: r => { S.routes[id] = r; }, isSet: () => id in S.routes })));
 }
 // đường đi thật từ nhà ra điểm gần nhất của từng trục đường lớn (để nói "ra Quốc lộ 1A khoảng 3 phút" + vẽ line); trục ngay trước nhà thì thôi
 async function roadRoutesFor(st) {
   S.roadRoutes ||= {};
-  await Promise.all((st?.roads || []).filter(r => r.near && r.km >= 0.12 && !(r.id in S.roadRoutes)).map(async r => {
-    S.roadRoutes[r.id] = await routeTo(S.house, { lat: r.near[1], lng: r.near[0] }).catch(() => null);
-  }));
+  await settle((st?.roads || []).filter(r => r.near && r.km >= 0.12 && !(r.id in S.roadRoutes)).map(r => ({
+    run: () => routeTo(S.house, { lat: r.near[1], lng: r.near[0] }).catch(() => null), set: x => { S.roadRoutes[r.id] = x; }, isSet: () => r.id in S.roadRoutes })));
 }
 function storeData() {
   const sc = S.scan || { pois: [] };
@@ -1019,7 +1055,7 @@ async function exportVideo(localOnly = false) {
       throw new Error(r.message || 'Không trừ được lượt, thử lại.');
     }
     if (r.charged || r.mode === 'unlimited') track('export');
-    if (!localOnly) funnel('dd_xuat_xong');
+    if (!localOnly) { funnel('dd_xuat_xong'); timeBucket('dd_xt', t0, [60, 120, 240, 480], 60); }
     const url = URL.createObjectURL(blob);
     fill.style.width = '100%'; txt.textContent = `✓ Xong trong ${Math.round((performance.now() - t0) / 1000)} giây`;
     const v = Object.assign(document.createElement('video'), { src: url, controls: true, playsInline: true });
@@ -1172,4 +1208,4 @@ fetch('/api/config').then(r => (r.ok ? r.json() : null)).then(c => setImageryTok
 // nguồn ô vệ tinh (phiên tạo mới / phiên lỗi / phải dùng nguồn công khai) → phễu f_o_* như app cũ → báo cáo 7h sáng đếm đủ phiên của AI đạo diễn
 onTileSource(k => funnel('o_' + k));
 funnel('dd_vao');   // phễu nội bộ AI đạo diễn: dd_nut (app cũ) → dd_vao → dd_agent → dd_xuat → dd_xuat_xong / dd_xuat_loi (không gửi Meta/TikTok)
-window.__dd = { S, get story() { return story; }, get dir() { return dir; }, rebuild, exportVideo, setHouse, addPhotos };
+window.__dd = { S, get story() { return story; }, get dir() { return dir; }, rebuild, exportVideo, setHouse, addPhotos, lines: () => story ? allLines(story) : [] };

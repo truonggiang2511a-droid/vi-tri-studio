@@ -329,9 +329,17 @@ async function loadOverture(center, radiusKm, signal) {
 }
 // Khoá so trùng tên: bỏ dấu, bỏ ký tự đặc biệt, viết đầy đủ các chữ tắt hay gặp
 const DKEY_ABBR = [[/^truong\s+/, ''], [/\bmau giao\b/g, 'mam non'], [/\bttyt\b/g, 'trung tam y te'], [/\bthcs\b/g, 'trung hoc co so'], [/\bthpt\b/g, 'trung hoc pho thong'], [/\bmn\b/g, 'mam non'], [/\bth\b/g, 'tieu hoc'], [/\bbv\b/g, 'benh vien'], [/\bubnd\b/g, 'uy ban nhan dan'], [/\bkcn\b/g, 'khu cong nghiep'], [/\bccn\b/g, 'cum cong nghiep']];
+// 16/11/2026: NHỚ kết quả theo chuỗi tên — buildPois so trùng từng cặp tiện ích (n² lần gọi dkey, mỗi lần 11 biểu thức chính quy):
+// khu đông 2.270 tiện ích từng ngốn 25/30 s quét trên máy chậm. Hàm thuần theo chuỗi nên nhớ lại cho kết quả y hệt.
+const dkeyMemo = new Map();
 function dkey(s) {
-  let k = String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, ' ').trim();
+  const src = String(s || '');
+  let k = dkeyMemo.get(src);
+  if (k !== undefined) return k;
+  k = src.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, ' ').trim();
   for (const [re, v] of DKEY_ABBR) k = k.replace(re, v);
+  if (dkeyMemo.size > 50000) dkeyMemo.clear();
+  dkeyMemo.set(src, k);
   return k;
 }
 const vnAccents = s => (String(s).normalize('NFD').match(/[\u0300-\u036f]/g) || []).length + (String(s).match(/[đĐ]/g) || []).length;
@@ -430,6 +438,8 @@ function buildPois(raw, center, radiusKm, extra = []) {
     const fp = dkey(p.name);
     const dup = kept.find(k => {
       if (k.id === p.id) return true;
+      // mọi trường hợp trùng còn lại đều cần cách nhau < 2,5 km → lệch vĩ độ > 0,0235° (≈ 2,6 km) chắc chắn không trùng, bỏ qua sớm
+      if (Math.abs(k.lat - p.lat) > 0.0235) return false;
       const fk = dkey(k.name);
       const same = fk === fp || (fk.length > 6 && fp.length > 6 && (fk.includes(fp) || fp.includes(fk)));
       // Sân bay, nhà ga là khu rộng: cùng loại trong bán kính vài trăm mét là một điểm dù tên khác

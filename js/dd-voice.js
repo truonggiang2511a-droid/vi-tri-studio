@@ -49,30 +49,53 @@ async function ttsOnce(text, loc, attempt = 0) {
   }
   return res.arrayBuffer();
 }
-// Đọc các câu còn thiếu (tối đa 3 câu cùng lúc), báo tiến độ; trả về Map câu → AudioBuffer.
+// Đọc các câu còn thiếu, báo tiến độ; trả về hàm câu → AudioBuffer.
 // Giọng đã đọc lưu trên máy khách (IndexedDB, khoá = giọng|tốc độ|câu): tải lại trang, đi đăng nhập rồi quay lại,
 // bấm dựng lại, đổi thứ tự… đều KHÔNG gọi máy chủ đọc lại — chỉ câu mới / câu đã sửa mới tốn lượt giọng.
-export async function voiceLines(texts, loc, onProgress) {
-  let need = [...new Set(texts.filter(Boolean))].filter(t => !cache.has(keyOf(t)));
-  await Promise.all(need.map(async t => {
+// 16/11 chiều (Giang: trên điện thoại chờ giọng lâu): đọc 5 câu cùng lúc (trước 3), câu DÀI NHẤT gọi trước (câu căn nhà ~70 chữ
+// là chặng lâu nhất — gọi trước thì các câu ngắn chạy song song phía sau), và câu đang đọc dở (prefetchVoices) không bị gọi lại lần 2.
+const POOL = 5;
+const inflight = new Map();   // khoá → Promise<AudioBuffer> đang gọi máy chủ
+function voiceOne(t, loc) {
+  const k = keyOf(t);
+  if (cache.has(k)) return Promise.resolve(cache.get(k));
+  if (!inflight.has(k)) inflight.set(k, (async () => {
+    try {
+      const buf = await ttsOnce(speakable(t), loc);
+      const ab = await decodeAudioFile(new Blob([buf.slice(0)]));
+      cache.set(k, ab);
+      kvPut('voice|' + k, buf);
+      return ab;
+    } finally { inflight.delete(k); }
+  })());
+  return inflight.get(k);
+}
+async function fromDisk(texts) {
+  await Promise.all(texts.filter(t => !cache.has(keyOf(t))).map(async t => {
     const mp3 = await kvGet('voice|' + keyOf(t));
     if (mp3) { try { cache.set(keyOf(t), await decodeAudioFile(new Blob([mp3]))); } catch { /* hỏng thì đọc lại */ } }
   }));
-  need = need.filter(t => !cache.has(keyOf(t)));
+}
+export async function voiceLines(texts, loc, onProgress) {
+  const uniq = [...new Set(texts.filter(Boolean))];
+  await fromDisk(uniq);
+  const need = uniq.filter(t => !cache.has(keyOf(t))).sort((a, b) => speakable(b).length - speakable(a).length);
   let done = 0;
   onProgress?.(0, need.length);
   const queue = need.slice();
   const worker = async () => {
     while (queue.length) {
-      const t = queue.shift();
-      const buf = await ttsOnce(speakable(t), loc);
-      cache.set(keyOf(t), await decodeAudioFile(new Blob([buf.slice(0)])));
-      kvPut('voice|' + keyOf(t), buf);
+      await voiceOne(queue.shift(), loc);
       onProgress?.(++done, need.length);
     }
   };
-  await Promise.all([worker(), worker(), worker()]);
+  await Promise.all(Array.from({ length: Math.min(POOL, need.length) }, worker));
   return t => cache.get(keyOf(t)) || null;
+}
+// Đọc trước (chạy nền, không báo lỗi) các câu chắc chắn không đổi — vd. câu mở đầu, câu căn nhà, câu kêu gọi — trong lúc
+// Agent còn tìm đường đi / kết nối vùng. Lỗi thì thôi: voiceLines sau đó tự đọc lại câu còn thiếu.
+export function prefetchVoices(texts, loc) {
+  return voiceLines(texts, loc).catch(() => null);
 }
 export const voiceOf = t => cache.get(keyOf(t)) || null;
 
