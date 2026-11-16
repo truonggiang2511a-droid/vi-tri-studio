@@ -244,7 +244,10 @@ export function buildStory(S, L, buyer, edits = {}) {
   const tone = TONE_KEYS.includes(edits.tone) ? edits.tone : AUTO_TONE[buyer] || 'pas';
   const p0name = p0 && catWord(p0);
   const p0d = p0 && (p0.km >= 1 && mins(p0) ? `<b>${mins(p0)} phút</b>` : `<b>${km(p0.km)}</b>`);   // ≥ 1 km: phút trước (người mua nghĩ bằng phút)
-  const P = L.price ? `<b>${L.price}</b>` : '', ppm = ppmOf(L.price, L.area), PPM = ppm ? `<b>${ppm}</b>` : '';
+  // 16/11 (Giang): "cho giá xuống cuối CTA để khách tò mò xem hết video" — mặc định KHÔNG nói giá / đơn giá ở mở đầu và đoạn căn nhà
+  // (công tắc "Giá để cuối video" trong Sửa video, edits.priceEnd = false để nói giá sớm như trước); giá chỉ có ở cảnh kêu gọi cuối
+  const priceEnd = edits.priceEnd !== false;
+  const P = L.price && !priceEnd ? `<b>${L.price}</b>` : '', ppm = priceEnd ? '' : ppmOf(L.price, L.area), PPM = ppm ? `<b>${ppm}</b>` : '';
   const legal = L.legal ? L.legal.toLowerCase() : '', legalOk = /sổ\s*(hồng|đỏ)/i.test(L.legal || '');
   const kcnD = kcn && (mins(kcn) ? `<b>${mins(kcn)} phút</b>` : `<b>${km(kcn.km)}</b>`);
   const b0 = build[0];
@@ -285,11 +288,11 @@ export function buildStory(S, L, buyer, edits = {}) {
     },
     'ke-chuyen': {
       o: [`Hình dung sáng mai ${p0?.cat === 'truong' ? `dắt con đi bộ tới ${p0name}, chỉ ${p0d}` : p0 ? `ra ${p0name} chỉ ${p0d}` : `thức dậy trong ${kwFull} của riêng mình`}.`,
-        J(at && `Mở cửa là ${street.replace(/^Mặt tiền/, 'mặt tiền')}.`, specs && `${lotKind ? 'Lô đất' : 'Trong nhà'}: ${specs}.`, legalOk ? `${cap(legal)}, an tâm ở lâu dài.` : legal && `${cap(legal)}.`), 'Muốn tận mắt thấy?'],
+        J(at && `Mở cửa là ${street.replace(/^Mặt tiền/, 'mặt tiền')}.`, specs && `${lotKind ? 'Lô đất' : 'Trong nhà'}: ${specs}.`, legalOk ? `${cap(legal)}, an tâm ở lâu dài.` : legal && `${cap(legal)}.`), 'Muốn biết thêm?'],
       thue: [kcn ? `Mỗi sáng, người thuê ở đây chạy xe ${kcnD} là tới <b>${kcn.name}</b>.` : p0 ? `Mỗi sáng, người thuê ở đây ra ${p0name} chỉ ${p0d}.` : 'Cùng xem một ngày của người thuê ở đây.',
-        J(specs && `${K} có ${specs}.`, L.beds >= 2 && 'Đủ phòng cho cả nhóm người đi làm ở chung.', legal && `${cap(legal)}.`), 'Muốn tận mắt thấy?'],
+        J(specs && `${K} có ${specs}.`, L.beds >= 2 && 'Đủ phòng cho cả nhóm người đi làm ở chung.', legal && `${cap(legal)}.`), 'Muốn biết thêm?'],
       vung: [b0 ? `Hình dung ngày <b>${b0.name}</b> hoàn thành, ${kwFull} này chỉ cách <b>${km(b0.km)}</b>.` : ctrHook ? `Hình dung mỗi ngày từ đây ${ctrHook}.` : `Hình dung giá trị của một vị trí đúng chỗ.`,
-        J(at && `${K} ${at}.`, specs && `${cap(specs)}.`, PPM && `Đơn giá khoảng ${PPM}.`, legal && `${cap(legal)}.`), 'Muốn tận mắt thấy?'],
+        J(at && `${K} ${at}.`, specs && `${cap(specs)}.`, PPM && `Đơn giá khoảng ${PPM}.`, legal && `${cap(legal)}.`), 'Muốn biết thêm?'],
     },
     'chuyen-gia': {
       o: [`Nhìn bằng con số: ${[P && `giá ${P}`, PPM && `khoảng ${PPM}`, near1].filter(Boolean).join(', ') || 'phân tích nhanh vị trí này'}.`],
@@ -545,13 +548,13 @@ export function buildStory(S, L, buyer, edits = {}) {
     airport: infra?.airport && `${infra.airport.name}: <b>${fmtNum(infra.airport.km)} km</b>, khoảng <b>${infra.airport.min} phút</b>, bay đi mọi miền.`,
     metro: infra?.metro && `${infra.metro.name} đã chạy, ga ${infra.metro.nearName} cách khoảng <b>${fmtNum(Math.round(infra.metro.nearKm * 10) / 10)} km</b> đường chim bay.`,
     road: infra?.road && `${infra.road.name} cách nhà <b>${fmtNum(Math.round(infra.road.km * 10) / 10)} km</b>.`,
-    // lời kêu gọi đúng loại sản phẩm: nhà → đi xem nhà, lô đất → đi xem lô đất, căn hộ / biệt thự / nhà vườn tương tự
-    cta: `${L.price ? `Giá <b>${L.price}</b>. ` : ''}${ctaLead ? ctaLead + ' ' : ''}${ctaMode === 'binhluan' ? `Bình luận chữ ${ctaKey.toLowerCase()}` : `Nhắn tin chữ ${ctaKey.toLowerCase()}`} để nhận thông tin và hẹn đi xem ${kwFull}.`,
+    // 16/11 (Giang): lời kêu gọi DỪNG ở "để nhận thông tin chi tiết về sản phẩm" — không hẹn đi xem
+    cta: `${ctaLead ? ctaLead + ' ' : ''}${L.price ? `Giá bán <b>${L.price}</b>. ` : ''}${ctaMode === 'binhluan' ? `Bình luận chữ ${ctaKey.toLowerCase()}` : `Nhắn tin chữ ${ctaKey.toLowerCase()}`} để nhận thông tin chi tiết về sản phẩm.`,
     cluster: cluster ? cluster.line : '',
     orbit: orbit ? orbit.line : '',
     // cảnh ảnh căn nhà: đọc điểm nổi bật CHÍNH môi giới viết trong tin (không có thì câu mời xem chung, không bịa)
     // cảnh ảnh (cuối video): chỉ giới thiệu đây là ảnh thực tế — khớp với mọi ảnh, không tả bịa nội dung từng ảnh
-    photos: (edits.photos || []).length ? `Đây là hình ảnh thực tế của ${kwFull}, mời anh chị xem qua.` : '',
+    photos: (edits.photos || []).length ? 'Đây là hình ảnh thực tế của sản phẩm, anh chị xem qua nhé.' : '',
     // từ nhà ra từng trục đường lớn bao nhiêu phút (đường đi thật; trục ngay trước nhà thì nói "nằm ngay") → nhìn tổng thể vị trí
     // 15/11 vòng 7: MỖI trục một câu, đúng thứ tự hiện (trục trước nhà → trục gần nhất) → máy bay tới từng trục đúng lúc giọng nói tên
     roads: rdLines.length ? `${askQ1} ${rdLines.join(' ')}` : '',
@@ -568,7 +571,10 @@ export function buildStory(S, L, buyer, edits = {}) {
 
   return {
     kind, buyer, persona: `${KINDS[kind].label} · ${BUYERS[buyer].label}`,
-    house: H, info: { price: L.price || KINDS[kind].label, chips: infoChips(L) }, footprint, lot,
+    house: H, info: { price: (!priceEnd && L.price) || KINDS[kind].label, chips: infoChips(L) }, footprint, lot,
+    // 16/11: cảnh kết = ảnh đẹp nhất của căn làm nền (nhà phố / biệt thự / nhà vườn: ảnh đầu = mặt tiền; đất, căn hộ: ảnh máy chấm điểm cao nhất;
+    // khách bấm ★ để chọn) + thẻ tổng kết + GIÁ (số chạy) + nút kêu gọi
+    priceEnd, price: L.price || '', hero: heroOf(kind, edits),
     pois, anchors, infra, score: reasonLine || sumLine ? score : null, scoreR, lines, radar, frontStreet,
     // 16/11: thẻ tổng kết = "VÌ SAO NÊN MUA?" + 3 lý do (ô cuối = lý do lớn nhất, viền sáng); thiếu số liệu thì 3 con số lớn như trước
     stats: reasons.length >= 2 ? reasonTiles : stats.slice(0, 3), statsTitle: reasons.length >= 2 ? 'VÌ SAO NÊN MUA?' : '', statsHi: reasons.length >= 2 ? reasons.length - 1 : -1,
@@ -578,7 +584,7 @@ export function buildStory(S, L, buyer, edits = {}) {
     full, cluster, orbit, flow: radar ? 'radar' : 'lanluot', engine: OLD ? 'old' : '3d', oldR, statsInCta: false, ctaKey, ctaMode, cta: ctaAsk, area,
     // mở đầu từ quả địa cầu bay xuống tỉnh (mặc định bật, khách tắt ở "Sửa video")
     globe: edits.globe !== false,
-    labelStyle: ['trang', 'kinh', 'mau'].includes(edits.labelStyle) ? edits.labelStyle : 'trang', ctaSub: `để nhận thông tin chi tiết`, ctaLong: `${ctaAsk} nhận thông tin`,
+    labelStyle: ['trang', 'kinh', 'mau'].includes(edits.labelStyle) ? edits.labelStyle : 'trang', ctaSub: `để nhận thông tin chi tiết về sản phẩm`, ctaLong: `${ctaAsk} nhận thông tin`,
     style: styleOf(kind, buyer), bird: !!edits.bird,
     watermark: edits.watermark || '',
     // bản ngắn: tối đa 5 ảnh thực tế cuối video
@@ -590,7 +596,8 @@ export function buildStory(S, L, buyer, edits = {}) {
       title: (stripPlace(L.title || KINDS[kind].label, place) || L.title || KINDS[kind].label).toUpperCase(),
       ward: (place || L.province || '').toUpperCase(),
       label: L.price ? 'GIÁ BÁN' : (L.dims || L.area) ? 'DIỆN TÍCH' : 'KHU VỰC',
-      big: (L.price || L.dims || (L.area && `${fmtNum(L.area)} m²`) || (L.province && L.province !== place ? L.province : '') || KINDS[kind].label).toUpperCase(),
+      // giá để cuối video: ô to ghi "XEM CUỐI VIDEO" (khách tò mò xem hết)
+      big: (L.price && priceEnd ? 'XEM CUỐI VIDEO' : L.price || L.dims || (L.area && `${fmtNum(L.area)} m²`) || (L.province && L.province !== place ? L.province : '') || KINDS[kind].label).toUpperCase(),
       // 15/11: dòng lợi ích mạnh nhất ngay khung đầu (vd "300 m tới trường mầm non", "25 phút về trung tâm") — số liệu quét thật
       hook: buyer === 'vung' && center ? `${center.min} phút về trung tâm` : buyer === 'thue' && kcn ? `${mins(kcn) ? mins(kcn) + ' phút' : km(kcn.km)} tới ${zoneName(kcn.name)}`
         : p0 ? `${p0.km >= 1 && mins(p0) ? mins(p0) + ' phút' : km(p0.km)} tới ${p0name}` : center ? `${center.min} phút về trung tâm` : '',
@@ -598,6 +605,21 @@ export function buildStory(S, L, buyer, edits = {}) {
       color: COVER_COLORS[((edits.palette ?? Math.abs(Math.round((S.house.lat * 1e4) + (S.house.lng * 1e4)))) % COVER_COLORS.length + COVER_COLORS.length) % COVER_COLORS.length],
     },
   };
+}
+// Ảnh nền cảnh kết: khách bấm ★ (edits.heroIdx) → ảnh đó; nhà phố / biệt thự / nhà vườn → ảnh đầu (môi giới hay chụp mặt tiền trước);
+// đất nền, căn hộ → ảnh điểm cao nhất (edits.photoQ: độ nét + tương phản + sáng vừa + màu, chấm ở dao-dien.js photoScore)
+const FACADE_KINDS = ['nhapho', 'bietthu', 'nhavuon'];
+export function heroIndex(kind, n, heroIdx, q = []) {
+  if (!n) return -1;
+  if (Number.isInteger(heroIdx) && heroIdx >= 0 && heroIdx < n) return heroIdx;
+  let b = 0; for (let i = 1; i < n; i++) if ((q[i] ?? -1) > (q[b] ?? -1)) b = i;
+  // nhà: ảnh đầu (mặt tiền) — trừ khi ảnh đầu tối / mờ hẳn (điểm < 0,35 và kém ảnh tốt nhất ≥ 0,3) thì lấy ảnh tốt nhất
+  if (FACADE_KINDS.includes(kind) || !q.length) return q.length && (q[0] ?? 1) < 0.35 && (q[b] ?? 0) - (q[0] ?? 0) >= 0.3 ? b : 0;
+  return b;
+}
+function heroOf(kind, edits) {
+  const ph = edits.photos || [], i = heroIndex(kind, ph.length, edits.heroIdx, edits.photoQ);
+  return i >= 0 ? ph[i] : null;
 }
 // Màu nhấn ảnh bìa (tự đổi theo căn, khách bấm "Đổi màu bìa" để xoay vòng)
 export const COVER_COLORS = ['#FF4FA3', '#FF7A1A', '#1E90FF', '#8B5CF6', '#10B981', '#EF4444', '#14B8A6', '#F59E0B'];

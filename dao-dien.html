@@ -56,7 +56,7 @@ catch (e) { location.replace('/'); }
       <div class="infoform" id="infoform" hidden></div>
     </div>
     <div class="photos">
-      <div class="ph-head">📷 Ảnh sản phẩm <small>Không bắt buộc · tối đa 12 ảnh · ảnh đầu làm nền ảnh bìa</small></div>
+      <div class="ph-head">📷 Ảnh sản phẩm <small>Không bắt buộc · tối đa 12 ảnh · ảnh đầu làm nền ảnh bìa · ★ = ảnh nền cảnh cuối (giá + kêu gọi)</small></div>
       <div class="ph-grid" id="phGrid"></div>
       <input type="file" id="phInput" accept="image/*" multiple hidden>
     </div>
@@ -128,6 +128,7 @@ catch (e) { location.replace('/'); }
           <div class="meta">
             <label class="tog"><input type="checkbox" id="full"> Bản đầy đủ <small>(YouTube, Zalo · nhiều tiện ích hơn, dài hơn)</small></label>
             <label class="tog"><input type="checkbox" id="globe" checked> Mở đầu từ quả địa cầu <small>(bay từ trái đất xuống tỉnh, thêm ~4 giây)</small></label>
+            <label class="tog"><input type="checkbox" id="priceEnd" checked> Giá để cuối video <small>(khách tò mò xem hết · ảnh bìa ghi "XEM CUỐI VIDEO")</small></label>
           </div>
           <div class="meta">
             <label class="sel">📍 Kiểu hiện tiện ích <select id="flow"><option value="radar">Radar quét quanh nhà (mỗi tiện ích một nhãn tên)</option><option value="lanluot">Bay tới từng tiện ích — vẽ như app cũ</option></select></label>

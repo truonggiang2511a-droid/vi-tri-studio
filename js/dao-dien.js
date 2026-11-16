@@ -6,7 +6,7 @@ import { parseCoords, haversineKm } from './geo.js';
 import { scanArea, routeTo, pickHubs, loadHubFx, simplifyLine, CATEGORIES, loadZones, loadInfra, metroBuildNear, placesNear, guessCategory } from './data.js';
 import { HUBS } from './hubs.js';
 import { parseListing, summaryChips, KINDS } from './dd-parse.js';
-import { BUYERS, suggestBuyer, buildStory, MUSIC_LIB, AUTO_TONE, popText } from './dd-agent.js';
+import { BUYERS, suggestBuyer, buildStory, MUSIC_LIB, AUTO_TONE, popText, heroIndex } from './dd-agent.js';
 import { createDirector3D, CAT3D, kmBetween, fmtKm, fmtSub, shortName } from './dd3d.js';
 import { rpc } from './account.js';
 import { SB_URL, SB_KEY } from './sb.js';
@@ -215,15 +215,49 @@ function renderBuyers() {
 }
 
 // ---------- Ảnh căn nhà (tối đa 12, chỉ lưu trên máy khách) ----------
+// 16/11: chấm điểm ảnh để chọn ẢNH NỀN CẢNH KẾT cho đất nền / căn hộ (nhà phố, biệt thự, nhà vườn lấy ảnh đầu = mặt tiền):
+// độ nét (phương sai Laplace) + tương phản + sáng vừa + độ tươi màu, đo trên bản thu nhỏ 128 px (chạy trên máy, không gửi đi đâu)
+function photoScore(bmp) {
+  try {
+    const s = Math.min(1, 128 / Math.max(bmp.width, bmp.height)), w = Math.max(8, Math.round(bmp.width * s)), h = Math.max(8, Math.round(bmp.height * s));
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(bmp, 0, 0, w, h);
+    const d = g.getImageData(0, 0, w, h).data, Y = new Float32Array(w * h);
+    let sum = 0, sum2 = 0, sat = 0;
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+      const r = d[i], gg = d[i + 1], b = d[i + 2], y = (0.299 * r + 0.587 * gg + 0.114 * b) / 255, mx = Math.max(r, gg, b), mn = Math.min(r, gg, b);
+      Y[j] = y; sum += y; sum2 += y * y; sat += mx ? (mx - mn) / mx : 0;
+    }
+    const n = w * h, mean = sum / n, std = Math.sqrt(Math.max(0, sum2 / n - mean * mean));
+    let lap = 0, lap2 = 0, m = 0;
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x, v = 4 * Y[i] - Y[i - 1] - Y[i + 1] - Y[i - w] - Y[i + w]; lap += v; lap2 += v * v; m++;
+    }
+    const sharp = Math.min(1, Math.sqrt(Math.max(0, lap2 / m - (lap / m) ** 2)) / 0.12);
+    const expo = 1 - Math.min(1, Math.abs(mean - 0.52) / 0.4), contrast = Math.min(1, std / 0.25), colorful = Math.min(1, sat / n / 0.45);
+    return 0.4 * sharp + 0.22 * contrast + 0.2 * expo + 0.18 * colorful;
+  } catch { return 0; }
+}
+const heroIdx = () => heroIndex(S.listing?.kind || 'nhapho', S.photos.length, S.edits.heroIdx, S.photos.map(p => p.q ?? (p.q = photoScore(p.bmp))));
 function renderPhotos() {
   const g = $('phGrid'); g.textContent = '';
+  const hi = heroIdx();
   S.photos.forEach((ph, i) => {
     const d = Object.assign(document.createElement('div'), { className: 'ph' });
     d.append(Object.assign(document.createElement('img'), { src: ph.url, alt: 'Ảnh căn ' + (i + 1) }));
     if (!i) d.append(Object.assign(document.createElement('span'), { className: 'tag', textContent: 'Bìa' }));
+    // ★ = ảnh nền cảnh kết (giá + nút kêu gọi); bấm ảnh khác để đổi
+    const st = Object.assign(document.createElement('button'), { className: 'star' + (i === hi ? ' on' : ''), textContent: i === hi ? '★ Cuối' : '☆', type: 'button' });
+    st.title = i === hi ? 'Ảnh nền cảnh cuối (giá + nút kêu gọi)' : 'Chọn làm ảnh nền cảnh cuối';
+    st.onclick = () => { S.edits.heroIdx = i; save(); renderPhotos(); if (story) edited(); };
+    d.append(st);
     const x = Object.assign(document.createElement('button'), { className: 'x', textContent: '✕', type: 'button' });
     x.setAttribute('aria-label', 'Bỏ ảnh này');
-    x.onclick = () => { URL.revokeObjectURL(ph.url); ph.bmp.close?.(); S.photos.splice(i, 1); photosChanged(); };
+    x.onclick = () => {
+      URL.revokeObjectURL(ph.url); ph.bmp.close?.(); S.photos.splice(i, 1);
+      const h = S.edits.heroIdx; if (Number.isInteger(h)) S.edits.heroIdx = h === i ? undefined : h > i ? h - 1 : h;   // giữ đúng ảnh ★ khách đã chọn
+      photosChanged();
+    };
     d.append(x); g.append(d);
   });
   if (S.photos.length < MAX_PHOTOS) {
@@ -362,7 +396,8 @@ async function voiceAll(onP) {
 let dir = null, story = null, playing = false, raf = 0, actx = null, src = null;
 const musicBuf = {};
 function currentStory() {
-  return buildStory(storeData(), S.listing, S.buyer, { ...S.edits, tone: $('tone').value, bird: $('bird').checked, watermark: $('brand').value.trim(), photos: S.photos.map(p => p.bmp) });
+  return buildStory(storeData(), S.listing, S.buyer, { ...S.edits, tone: $('tone').value, bird: $('bird').checked, watermark: $('brand').value.trim(), photos: S.photos.map(p => p.bmp),
+    photoQ: S.photos.map(p => p.q ?? (p.q = photoScore(p.bmp))) });
 }
 // gắn giọng đã có vào kịch bản; câu chưa có giọng thì nhịp cảnh ước theo số chữ
 function withVoice(st) {
@@ -439,7 +474,7 @@ function aiPayload(st, L) {
   const [loai, xem] = BDS[st.kind] || BDS.nhapho, mm = p => (p.min != null ? Math.max(1, Math.round(p.min)) : null);
   const facts = {
     loai_bds: loai, tieu_de: L.title || null,
-    thong_tin_nha: { gia: L.price || null, dien_tich: L.dims || (L.area ? `${L.area} m²` : null), loai_dat: L.thoCu || null, so_tang: (st.kind !== 'canho' && L.floors) || null,
+    thong_tin_nha: { gia: (!st.priceEnd && L.price) || null, dien_tich: L.dims || (L.area ? `${L.area} m²` : null), loai_dat: L.thoCu || null, so_tang: (st.kind !== 'canho' && L.floors) || null,
       can_ho_o_tang: L.level || null, phong_ngu: L.beds || null, phap_ly: L.legal || null, duong_truoc_nha: L.road || null },
     diem_noi_bat: L.highlights || [], khach_muc_tieu: { o: 'o', thue: 'cho_thue', vung: 'dau_tu' }[S.buyer] || null, noi_lo_khach_hang: PAINS[S.buyer] || null,
     xa_phuong: storeData().ward || L.ward || null, tinh_thanh: L.province || null,
@@ -493,9 +528,9 @@ function aiPayload(st, L) {
   if (!OLD && st.score && !st.statsInCta) put('score', 'score', st.statsTitle
     ? { canh: 'Tổng kết trước lời kêu gọi: thẻ "VÌ SAO NÊN MUA?" với các ô lý do hiện trên hình. ' + whyCanh, ly_do: st.reasons }
     : { canh: 'Tổng kết trước lời kêu gọi: 3 con số lớn hiện trên hình. 1–2 câu đọc đúng 3 con số này rồi chốt giá trị vị trí (không hứa lời lãi)', con_so: st.stats.map(x => `${x.n} ${x.unit} ${x.sub}`) });
-  if (st.photos.length) put('photos', 'photos', { canh: 'Bản đồ đã xong, chuyển sang ảnh thực tế: 1 câu mời người xem cùng xem hình ảnh thực tế' });
+  // câu ảnh thực tế giữ đúng chữ Giang chốt 16/11 ("Đây là hình ảnh thực tế của sản phẩm, anh chị xem qua nhé.") → không gửi AI viết lại
   const key = st.ctaKey.toLowerCase();
-  put('outro', 'cta', { canh: `Kết video: nhắc giá (nếu có) rồi kêu gọi ${st.ctaMode === 'binhluan' ? `BÌNH LUẬN chữ '${key}' hoặc nhắn tin` : `NHẮN TIN chữ '${key}'`} để nhận thông tin chi tiết và hẹn ${xem} (đúng các chữ này). Không đọc số điện thoại.` });
+  put('outro', 'cta', { ...(L.price ? { gia: L.price } : {}), canh: `Kết video: ${st.priceEnd ? 'LẦN ĐẦU nói giá bán (gia) trong video — đọc giá rõ ràng' : 'nhắc giá (nếu có)'} rồi kêu gọi ${st.ctaMode === 'binhluan' ? `BÌNH LUẬN chữ '${key}' hoặc nhắn tin` : `NHẮN TIN chữ '${key}'`} để nhận thông tin chi tiết về sản phẩm (đúng các chữ này) rồi DỪNG: không hẹn đi xem, không mời xem nhà/đất, không thêm câu nào sau đó. Không đọc số điện thoại.` });
   return { facts, segments: seg, back };
 }
 async function aiWrite() {
@@ -513,7 +548,8 @@ async function aiWrite() {
     const lines = { ...(S.edits.lines || {}) };
     let n = 0;
     // số liệu (km, m, phút, tỷ…) tô vàng như câu Agent viết
-    for (const [k, v] of Object.entries(j.segments || {})) if (back[k] && v) { lines[back[k]] = esc(v).replace(/(\d[\d.,]*\s*(km|m²|mét vuông|mét|m|phút|tỷ|triệu)?)/g, '<b>$1</b>'); n++; }
+    // lời kêu gọi AI viết mà vẫn hẹn đi xem → giữ câu mẫu (Giang 16/11: kết ở "nhận thông tin chi tiết về sản phẩm")
+    for (const [k, v] of Object.entries(j.segments || {})) if (back[k] && v && !(back[k] === 'cta' && /hẹn|đi xem|xem trực tiếp|tận nơi|tận mắt/i.test(v))) { lines[back[k]] = esc(v).replace(/(\d[\d.,]*\s*(km|m²|mét vuông|mét|m|phút|tỷ|triệu)?)/g, '<b>$1</b>'); n++; }
     if (!n) throw new Error('AI chưa trả lời được');
     S.edits.lines = lines;
     edited();
@@ -720,6 +756,7 @@ function renderBoard() {
   syncTone();
   $('full').checked = !!story.full;
   $('globe').checked = !!story.globe;
+  $('priceEnd').checked = !!story.priceEnd;
   $('flow').value = story.flow;
   $('labelStyle').value = story.labelStyle;
   $('ctaMode').value = story.ctaMode;
@@ -1016,7 +1053,7 @@ function postText(st, L, url) {
     ...st.pois.slice(0, 4).map(p => `📍 ${p.name}: ${fmtSub(p, st.bird)}`),
     ...st.anchors.map(a => `🚗 ${a.min} phút tới ${a.name}`),
     st.roads.length ? `🛣 Gần ${st.roads.slice(0, 3).map(r => r.name).join(', ')}` : null, '',
-    `👉 ${st.ctaMode === 'binhluan' ? 'Bình luận' : 'Nhắn tin'} “${st.ctaKey}” để nhận thông tin chi tiết & hẹn đi xem.`,
+    `👉 ${st.ctaMode === 'binhluan' ? 'Bình luận' : 'Nhắn tin'} “${st.ctaKey}” để nhận thông tin chi tiết về sản phẩm.`,
     url ? `🌐 Xem ảnh, vị trí & để lại số điện thoại: ${url}` : null, '',
     tags.map(x => '#' + x).join(' '),
   ].filter(x => x != null && x !== false).join('\n').replace(/\n{3,}/g, '\n\n').trim();
@@ -1084,6 +1121,7 @@ async function makePage() {
 // ---------- gắn sự kiện ----------
 $('full').onchange = () => { S.edits.full = $('full').checked; edited(); };
 $('globe').onchange = () => { S.edits.globe = $('globe').checked ? undefined : false; edited(); };
+$('priceEnd').onchange = () => { S.edits.priceEnd = $('priceEnd').checked ? undefined : false; edited(); };
 $('flow').onchange = () => { S.edits.flow = $('flow').value === 'lanluot' ? 'lanluot' : undefined; edited(); };
 // mẫu thẻ tiện ích: không đổi lời → dựng lại ngay, không cần đọc lại giọng
 $('labelStyle').onchange = () => { S.edits.labelStyle = $('labelStyle').value; save(); if (dirty) edited(); else rebuild(); };

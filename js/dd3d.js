@@ -396,6 +396,14 @@ export function buildTimeline(story) {
   // ảnh thực tế của căn: dồn xuống cuối, ngay trước lời kêu gọi (lời đọc chỉ giới thiệu "hình ảnh thực tế", không tả bịa từng ảnh)
   if (story.photos?.length) add('photos', PT * story.photos.length + 0.3, v.photos);
   add('cta', 3.8, v.cta);
+  // 16/11 (Giang): cảnh kết — GIÁ bật lên (số chạy) đúng lúc giọng nói "giá bán", nút kêu gọi bật lúc nói "bình luận / nhắn tin"
+  {
+    const s = scenes.at(-1), plain = String(L.cta || '').replace(/<[^>]+>/g, '').toLowerCase(), say = s.vo ? s.vo.buffer.duration : est(L.cta);
+    const at = w => { const i = plain.indexOf(w); return i >= 0 && say ? s.t0 + VO_AT + say * i / Math.max(1, plain.length) - 0.1 : null; };
+    s.priceAt = story.price ? at('giá') ?? s.t0 + 0.9 : null;
+    s.ctaAt = Math.max(s.t0 + 0.3, at('bình luận') ?? at('nhắn tin') ?? s.t0 + (story.price ? 1.8 : 0.3));
+    if (s.priceAt != null) s.ctaAt = Math.max(s.ctaAt, s.priceAt + 0.8);
+  }
   // Kêu gọi giữa video: ngay sau tiện ích mạnh nhất (đầu cảnh gom cụm / hết cảnh tiện ích đầu), thanh kêu gọi nở to 2,8 s
   const first = scenes.find(s => s.kind === 'poi'), cl = scenes.find(s => s.kind === 'cluster'), orb = scenes.find(s => s.kind === 'orbit'), rad = scenes.find(s => s.kind === 'radar');
   const ctaMid = cl ? cl.t0 + 0.2 : orb ? orb.t1 - 2.9 : first ? first.t1 : rad ? rad.t1 : null;
@@ -452,7 +460,11 @@ export function sfxEvents3D(tl) {
       if (s.rev) s.rev.forEach((r, j) => add(Math.max(s.t0 + 1.0, r), 'ding', j === s.rev.length - 1 ? 0.42 : 0.3));   // mỗi lý do bật 1 tiếng, lý do lớn nhất to hơn
       else for (let r = 0; r < 5; r++) add(s.t0 + 1.3 + r * 0.14, 'tick', 0.14);
     }
-    if (s.kind === 'cta') { add(s.t0, 'whoosh', 0.5, 1.2); add(s.t0 + 0.45, 'ding', 0.45); }
+    if (s.kind === 'cta') {
+      add(s.t0, 'whoosh', 0.5, 1.2);
+      if (s.priceAt != null) { add(s.priceAt, 'shimmer', 0.3, 1.2); add(s.priceAt + 0.9, 'ding', 0.5); }   // giá chạy số → chạm giá thật
+      add(s.ctaAt + 0.05, 'ding', s.priceAt != null ? 0.32 : 0.45);
+    }
   }
   if (tl.ctaMid != null) add(tl.ctaMid + 0.05, 'ding', 0.32);   // thanh kêu gọi nở to giữa video
   return ev;
@@ -1441,6 +1453,45 @@ export function createDirector3D({ width, height, story, overlay = null }) {
     const g0 = s ? s.t0 + 1.0 : 0;   // grow tính từ s.t0 + 1 s (xem chỗ gọi)
     drawStats(ctx, story.stats || [], a, grow, width, height, null, { title: story.statsTitle, hi: story.statsHi, at: s?.rev ? s.rev.map(r => Math.max(0, r - g0)) : null });
   }
+  // 16/11 (Giang): cảnh kết có ảnh thực tế → chuyển sang ẢNH ĐẸP NHẤT của căn (story.hero: nhà = mặt tiền) làm nền, máy đẩy vào chậm;
+  // trên: thẻ tổng kết, dưới: GIÁ + nút kêu gọi. Không có ảnh thì giữ bản đồ.
+  const HERO = story.hero || null, PRICE = story.price || '';
+  function heroBg(ctx, t, s) {
+    if (!HERO) return;
+    const lt = t - s.t0, prev = tl.scenes[tl.scenes.indexOf(s) - 1], P = story.photos || [];
+    const fromPh = prev?.kind === 'photos' && P.length;
+    if (fromPh && lt < 0.7) photoFrame(ctx, P[P.length - 1], 1, (P.length - 1) % 4, 1);   // ảnh cuối của cảnh ảnh → hoà sang ảnh nền
+    photoFrame(ctx, HERO, clamp01(lt / Math.max(4, s.t1 - s.t0)), 0, clamp01(lt / (fromPh ? 0.7 : 0.5)));
+    const A = clamp01(lt / 0.5);
+    ctx.save(); ctx.globalAlpha = A;
+    let g = ctx.createLinearGradient(0, 0, 0, height * 0.42); g.addColorStop(0, 'rgba(0,0,0,0.55)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, width, height * 0.42);
+    g = ctx.createLinearGradient(0, height * 0.4, 0, height); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.6)');
+    ctx.fillStyle = g; ctx.fillRect(0, height * 0.4, width, height * 0.6);
+    ctx.restore();
+  }
+  // giá ở cuối video: số chạy từ 0 tới giá thật (giữ cách viết "3,2 tỷ", "850 triệu"), nằm ngay trên nút kêu gọi
+  function priceCard(ctx, t, s) {
+    if (!PRICE || s.priceAt == null || t < s.priceAt) return;
+    const lt = t - s.priceAt, a = clamp01(lt / 0.3), e = EASE(clamp01(lt / 0.9));
+    const m = PRICE.match(/\d+(?:[.,]\d+)?/);
+    let txt = PRICE;
+    if (m && e < 1) {
+      const sep = m[0].includes(',') ? ',' : m[0].includes('.') ? '.' : '', dec = sep ? m[0].split(sep)[1].length : 0;
+      const v = parseFloat(m[0].replace(',', '.')) * e;
+      txt = PRICE.replace(m[0], (dec ? v.toFixed(dec) : String(Math.round(v))).replace('.', sep || '.'));
+    }
+    const x0 = SAFE.x * width, x1 = width - SAFE.r * width, h = 84 * k, y = height * CAP_Y - 96 * k - 14 * k - h;
+    ctx.save(); ctx.globalAlpha = a;
+    ctx.translate((x0 + x1) / 2, y + h / 2); const sc = 0.88 + 0.12 * POP(a); ctx.scale(sc, sc);
+    rrect(ctx, -(x1 - x0) / 2, -h / 2, x1 - x0, h, 16 * k);
+    ctx.fillStyle = 'rgba(8,12,22,0.82)'; ctx.fill(); ctx.lineWidth = 2 * k; ctx.strokeStyle = GOLD; ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = GOLD; ctx.font = font(800, 13); ctx.fillText('GIÁ BÁN', 0, -h / 2 + 22 * k);
+    ctx.font = `900 ${40 * k}px Montserrat, ${FONT}`; ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 10 * k;
+    ctx.fillText(fitEllipsis(ctx, txt, x1 - x0 - 24 * k), 0, h / 2 - 14 * k);
+    ctx.restore();
+  }
   // nút kêu gọi cuối: trên phụ đề, trong dải an toàn (né cột nút bên phải của nền tảng); 2 dòng: từ khoá + "để nhận …"
   function cta(ctx, a) {
     if (a <= 0) return;
@@ -1730,7 +1781,8 @@ export function createDirector3D({ width, height, story, overlay = null }) {
   }
   function photos(ctx, t, s) {
     const P = story.photos, lt = t - s.t0, PT = tl.photoT;
-    const A = Math.min(clamp01(lt / 0.45), clamp01((s.t1 - t) / 0.45));   // vào/ra cảnh: mờ từ bản đồ sang ảnh
+    const toHero = HERO && tl.scenes[tl.scenes.indexOf(s) + 1]?.kind === 'cta';   // sau đó là ảnh nền cảnh kết: không mờ về bản đồ
+    const A = Math.min(clamp01(lt / 0.45), toHero ? 1 : clamp01((s.t1 - t) / 0.45));   // vào/ra cảnh: mờ từ bản đồ sang ảnh
     const i = Math.min(P.length - 1, Math.floor(lt / PT)), u = (lt - i * PT) / PT;
     photoFrame(ctx, P[i], u, i % 4, A);
     const next = P[i + 1], fade = clamp01((lt - (i + 1) * PT + 0.5) / 0.5);   // 0,5 s cuối: ảnh sau hiện dần lên
@@ -2137,7 +2189,7 @@ export function createDirector3D({ width, height, story, overlay = null }) {
     if (s.kind === 'score' || s.kind === 'cta') reserved.push([0, PANEL_Y(), width, PANEL_Y() + (116 + (story.statsTitle ? STATS_TITLE_H : 0)) * k]);
     if (s.kind === 'radar' || ((s.kind === 'anchor' || s.kind === 'region') && !overlay)) reserved.push([0, PANEL_Y(), width, PANEL_Y() + (56 + (s.kind === 'radar' && Q1 ? STATS_TITLE_H : 0)) * k]);
     if (s.kind === 'roads' && Q1) reserved.push([0, PANEL_Y(), width, PANEL_Y() + STATS_TITLE_H * k]);
-    if (s.kind === 'cta') reserved.push([0, height * CAP_Y - 100 * k, width, height]);
+    if (s.kind === 'cta') reserved.push([0, height * CAP_Y - (PRICE ? 200 : 100) * k, width, height]);
     const labs = placeLabels(ctx, items, reserved, t);
     // bộ thử (tools / Playwright): nhãn + chữ mặt đất của khung vừa vẽ, để đo đè nhau / đổi cỡ
     dbg = { t, labs: labs.map(l => ({ key: l.key, box: l.box, a: clamp01(l.a), w: l.w, h: l.h })), ground: [] };
@@ -2166,8 +2218,16 @@ export function createDirector3D({ width, height, story, overlay = null }) {
     if (s.kind === 'lot') infoCard(ctx, Math.min((t - s.t0 - 0.5) / 0.45, (s.t1 - t) / 0.35), story.lot.label, story.lot.chips || []);
     if (s.kind === 'anchor' || s.kind === 'region') regionChip(ctx, t, s);
     if (s.kind === 'roads' || s.kind === 'radar') qChip(ctx, Q1, q1A(t));
-    if (s.kind === 'score') statsCard(ctx, Math.min((t - s.t0 - 1.0) / 0.4, (s.t1 - t) / 0.35), t - s.t0 - 1.0, s);
-    if (s.kind === 'cta') { if (story.statsInCta) statsCard(ctx, (t - s.t0 - 0.3) / 0.4, t - s.t0 - 0.3); cta(ctx, (t - s.t0) / 0.4); }
+    const nextK = tl.scenes[tl.scenes.indexOf(s) + 1]?.kind;
+    if (s.kind === 'score') statsCard(ctx, Math.min((t - s.t0 - 1.0) / 0.4, nextK === 'cta' ? 1 : (s.t1 - t) / 0.35), t - s.t0 - 1.0, s);
+    if (s.kind === 'cta') {
+      // 16/11: cảnh kết = ảnh nền (nếu có) + thẻ tổng kết ở trên (đã hiện đủ ở cảnh trước) + giá + nút kêu gọi
+      heroBg(ctx, t, s);
+      const prevK = tl.scenes[tl.scenes.indexOf(s) - 1]?.kind;
+      if (story.stats?.length) statsCard(ctx, prevK === 'score' && !HERO ? 1 : (t - s.t0 - 0.3) / 0.4, 99);
+      priceCard(ctx, t, s);
+      cta(ctx, (t - s.ctaAt) / 0.4);
+    }
     if (s.kind === 'photos') photos(ctx, t, s);
     ctaBar(ctx, t, s);
     cover(ctx, t);

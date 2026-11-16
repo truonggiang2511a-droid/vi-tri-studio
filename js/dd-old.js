@@ -45,7 +45,7 @@ export function oldScene(src, story) {
   const ad = src.admin || {};
   const sub = [ad.commune || src.ward || '', ad.provinceShort || ''].filter(Boolean).join(' · ');
   return {
-    keyLook: '', motion: 'denvang', motionHookOnly: true,
+    keyLook: '', motion: 'denvang', motionHookOnly: true, priceEnd: !!story.priceEnd,
     house: { lat: H.lat, lng: H.lng }, label: LABEL[kind] || LABEL.nhapho, rent: false, sub,
     title: 'Vị trí & tiện ích', brand: src.brand || '', phone: '', logo: null, logoBg: null, avatar: null, avatarCut: false, wm: '',
     photos: (story.photos || []).filter(Boolean), photoLabels: (story.photos || []).map(() => ''), clips: [],

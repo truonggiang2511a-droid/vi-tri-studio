@@ -221,6 +221,26 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 ## 5. Nhật ký bài học
 
+- 2026-11-16 vòng 17 (10:44 Giang: bỏ câu hẹn đi xem ở cuối cho MỌI loại sản phẩm, lời kết dừng ở "…để nhận thông tin chi tiết về sản phẩm";
+  có ảnh thì thêm câu "Đây là hình ảnh thực tế của sản phẩm, anh chị xem qua nhé"; CTA + thẻ tổng kết ở cuối, có ảnh thì chuyển cảnh sang ảnh sản
+  phẩm — nhà ưu tiên mặt tiền, loại khác lấy ảnh đẹp nhất; giá xuống cuối CTA để khách tò mò xem hết video). Chỉ AI đạo diễn, app cũ không đổi.
+  (1) Lời: `lines.cta` = "[câu dẫn] Giá bán X. Bình luận chữ … để nhận thông tin chi tiết về sản phẩm." (bỏ "và hẹn đi xem …"; câu dẫn Kể chuyện
+  "Muốn tận mắt thấy?" → "Muốn biết thêm?"); `lines.photos` cố định đúng chữ Giang, KHÔNG gửi AI viết lại; AI viết lời: cảnh outro dặn dừng ở câu đó,
+  không hẹn xem, câu AI trả về còn "hẹn / đi xem / tận nơi / tận mắt" thì giữ câu mẫu; nút kêu gọi dòng 2 + bài đăng: "để nhận thông tin chi tiết về sản phẩm".
+  (2) Giá để cuối (`story.priceEnd`, mặc định bật; ô `#priceEnd` "Giá để cuối video" trong Sửa video, tắt = như trước): không nói giá / đơn giá ở mở
+  đầu + đoạn căn nhà (`P`/`PPM` rỗng), thẻ thông tin cảnh căn nhà ghi loại BĐS thay giá, ảnh bìa ô to ghi "XEM CUỐI VIDEO" (nhãn "GIÁ BÁN"),
+  AI không nhận giá trong `thong_tin_nha` — chỉ cảnh outro có `gia` + dặn "LẦN ĐẦU nói giá". Kiểu "Bay tới từng tiện ích" (dd-old): cờ
+  `scene.priceEnd` → render.js `makeHook` bỏ giá ở thẻ mở đầu, `infoBox('bottom')` bỏ giá (thẻ trên cùng cảnh kết vẫn có giá); app cũ không đặt cờ
+  nên không đổi — KHÔNG commit site/app.js (bản dựng lại chỉ khác chỗ ngắt dòng, cờ không dùng ở app cũ). (3) Cảnh kết (dd3d, kiểu Radar): thứ tự
+  … tổng kết → ảnh thực tế → kêu gọi; có ảnh thì nền = ảnh `story.hero` (hoà từ ảnh cuối 0,7 s, máy đẩy vào chậm, tối trên/dưới cho chữ), thẻ "VÌ SAO
+  NÊN MUA?" hiện đủ ở trên, thẻ GIÁ BÁN số chạy (`priceCard`, bật lúc giọng nói "giá" — `s.priceAt`, + shimmer/ding) ngay trên nút kêu gọi (bật lúc
+  nói "bình luận / nhắn tin" — `s.ctaAt`); không ảnh thì nền bản đồ như cũ, thẻ tổng kết nối liền từ cảnh trước (không nháy). Ảnh nền: `heroIndex`
+  (dd-agent.js) — khách bấm ★ trên ảnh (`edits.heroIdx`, xoá ảnh thì tự dời) → ảnh đó; nhà phố/biệt thự/nhà vườn → ảnh ĐẦU (môi giới hay chụp mặt
+  tiền trước) trừ khi ảnh đầu tối/mờ hẳn (điểm < 0,35 và kém ảnh tốt nhất ≥ 0,3); đất nền/căn hộ → ảnh điểm cao nhất (nút ★ Cuối; `photoScore` dao-dien.js:
+  độ nét Laplace 0,4 + tương phản 0,22 + sáng vừa 0,2 + độ tươi màu 0,18, trên bản 128 px, chạy trên máy). Không đoán được ảnh nào là mặt tiền bằng
+  máy (cần AI nhìn ảnh, tốn phí) → dựa vào thứ tự + ★. Kiểu "Bay tới từng tiện ích" giữ cảnh kết kiểu app cũ (kêu gọi → ảnh thực tế cuối).
+  Thử: `/tmp/vt/dd_run10.py` thêm env `PHOTOS` (đường dẫn ảnh, nạp qua `#phInput`) + in hero/giá/lời; ảnh thử `/tmp/vt/ph/*.jpg`; 0 lỗi trang.
+
 - 2026-11-16 vòng 16 (10:03 Giang chốt: AI đạo diễn dùng PHIÊN BẢN ĐỒ cho ảnh vệ tinh; kịch bản phải trả lời 2 câu hỏi của người mua —
   "Sống ở đây có tiện không?" và "Vì sao nên mua?" — thuyết phục, gần gũi, TẠO NIỀM TIN). (1) Ảnh vệ tinh dd3d (`satTile`): trước đây gọi
   thẳng máy chủ Esri công khai (không khoá — vùng xám điều khoản với app thu tiền). Nay `render.js imageryUrls(z,x,y)` trả lần lượt phiên

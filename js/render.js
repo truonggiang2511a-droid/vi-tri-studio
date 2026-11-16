@@ -1258,7 +1258,7 @@ function makeHook(scene, roads, pois) {
     const p = pois.slice().sort((a, b) => a.distKm - b.distKm)[0];
     fact = `Gần ${p.name} · ${formatKm(p.distKm, p.approx, '≈ ')}`;
   }
-  const big = info?.price || '';
+  const big = scene.priceEnd ? '' : info?.price || '';   // AI đạo diễn (dd-old) "giá để cuối video": thẻ mở đầu không có giá
   if (!big && !fact) return null;
   return {
     kicker: [scene.label, scene.commune || scene.provinceShort].filter(Boolean).join(' · '),
@@ -2906,6 +2906,8 @@ function infoFullLines(items, maxW) {
 function infoBox(tl, where, logo) {
   let d = infoData(tl.scene);
   if (tl.infoFull) { const full = infoFullItems(tl.scene); d = full.length ? { price: '', det: full, full: true, title: infoKind(tl.scene).title } : null; }
+  // AI đạo diễn "giá để cuối video": thẻ thông tin ở đáy (cảnh căn nhà) bỏ giá; thẻ trên cùng ở cảnh kết vẫn có giá
+  if (d && !d.full && where === 'bottom' && tl.scene.priceEnd) d = d.det.length ? { price: '', det: d.det } : null;
   if (!d) return null;
   d.rent = !!tl.scene.rent;
   const { LW, LH, safe } = tl;
