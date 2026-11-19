@@ -221,6 +221,16 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 ## 5. Nhật ký bài học
 
+- 2026-11-19 21:30 (Giang: Vietmap gói dùng thử 60.000 giao dịch trọn gói còn ~17.800, dùng ~1.300/ngày → hết khoảng đầu 12/2026; thấy quét
+  Vietmap quá nhiều; chốt: Vietmap chỉ quét 5 km, ngoài 5 km dùng nguồn khác; sân bay/ga/bến xe lấy theo danh sách, không quét bán kính lớn):
+  `handleVmNearby` (lib/map.js) luôn quét Vietmap trong `VM_SCAN_KM` = 5 km dù khách chọn bán kính nào (trình duyệt vẫn tải OSM + Overture
+  theo bán kính khách chọn và `buildPois` tự lọc theo bán kính) → khoá nhớ đệm luôn `vmnear9?<lat3>,<lng3>|5` = TRÙNG khoá cũ của các căn đã
+  quét ở 5 km (không đổi khoá, không làm mọi căn cũ quét lại); khách kéo thanh bán kính 3/7/10 km KHÔNG quét lại Vietmap (trước: mỗi bán kính
+  là một lần quét mới ~22 tìm + 16 lấy toạ độ). Chạm bản đồ thêm tiện ích (r < 1) giữ bán kính nhỏ như cũ. Bỏ 3 từ khoá Vietmap sân bay
+  (30 km), ga tàu, bến xe → 19 lượt tìm/lần quét (trước 22). Sân bay gần nhất ≤ 30 km thêm vào kết quả từ `js/hubs.js` (lib/map.js import
+  `HUBS`, không tốn lượt), chỉ khi kết quả chưa có sân bay. Cảnh Kết nối vùng vẫn dùng `pickHubs` như cũ. Không đổi giao diện, không build
+  lại `site/`. Thử: `/tmp/vmtest/t_vm5.mjs` (Vietmap + caches giả: r=5 → 19 tìm, tối đa 5000 m, không có sân bay/ga/bến xe; r=3 và r=10 sau
+  đó → 0 lượt gọi; r=0,5 → bán kính 500 m; Bình Chánh thêm "Sân bay Tân Sơn Nhất"); esbuild đóng gói worker.js không lỗi.
 - 2026-11-16 17:30 (Giang xuất AI đạo diễn 1080p trên điện thoại báo "Lỗi: Máy hết bộ nhớ đồ hoạ khi dựng 3D"; DB hôm nay: 2 lần bấm xuất
   `f_dd_xuat` → 2 `f_dd_xuat_loi`, 0 xong). Lỗi này là sự kiện `webglcontextlost` của bản đồ 3D lúc xuất (dd3d.js `prepare`). iPhone thu hồi WebGL
   khi thiếu bộ nhớ đồ hoạ HOẶC khi khoá màn hình / chuyển app — xuất 1080p mất vài phút, AI đạo diễn KHÔNG giữ màn hình sáng (app cũ có `wakeLock`
