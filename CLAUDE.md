@@ -221,6 +221,23 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 ## 5. Nhật ký bài học
 
+- 2026-11-19 22:30 (Giang duyệt "khớp chữ theo giọng" bản thử, ẩn sau link): Whisper trên **Cloudflare Workers AI** (binding `AI` trong
+  wrangler.jsonc, miễn phí 10.000 neurons/ngày, ~46 neurons/phút âm thanh ≈ 200+ phút giọng/ngày). Máy chủ `POST /api/align` (lib/align.js,
+  chỉ trong worker.js): bắt đăng nhập (`vt_me`), KHÔNG trừ lượt, nhận WAV 16 kHz base64 + lời (làm `initial_prompt`), chạy
+  `@cf/openai/whisper-large-v3-turbo` (language vi; lỗi → `@cf/openai/whisper`), trả `words[{w,s,e}]` + `text`. Đo thật: ~2 s/câu, nghe
+  đúng "3,2 tỷ", "5x20", "TP.HCM"; gửi lời gợi ý SAI (4,5 tỷ, Bình Trị Đông) Whisper vẫn trả đúng âm thanh thật (3,2 tỷ, An Lạc) → dùng được
+  để báo đọc sai. App (`ALIGN_ON` = `?align=1`, nhớ `localStorage['vitri.align']`, `?align=0` tắt): `ensureAlign()` (gọi sau mỗi
+  `renderScript`) gửi lần lượt từng câu đã có giọng chưa khớp; kết quả nhớ theo khoá giọng (lời + giọng) ở `localStorage['vitri.align.v1']`
+  (tối đa 240 câu); `alignOf(sg)` → `js/align.js alignWords()` khớp lời hiển thị ↔ chữ Whisper theo TỪNG KÝ TỰ chữ/số (bỏ dấu, bỏ dấu câu —
+  vì Whisper tách "3" ",2", "TP" ".HCM"), quy hoạch động; chữ khớp lấy giờ ký tự đầu, chữ không khớp nội suy; thời gian co theo tốc độ đọc
+  hiện tại (độ dài giọng hiện tại ÷ lúc khớp). `timelineOpts().wordTimes` → render.js `wordClock(s, dur, wt)` dùng trong `buildCaptions`,
+  `buildCaptionsM1`, `buildKeyPops` (không có mốc / lệch số chữ → công thức ước lượng cũ, KHÔNG đổi gì với khách thường — đã so video mẫu web
+  thật vs bản mới không cờ: 58 phụ đề + 8 cụm chữ giống hệt). Nghi đọc sai = chữ có số hoặc viết hoa, ≥ 2 ký tự, khớp đúng < 50% → dòng
+  `.seg-warn` dưới câu: "⚠️ Có thể đọc sai: "3,2" nghe như "4,5" — sửa lời rồi tạo lại giọng câu này." Đo video mẫu (giọng Google đều): cách
+  ước lượng cũ lệch TB 0,07–0,13 s, nhiều nhất 0,28 s — lợi lớn hơn với Vbee / giọng tự thu. CHƯA làm (bước 2, chờ Giang duyệt): AI đạo diễn
+  (dd3d `beatsFor`, radar, "Vì sao nên mua?"), phụ đề karaoke tô màu từng chữ. Thử: `/tmp/al/pw.py` (site cục bộ, /api chuyển sang web thật
+  kèm Referer, phiên tạm giang.test trong `vt_sessions`), `/tmp/al/warn.py` (sửa `vitri.align.v1` thành "4,5" → cảnh báo), `/tmp/al/same.py`
+  (so phụ đề web thật vs bản mới), `/tmp/al/t.mjs` (node: alignWords với kết quả Whisper thật + giả lập đọc sai).
 - 2026-11-19 21:30 (Giang: Vietmap gói dùng thử 60.000 giao dịch trọn gói còn ~17.800, dùng ~1.300/ngày → hết khoảng đầu 12/2026; thấy quét
   Vietmap quá nhiều; chốt: Vietmap chỉ quét 5 km, ngoài 5 km dùng nguồn khác; sân bay/ga/bến xe lấy theo danh sách, không quét bán kính lớn):
   `handleVmNearby` (lib/map.js) luôn quét Vietmap trong `VM_SCAN_KM` = 5 km dù khách chọn bán kính nào (trình duyệt vẫn tải OSM + Overture

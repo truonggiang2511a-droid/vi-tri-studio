@@ -22,6 +22,7 @@ import { enableCoach, coach, coachDone, coachOpen, coachActive } from './coach.j
 import { initLeads, downloadPageQr, pageUrl, openLeads } from './leads.js';
 import { SB_URL, SB_KEY } from './sb.js';
 import { speakNumbers, speakPhones } from './vinum.js';
+import { alignWords, bufferToWav16k } from './align.js';
 import { landUseSpeak, landUseHasResidential } from './landuse.js';
 
 const $ = id => document.getElementById(id);
@@ -469,7 +470,75 @@ function voicedTexts() {
 }
 function timelineOpts() {
   const vd = voiceDurations();
-  return vd ? { voice: vd, captions: captionTexts(), keyTexts: sceneMotion() ? voicedTexts() : null } : { fitDuration: voiceFitDuration() };
+  return vd ? { voice: vd, captions: captionTexts(), keyTexts: sceneMotion() ? voicedTexts() : null, wordTimes: wordTimesMap() } : { fitDuration: voiceFitDuration() };
+}
+
+// ---------- Khớp thời điểm từng chữ bằng Whisper (19/11, BẢN THỬ — chỉ chạy khi mở link có ?align=1; ?align=0 tắt) ----------
+// Mỗi câu đã có giọng gửi /api/align (lib/align.js, Workers AI) → mốc giây từng chữ → phụ đề, chữ điểm nhấn, SFX khớp đúng lúc nói;
+// chữ nghe được so với lời → báo câu đọc sai (giá, số, tên). Kết quả nhớ trên máy theo khoá giọng (lời + giọng) — localStorage 'vitri.align.v1'.
+// Không có mốc (chưa gửi xong, lỗi, chưa đăng nhập) → phụ đề/chữ điểm nhấn dùng cách ước lượng cũ.
+const ALIGN_ON = (() => {
+  try {
+    const q = new URLSearchParams(location.search).get('align');
+    if (q === '1' || q === '0') localStorage.setItem('vitri.align', q);
+    return localStorage.getItem('vitri.align') === '1';
+  } catch { return false; }
+})();
+const ALIGN_KEY = 'vitri.align.v1';
+let alignStore = {};
+try { alignStore = JSON.parse(localStorage.getItem(ALIGN_KEY) || '{}') || {}; } catch { alignStore = {}; }
+const alignMemo = new Map();
+let alignRunning = false, alignAuthWarned = false, alignTimer = 0;
+function saveAlign() {
+  alignStore = Object.fromEntries(Object.entries(alignStore).sort((a, b) => (b[1].t || 0) - (a[1].t || 0)).slice(0, 240));
+  try { localStorage.setItem(ALIGN_KEY, JSON.stringify(alignStore)); } catch { /* đầy bộ nhớ: bỏ qua */ }
+}
+async function ensureAlign() {
+  if (!ALIGN_ON || alignRunning || !state.aiVoiceOn) return;
+  if (!authHeaders().authorization) {
+    if (!alignAuthWarned && voiceDurations()) { alignAuthWarned = true; toast('Khớp chữ theo giọng (bản thử) cần đăng nhập.', 3500); }
+    return;
+  }
+  alignRunning = true;
+  try {
+    for (let guard = 0; guard < 40; guard++) {
+      const sg = scriptSegments().find(x => { const v = voiceEntry(x); return v?.buffer && !alignStore[v.ck] && !v.alignFail; });
+      if (!sg) break;
+      const v = voiceEntry(sg);
+      try {
+        const audio = await bufferToWav16k(v.buffer);
+        const res = await fetch('/api/align', { method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() }, body: JSON.stringify({ audio, text: sg.text }) });
+        const j = await res.json().catch(() => ({}));
+        if (res.ok && j.words?.length) {
+          alignStore[v.ck] = { words: j.words.map(x => [x.w, x.s, x.e]), heard: j.text || '', dur: v.buffer.duration, t: Date.now() };
+          saveAlign();
+          clearTimeout(alignTimer);
+          alignTimer = setTimeout(() => { renderScript(); scheduleRebuild(); }, 300);
+        } else { v.alignFail = true; console.log('align', res.status, j.error); if (res.status === 401 || res.status === 501) break; }
+      } catch (e) { v.alignFail = true; console.log('align', e.message); }
+    }
+  } finally { alignRunning = false; }
+}
+// Mốc giây từng chữ (theo tốc độ đọc hiện tại) + danh sách nghi đọc sai của một câu
+function alignOf(sg) {
+  if (!ALIGN_ON) return null;
+  const v = voiceEntry(sg), a = v && alignStore[v.ck], b = a && voiceBuf(sg);
+  if (!b) return null;
+  const key = v.ck + '|' + sg.text + '|' + b.duration.toFixed(3);
+  if (alignMemo.has(key)) return alignMemo.get(key);
+  const r = alignWords(sg.text, a.words.map(([w, s, e]) => ({ w, s, e })), a.dur);
+  const k = b.duration / (a.dur || b.duration);
+  const out = r ? { times: r.times.map(x => x * k), issues: r.issues } : null;
+  if (alignMemo.size > 400) alignMemo.clear();
+  alignMemo.set(key, out);
+  return out;
+}
+function wordTimesMap() {
+  if (!ALIGN_ON) return null;
+  const out = {};
+  let n = 0;
+  for (const sg of scriptSegments()) { const r = alignOf(sg); if (r) { out[sg.key] = r.times; n++; } }
+  return n ? out : null;
 }
 function voiceSegsFor(T) {
   if (!state.aiVoiceOn) return [];
@@ -2664,8 +2733,19 @@ function renderScript() {
     const vb = voiceBuf(s);
     if (vb) { el.textContent = `có giọng · ${vb.duration.toFixed(1).replace('.', ',')} giây`; el.className = 'vst ok'; }
     else { el.textContent = v ? 'đã sửa, cần tạo lại giọng' : ''; el.className = 'vst'; }
+    if (ALIGN_ON) {
+      // bản thử khớp chữ: trạng thái + câu nghi đọc sai
+      const al = vb ? alignOf(s) : null;
+      if (al) el.textContent += ' · đã khớp chữ';
+      let w = box.querySelector(`[data-warn="${CSS.escape(s.key)}"]`);
+      if (!w) { w = document.createElement('span'); w.className = 'seg-warn'; w.dataset.warn = s.key; el.closest('.seg-line')?.appendChild(w); }
+      w.textContent = al?.issues?.length
+        ? '⚠️ Có thể đọc sai: ' + al.issues.map(x => `"${x.text}"` + (x.heard ? ` nghe như "${x.heard}"` : ' bị bỏ qua')).join('; ') + ' — sửa lời rồi tạo lại giọng câu này.'
+        : '';
+    }
   }
   updateVoCard();
+  if (ALIGN_ON) setTimeout(ensureAlign, 50);
 }
 
 // ---------- Giọng Vbee bằng tài khoản của khách (khách tự mang khoá) ----------

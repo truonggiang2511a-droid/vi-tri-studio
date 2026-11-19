@@ -1165,7 +1165,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   // 30/10 14:25 Giang: phụ đề trắng bóng đậm từng từ (Hook Kit, có gõ phím) CHỈ cho phong cách đầu tiên Neon đêm;
   // 5 phong cách còn lại giữ phụ đề riêng của phong cách (nền thẻ màu) như video khách thường
   const capM1 = scene.keyLook === 'mau1' && ['neon', 'vangneon'].includes(scene.style || 'neon'); // 3/11: cả Vàng neon (phong cách đầu tiên mới)
-  const captions = opts.captions && vd ? buildCaptions(phases, opts.captions, vd, fmtKey, capM1) : [];
+  const captions = opts.captions && vd ? buildCaptions(phases, opts.captions, vd, fmtKey, capM1, opts.wordTimes) : [];
   const first = type => phases.find(p => p.type === type);
   const tl = {
     fmt: fmtKey, LW, LH, safe, duration: t, phases, scene, panelH,
@@ -1182,7 +1182,7 @@ export function buildTimeline(scene, fmtKey, opts = {}) {
   // 30/10: "mẫu 1" (chữ điểm nhấn + icon của Hook Kit) — chỉ admin bật (scene.keyLook = 'mau1'); khách thường giữ KEY_POPS = false như cũ
   const MAU1 = scene.keyLook === 'mau1';
   tl.keyPops = ((KEY_POPS && scene.motion) || MAU1) && opts.keyTexts && vd
-    ? buildKeyPops(phases, opts.keyTexts, vd, (tl.hookEnd || 0) + 0.4, MAU1 ? { pois, roads, scene } : null) : [];
+    ? buildKeyPops(phases, opts.keyTexts, vd, (tl.hookEnd || 0) + 0.4, MAU1 ? { pois, roads, scene } : null, opts.wordTimes) : [];
   // Mẫu 1: lời đọc đã có giá → cụm chữ giá bật lên rồi, thẻ thông tin bỏ dòng giá, ghi đầy đủ thông tin BĐS (30/10 Giang: 2 chỗ giá hơi nhiều)
   tl.infoFull = MAU1 && tl.keyPops.some(p => p.kind === 'price');
   tl.m1Feats = MAU1 && tl.keyPops.some(p => p.kind === 'feats');   // danh sách thông tin căn thay cho thẻ thông tin ở cảnh căn nhà
@@ -1299,6 +1299,27 @@ function capWeight(s) {
 // cùng cách chia như phụ đề (chữ số đọc lâu hơn, dấu câu có ngắt). Mỗi cảnh 1 từ khoá (cảnh căn nhà 2), cách nhau ≥ 1,8 s.
 const KEY_POPS = false;
 function charWeight(ch) { return 1 + (/\d/.test(ch) ? 2.5 : 0) + (/[.!?…]/.test(ch) ? 5 : /[,;:]/.test(ch) ? 3 : 0); }
+// Giây (tính từ lúc bắt đầu đọc câu) tại ký tự thứ i của lời s. Có mốc thật từng chữ (wt — Whisper, bản thử ?align=1,
+// mỗi phần tử = giây bắt đầu một chữ, tách theo khoảng trắng) thì nội suy theo mốc; không có hoặc lệch số chữ → ước lượng theo độ dài đọc như cũ.
+function wordClock(s, dur, wt) {
+  const str = String(s);
+  if (Array.isArray(wt) && wt.length) {
+    const starts = [], ends = [];
+    for (const m of str.matchAll(/\S+/g)) { starts.push(m.index); ends.push(m.index + m[0].length); }
+    if (starts.length === wt.length) {
+      return i => {
+        let k = 0;
+        while (k + 1 < starts.length && starts[k + 1] <= i) k++;
+        const t0 = wt[k], t1 = k + 1 < wt.length ? wt[k + 1] : Math.max(t0, dur);
+        const f = Math.max(0, Math.min(1, (i - starts[k]) / Math.max(1, ends[k] - starts[k])));
+        return Math.min(dur, t0 + (t1 - t0) * f);
+      };
+    }
+  }
+  const cw = Array.from(str).map(charWeight);
+  const tot = cw.reduce((a, b) => a + b, 0) || 1;
+  return i => { let w = 0; for (let j = 0; j < i && j < cw.length; j++) w += cw[j]; return dur * w / tot; };
+}
 // Mẫu 1: kiểu chữ theo loại từ khoá (30/10 Giang: chữ phẳng Montserrat bóng đổ vừa, KHÔNG khối 3D; mỗi phong cách MỘT màu nhấn — màu theo scene.style),
 // icon theo đúng ý (tiện ích theo nhóm, trục đường, phút, diện tích, sổ…), chữ ký tay = tên nơi đang nói tới (dữ liệu thật)
 const M1_POI_ICON = { truong: 'school', yte: 'hospital', cho: 'cart', hanhchinh: 'bank', congvien: 'park', kcn: 'city', khudothi: 'city', giaothong: 'map', congcong: 'pin', nganhang: 'bank' };
@@ -1324,7 +1345,7 @@ const m1FeatText = k => {
   if (k.kind === 'area') return 'Diện tích ' + t.replace('m²', 'm²');
   return t.charAt(0).toUpperCase() + t.slice(1);
 };
-export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null) {
+export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null, wordTimes = null) {
   const out = [];
   const m1Prices = [];
   let last = -9;
@@ -1336,11 +1357,9 @@ export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null) {
     if (m1 && ph.type === 'overview') continue;
     const s = String(text).normalize('NFC');
     const all = findKeywords(s);
-    const cw = Array.from(s).map(charWeight);
-    const tot = cw.reduce((a, b) => a + b, 0) || 1;
-    const at = i => { let w = 0; for (let j = 0; j < i && j < cw.length; j++) w += cw[j]; return w / tot; };
+    const clock = wordClock(s, dur, wordTimes && wordTimes[ph.vkey]);
     const start = ph.t0 + (ph.type === 'intro' ? 0.5 : 0.3);
-    const kt = k => start + dur * at(k.i + k.len * 0.5) - 0.12;
+    const kt = k => start + clock(k.i + k.len * 0.5) - 0.12;
     if (m1) {
       // 30/10 13:00 Giang: giá để CUỐI video (cảnh kết, số chạy tới giá) — ghi nhớ, không bật ở chỗ khác
       for (const k of all) if (k.kind === 'price') m1Prices.push({ k, ph, t: kt(k) });
@@ -1382,7 +1401,7 @@ export function buildKeyPops(phases, texts, voice, notBefore = 0, m1 = null) {
     // quan trọng trước (giá > khoảng cách/phút > diện tích > pháp lý > phòng), cùng hạng thì từ khoá nói trước
     const pick = keys.slice().sort((a, b) => a.rank - b.rank || a.i - b.i).slice(0, max).sort((a, b) => a.i - b.i);
     for (const k of pick) {
-      const t = start + dur * at(k.i + k.len * 0.5) - 0.12;
+      const t = kt(k);
       if (t < notBefore || t - last < (m1 ? 2.2 : 1.8) || t > ph.t1 - 0.3) continue;
       if (m1) {
         // mẫu 1 giữ lâu hơn (Hook Kit: tối thiểu ~3 s; bản đồ chuyển cảnh nhanh nên 1,9–2,8 s), được lấn 0,4 s sang cảnh sau
@@ -1443,22 +1462,21 @@ const M1_COMPOUND = new Set(['khu công nghiệp', 'khu đô thị', 'khu dân c
   'nhanh chóng', 'an ninh', 'yên tĩnh', 'rộng rãi', 'thoáng mát', 'sinh sống', 'sinh hoạt', 'học tập', 'làm việc', 'buôn bán', 'kinh doanh',
   'hiện hữu', 'quy hoạch', 'dự án', 'căn hộ', 'đất nền', 'lô đất', 'biệt thự', 'nhà phố', 'chính chủ', 'thương lượng', 'gần như', 'đi bộ',
   'trường mầm non', 'mầm non', 'tiểu học', 'trung học', 'đại học', 'bách hoá', 'bách hóa', 'ngân hàng', 'nhà thờ', 'chùa chiền', 'hiện đại']);
-function buildCaptionsM1(phases, texts, voice) {
+function buildCaptionsM1(phases, texts, voice, wordTimes = null) {
   const out = [];
   for (const ph of phases) {
     const text = ph.vkey && texts[ph.vkey];
     const dur = ph.vkey && voice[ph.vkey];
     if (!text || !dur) continue;
     const s = String(text).normalize('NFC').replace(/\s+/g, ' ').trim();
-    const cw = Array.from(s).map(charWeight);
-    const tot = cw.reduce((a, b) => a + b, 0) || 1;
+    const clock = wordClock(s, dur, wordTimes && wordTimes[ph.vkey]);
     const start = ph.t0 + (ph.type === 'intro' ? 0.5 : 0.3);
-    // từ + thời điểm bắt đầu đọc từ đó
+    // từ + thời điểm bắt đầu đọc từ đó (mốc thật từng chữ nếu có, không thì ước lượng)
     const toks = [];
-    let ci = 0, acc = 0;
+    let ci = 0;
     for (const w of s.split(' ')) {
-      toks.push({ w, t: start + dur * acc / tot });
-      for (let j = 0; j < Array.from(w).length + 1 && ci < cw.length; j++) acc += cw[ci++];
+      toks.push({ w, t: start + clock(ci) });
+      ci += w.length + 1;
     }
     // gộp số + đơn vị thành một khối không tách
     const units = [];
@@ -1536,8 +1554,8 @@ function buildCaptionsM1(phases, texts, voice) {
   }
   return out;
 }
-export function buildCaptions(phases, texts, voice, fmtKey, m1 = false) {
-  if (m1) return buildCaptionsM1(phases, texts, voice);
+export function buildCaptions(phases, texts, voice, fmtKey, m1 = false, wordTimes = null) {
+  if (m1) return buildCaptionsM1(phases, texts, voice, wordTimes);
   const out = [];
   const max = CAP_CHARS[fmtKey] || 40;
   for (const ph of phases) {
@@ -1546,6 +1564,18 @@ export function buildCaptions(phases, texts, voice, fmtKey, m1 = false) {
     if (!text || !dur) continue;
     const start = ph.t0 + (ph.type === 'intro' ? 0.5 : 0.3);
     const parts = splitCaption(text, max);
+    const wt = wordTimes && wordTimes[ph.vkey];
+    // có mốc thật từng chữ: mỗi dòng bắt đầu đúng lúc giọng nói chữ đầu dòng (tìm vị trí dòng trong lời)
+    const clock = wt ? wordClock(String(text), dur, wt) : null;
+    const pos = [];
+    if (clock) { let cur = 0; for (const p of parts) { const i = String(text).indexOf(p, cur); pos.push(i >= 0 ? i : -1); if (i >= 0) cur = i + p.length; } }
+    if (clock && pos.every(i => i >= 0)) {
+      parts.forEach((txt, i) => {
+        const a = start + clock(pos[i]), b = i + 1 < parts.length ? start + clock(pos[i + 1]) : start + dur + 0.25;
+        out.push({ t0: a, t1: Math.max(a + 0.2, b), text: txt });
+      });
+      continue;
+    }
     const w = parts.map(capWeight);
     const tot = w.reduce((a, b) => a + b, 0) || 1;
     let c = start;
