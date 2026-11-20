@@ -183,7 +183,7 @@ end $$;
 create or replace function public.vt__dd_json(p public.vt_dd_projects, p_snap boolean) returns jsonb
 language sql stable as $$
   select jsonb_build_object('id', p.id, 'title', p.title, 'lat', p.lat, 'lng', p.lng, 'coord', p.coord, 'listing', p.listing,
-    'buyer', p.buyer, 'edits', p.edits, 'opts', p.opts, 'rev', p.rev, 'by', p.by, 'snap_rev', p.snap_rev, 'snap_at', p.snap_at,
+    'buyer', p.buyer, 'edits', p.edits, 'opts', p.opts, 'rev', p.rev, 'by', p."by", 'snap_rev', p.snap_rev, 'snap_at', p.snap_at,
     'seen_at', p.seen_at, 'source', p.source, 'created_at', p.created_at, 'updated_at', p.updated_at)
     || case when p_snap then jsonb_build_object('snap', p.snap) else '{}'::jsonb end
 $$;
@@ -431,7 +431,7 @@ begin
   select * into pr from vt_dd_projects where id = p_id and user_id = u.id and not deleted;
   if not found then return jsonb_build_object('gone', true); end if;
   if pr.seen_at is null or pr.seen_at < now() - interval '10 seconds' then update vt_dd_projects set seen_at = now() where id = pr.id; end if;
-  return jsonb_build_object('rev', pr.rev, 'by', pr.by);
+  return jsonb_build_object('rev', pr.rev, 'by', pr."by");
 end $$;
 
 -- Khách sửa trên web → lưu lên để Claude thấy bản mới nhất. Bản trên máy chủ mới hơn (Claude vừa sửa) → không lưu, trả conflict.
