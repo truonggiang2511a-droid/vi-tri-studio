@@ -258,9 +258,12 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
   (admin dựng trên web tự lưu, khách thường không đổi, quay lại sau đăng nhập). Bài học: bộ thử urllib tự theo chuyển hướng 302 → dùng opener
   không chuyển hướng; id điểm mốc có dấu ':' ("anchor:center:Trung tâm…") → tách key ở dấu ':' ĐẦU TIÊN; ô chọn `#flow` chữ dài làm trang rộng
   465 px khi mở "Sửa video" (lỗi có sẵn) → giới hạn bề rộng select. **Supabase MCP: câu lệnh ghi (DDL) cần khách bấm xác nhận — app Claude trên
-  điện thoại tự huỷ hộp xác nhận sau 0,5 s** → chạy migration từ claude.ai trên máy tính (hoặc dán SQL Editor). CHƯA chạy migration thật lúc
-  viết dòng này; CHƯA thử với Claude thật (sau khi lên web: claude.ai › Cài đặt › Connectors › Thêm connector tuỳ chỉnh › `https://vitristudio.com/mcp`,
-  đăng nhập giang.test, bấm Cho phép).
+  điện thoại tự huỷ hộp xác nhận sau 0,5 s** → chạy migration từ claude.ai trên máy tính (hoặc dán SQL Editor). 17:50 đã chạy thử tự huỷ (DDL + 31 bước trong
+  `do … raise exception`, cả khối trong 1 lần execute_sql nên rút lại sạch — đã kiểm `to_regclass` = null) rồi `apply_migration vt_mcp`.
+  Lần chạy thử đầu bắt được lỗi máy thử giả không thấy: **trong PL/pgSQL `pr.by` báo "record has no field by"** (BY là từ khoá) → viết `pr."by"`.
+  Bài học: hàm SQL mới phải chạy thử trên Postgres thật, Supabase giả trong node không bắt được lỗi cú pháp PL/pgSQL. Connector báo
+  "Không tìm thấy — 405" = code chưa lên web (`/mcp` chưa có). CHƯA thử với Claude thật (sau khi lên web: claude.ai › Cài đặt › Connectors ›
+  Thêm connector tuỳ chỉnh › `https://vitristudio.com/mcp`, đăng nhập giang.test, bấm Cho phép).
 
 - 2026-11-20 16:30 (Giang: khách dùng giọng Vbee làm giọng chính ở app cũ thì AI đạo diễn có dùng giọng đó không? → KHÔNG: `js/dd-voice.js`
   gắn cứng `VOICE.id = 'nu-nam'` (= Google Nữ HD Chirp 3 HD), không gửi khoá Vbee; chú thích đầu file ghi "Google HD / Vbee" là sai). Làm, CHỈ tài khoản
