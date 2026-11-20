@@ -88,7 +88,7 @@ Tài khoản thử nội bộ: `giang.test@vitristudio.com` (`no_limits`). Căn 
 | `js/tachnen-entry.js` → `site/tachnen.js` + `mp/selfie_segmenter.tflite` + `site/mp/vision_wasm_internal.*` | Tách nền ảnh sale trên máy khách (MediaPipe Tasks Vision 0.10.21, Apache-2.0), 5/11 — xem nhật ký 5/11 |
 | `js/mau1.js` + `js/mau1-icons.js` + `music/sfx_lk_a2.m4a`/`sfx_lk_b2.m4a` + `music/sfx_key1..6.wav` | Chữ điểm nhấn + icon "mẫu 1" lấy từ Hook Kit (skill batdongsan-editor), 30/10, chỉ admin — xem nhật ký 30/10 |
 | `dao-dien.html` + `dao-dien.css` + `js/dao-dien.js` → `site/dao-dien.*` | **AI đạo diễn** (11/11): chế độ mới cho khách mới, trang riêng `/dao-dien`, kiểu cũ giữ nguyên. **Mở cho mọi khách từ 16/11** (nút `#ddEntry` dưới ô toạ độ bước 1, không còn cổng `?thu=1`). Xem nhật ký 11/11 + 16/11 |
-| `js/dd3d.js` (vẽ 3D MapLibre GL + lớp 2D, phụ đề, vùng an toàn), `js/dd-old.js` (từ vòng 9: mở đầu 3D + phần sau vẽ bằng bộ vẽ app cũ), `js/dd-parse.js` (đọc tin đăng), `js/dd-agent.js` (chọn tiện ích, viết lời, nhạc), `js/dd-voice.js` (giọng /api/tts + kiểm tra/trừ lượt) | Bộ máy AI đạo diễn. `js/thu-3d.js` + `thu-3d.html` = trang thử nội bộ, KHÔNG đóng gói vào `site/` |
+| `js/dd3d.js` (vẽ 3D MapLibre GL + lớp 2D, phụ đề, vùng an toàn), `js/dd-old.js` (từ vòng 9: mở đầu 3D + phần sau vẽ bằng bộ vẽ app cũ), `js/dd-parse.js` (đọc tin đăng), `js/dd-agent.js` (chọn tiện ích, viết lời, nhạc), `js/dd-voice.js` (giọng /api/tts + kiểm tra/trừ lượt; giọng Vbee của khách cho admin thử — nhật ký 20/11 16:30) | Bộ máy AI đạo diễn. `js/thu-3d.js` + `thu-3d.html` = trang thử nội bộ, KHÔNG đóng gói vào `site/` |
 | `supabase/*.sql` | Bảng + hàm `vt_*` (tài khoản, lượt, đơn, trang, lead, giới hạn làm lại, chống lạm dụng) |
 | `tools/` | `build_poi_tiles.py` (dựng `poi/` từ Overture, chạy hằng tháng), `make_music.py`, `make_sample.py`, `make_sample_voice.py` |
 
@@ -222,6 +222,18 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 
 ## 5. Nhật ký bài học
 
+- 2026-11-20 16:30 (Giang: khách dùng giọng Vbee làm giọng chính ở app cũ thì AI đạo diễn có dùng giọng đó không? → KHÔNG: `js/dd-voice.js`
+  gắn cứng `VOICE.id = 'nu-nam'` (= Google Nữ HD Chirp 3 HD), không gửi khoá Vbee; chú thích đầu file ghi "Google HD / Vbee" là sai). Làm, CHỈ tài khoản
+  `@vitristudio.com` thử trước: ô `#voiceRow` "🎙 Giọng đọc" trong "✏️ Sửa video" (`initVoicePick` trong js/dao-dien.js gọi `vt_me` lấy login; khách thường
+  không thấy ô, không gọi danh sách giọng, giọng y như cũ). Giọng lúc mở trang (`initialVoice`): giọng đã chọn ở AI đạo diễn (`localStorage['vitri.dd.voice']`)
+  → giọng đang dùng ở app cũ cùng máy (`vitri.project.v1`.voiceId, giọng `vb:` chỉ khi máy còn khoá `vitri.vbeeKey`) → `nu-nam`. Danh sách = GET /api/tts
+  kèm header `x-vbee-*` (giống app cũ, nhóm ⭐ riêng / đề xuất / Vbee / cộng đồng; máy chủ Google thì dòng `nu-nam` "Nữ (HD) · mặc định" thay cho `g-nu-hd`
+  để không phải đọc lại cả bài). Giọng `vb:` gửi khoá Vbee trong POST /api/tts (máy chủ không trừ lượt giọng — trừ ký tự Vbee của khách; xuất video vẫn trừ
+  lượt như cũ) và chỉ 2 câu cùng lúc (`POOL_VBEE`; Vbee giới hạn số yêu cầu cùng lúc, giọng nhân bản chờ Vbee gửi kết quả) → chậm hơn giọng app (5 câu).
+  Đổi giọng → bộ nhớ giọng theo khoá giọng|tốc độ|câu nên phải bấm "🔄 Tạo lại video" (đọc lại cả bài). Agent chờ ô giọng xong (≤ 3 s) mới đọc trước câu.
+  Thử: `/tmp/ddv/test.py` (Playwright, máy chủ giả: admin thấy ô + tự nhận giọng nhân bản từ app cũ, khách thường không thấy, Vbee gửi khoá + tối đa 2 câu
+  cùng lúc, mặc định 5 câu không khoá, mất khoá → mặc định; bundle tạm `__v.js` gắn `window.__V`, không commit). CHƯA thử với khoá Vbee thật — Giang thử
+  trên giang.test: kết nối Vbee ở app cũ, chọn giọng, rồi vào /dao-dien. Mở cho khách: bỏ điều kiện `voiceAdmin` trong `initVoicePick`.
 - 2026-11-20 13:58 (Giang: khách chê kịch bản dở + video nào cũng một kiểu nên chán, bỏ app — làm cho ADMIN thử trước, không đụng quảng cáo /
   thanh toán / Pixel): **Kịch bản AI bản 2**, chỉ tài khoản `@vitristudio.com` (khách y như cũ cho tới khi đặt `SCRIPT_V2=on`).
   Đo trên Supabase 30 ngày trước khi sửa (chỉ đọc): 594 căn xuất video, chỉ ~306 căn có lời AI; lời tiện ích gần như toàn "<nguyên tên> cách X km"
