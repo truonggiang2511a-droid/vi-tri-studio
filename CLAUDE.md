@@ -125,7 +125,7 @@ Cron (`wrangler.jsonc`): `*/30 * * * *` nhắc Telegram khách chưa được g�
 - **Đường lớn**: `stitchWays()` trong `js/data.js` nối các đoạn cùng tuyến hở < 300 m, cùng hướng.
 - **Giọng đọc**: giọng AI và giọng khách tự đọc đều nằm trong `media.voiceSegs` (mỗi cảnh một đoạn, khoá `voiceKey(text)`). Tự đọc: `applyOwnVoice()` — thu trong app thì cắt theo mốc bấm "Câu tiếp" (`splitAt`), tải file thì cắt theo khoảng lặng (`splitVoice`).
 - **Dữ liệu tiện ích** (`js/data.js`): OSM (OpenFreeMap) + Overture (`poi/`) + **Vietmap** (`/api/map/nearby`, đầy đủ nhất ở VN). Tìm theo tên: dữ liệu đã quét + Vietmap (`/api/map/vsearch`) + Photon.
-- **Vietmap / Cloudflare**: mỗi yêu cầu Worker chỉ được ~50 lần gọi ra ngoài. `nearby` = 10 lần tìm + tối đa 24 lần lấy toạ độ, không nhớ đệm từng điểm. Kết quả rỗng thì KHÔNG nhớ đệm (`noCache`). Thêm `&debug=1` để xem số kết quả từng từ khoá. Đổi logic thì đổi tên khoá nhớ đệm (`vmnear3`→`vmnear4`) để bỏ kết quả cũ.
+- **Vietmap / Cloudflare**: mỗi yêu cầu Worker chỉ được ~50 lần gọi ra ngoài. `nearby` (20/11) = 12 từ khoá 5 km + 6 từ khoá 1,2 km, từ khoá 5 km của nhóm gần nhà đã có ≥ 3 điểm thì bỏ (13–18 lần tìm) + tối đa 16 lần lấy toạ độ Place (nhớ theo `ref_id` trong `vt_vm_place`). Kết quả rỗng thì KHÔNG nhớ đệm (`noCache`). Thêm `&debug=1` để xem số kết quả từng từ khoá. Đổi logic thì đổi tên khoá nhớ đệm (`vmnear3`→`vmnear4`) để bỏ kết quả cũ.
 
 ---
 
@@ -221,6 +221,17 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 ---
 
 ## 5. Nhật ký bài học
+
+- 2026-11-20 18:30 (Giang: "có bên nào thay Vietmap không, ví dụ Egis (ArcGIS), miễn phí và rẻ thì làm"): ĐO trước — 7 ngày tới 20/11 Vietmap
+  dùng ~1.300 giao dịch/ngày, ~95% là quét tiện ích (`vietmap-nearby` ~47 lần quét/ngày × 19 lần tìm + ~250 lần Place mới/ngày), reverse ~45/ngày.
+  Không bên nào thay hẳn được mà rẻ hơn (xem mục 6): ArcGIS Places 500 lượt miễn phí/tháng rồi 8 USD/1.000 và CẤM lưu kết quả; Foursquare Open Places
+  (miễn phí, Apache 2.0) đã thử gộp vào `poi/`: +9.750 điểm nhưng trên 128 điểm Vietmap ở 8 nơi chỉ thêm ~2–3 điểm trùng thật (phần còn lại khớp nhầm tên,
+  dữ liệu bản chép 11/2024) → KHÔNG đưa vào. LÀM (nhánh `vietmap-tiet-kiem`, chưa deploy): bỏ từ khoá "trạm sạc" (app và AI đạo diễn không bao giờ tự
+  chọn nhóm công cộng), tìm GẦN trước rồi chỉ tìm 5 km khi gần nhà < 3 điểm (`CLOSE_ENOUGH`; siêu thị luôn tìm 5 km cho TTTM), bán kính nhỏ (chạm bản
+  đồ thêm tiện ích) không tìm lặp. Khoá nhớ đệm GIỮ `vmnear9`. Thử: `/tmp/vmt/t.mjs` (Vietmap + Supabase + caches giả): khu đông 19 → 13 lần tìm,
+  khu vắng 18, Place vẫn ≤ 16, đủ nhóm; esbuild đóng gói worker.js không lỗi. Ước tính −17% giao dịch/ngày (~1.300 → ~1.080) → gói thử còn ~15.000
+  kéo thêm ~2–3 ngày (hết khoảng 4/12 thay vì 2/12). Hết gói thử vẫn cần Giang chọn: nạp Vietmap (~50đ/giao dịch ≈ 1,5 tr/tháng ở mức hiện tại),
+  thử TrackAsia (~15đ/lần tìm, chưa thử chất lượng), hoặc để app tự rơi về OSM + Overture (mất ~1/5 tiện ích sát nhà Vietmap tìm được).
 
 - 2026-11-20 13:58 (Giang: khách chê kịch bản dở + video nào cũng một kiểu nên chán, bỏ app — làm cho ADMIN thử trước, không đụng quảng cáo /
   thanh toán / Pixel): **Kịch bản AI bản 2**, chỉ tài khoản `@vitristudio.com` (khách y như cũ cho tới khi đặt `SCRIPT_V2=on`).
@@ -795,6 +806,7 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 | **BDS Chat API** (`api.bds.chat`, OpenAPI tại `/openapi.yaml`) | Chỉ dùng cho TP.HCM; hợp làm "phiếu kiểm tra" cho môi giới hơn là đưa vào video quảng cáo | Không có endpoint định giá theo toạ độ. Giá nhà nước: `GET /meta/gov-land-price?street=&ward=&district=` (NQ 87/2025, mốc thuế/bồi thường, không phải giá thị trường). Rủi ro: `GET /meta/risk/check?lat&lon` → `risk_level` low/medium/high/critical + quy hoạch, chồng lấn DGT, lộ giới. Không có trường `critical_risk_flag`, `average_market_price_m2` theo toạ độ (giá thị trường chỉ từ ~541 tin rao). Free 100 lượt/ngày, Pro 10.000. Họ tự nhớ đệm quy hoạch 90 ngày → cache phía mình theo đoạn đường (giá) / toạ độ làm tròn (quy hoạch), không theo bán kính 10 m |
 | Flycam 3D thật | Chưa làm. Nếu thử: trang riêng Google Photorealistic 3D Tiles + CesiumJS, kiểm tra Bình Chánh có 3D không trước | Tính phí theo root tile; ngoại thành VN có thể chỉ là ảnh phẳng. MapLibre (miễn phí, `flyTo` + nghiêng) dữ liệu nhà OSM ở VN thưa. Hiện app đã có bay vào + lượn vòng lô ở dạng 2.5D (`intro`, `house` có `orbit`) |
 | VN-2000 → WGS-84 (sổ đỏ) | **MỞ CHO MỌI KHÁCH từ 27/10** (Giang chốt; `?vn2000=0` ẩn trên 1 máy). Chi tiết ở nhật ký mục 5 | X = hướng Bắc, Y = hướng Đông (dễ nhầm); múi 3°, k0 0,9999; kinh tuyến trục lấy theo dòng in trên sơ đồ thửa (sổ cũ theo tỉnh TRƯỚC sáp nhập 2025); sổ cũ có thể không có toạ độ → quay về vẽ lô tay. Nên có chụp ảnh sơ đồ → Claude đọc bảng toạ độ. Không lưu tên chủ/số sổ. **Sổ nào có bảng toạ độ (tra 25/10)**: mẫu GCN từ 01/8/2024 (TT 10/2024/TT-BTNMT, Điều 39 + Phụ lục 03) có bảng "số hiệu đỉnh thửa, toạ độ (X,Y)" — trừ ranh là đường cong (chỉ ghi tổng chiều dài). Sổ căn hộ chung cư: chỉ sơ đồ mặt bằng tầng + kích thước căn hộ, KHÔNG có toạ độ. Sổ cấp trước đây (nhất là sổ cũ, đo thủ công) thường chỉ có kích thước cạnh, không toạ độ → muốn có toạ độ phải xin trích lục/trích đo bản đồ địa chính ở Văn phòng đăng ký đất đai |
+| Thay Vietmap (tiện ích quanh nhà, 20/11) | Chưa có bên thay hẳn mà rẻ hơn; tiết kiệm bằng cách bớt từ khoá (nhật ký 20/11 18:30) | ArcGIS Places: 500 lượt miễn phí/tháng rồi 8 USD/1.000, ≤ 20 kết quả/lần, dữ liệu chủ yếu Foursquare, CẤM lưu/dùng lại kết quả, trả theo lượt không có trần → đắt hơn Vietmap. Vietmap ~50đ/giao dịch (gói ≤ 500k/tháng); gói thử 60.000 giao dịch trọn gói. TrackAsia ~15đ/lần tìm, 17đ/lần chỉ đường (gói 500k/tháng ≈ 100.000 lần tìm) — chưa thử chất lượng. Goong ~1,1–1,4 USD/1.000 autocomplete + 5,5–7 USD/1.000 chi tiết điểm. Google Places: điều khoản cấm hiện trên bản đồ không phải Google. Foursquare Open Places (Apache 2.0, ghi nguồn): đã thử gộp, gần như không thêm điểm Vietmap có mà Overture thiếu |
 | Render trên server (BullMQ/Redis) | Không cần lúc này. Chỉ khi cần tự đăng bài / render khi khách tắt máy → Cloudflare Queues + máy render riêng | Cloudflare Worker không chạy được BullMQ/Chrome |
 
 Đang chờ Giang quyết (25/10): cảnh giá/pháp lý có vào video không; chấp nhận chỉ TP.HCM; có mua BDS Chat Pro; phụ đề theo câu hay karaoke ước lượng; bản thử hiệu ứng động trên nhánh riêng (thẻ giá mở đầu, tiện ích, bảng tổng kết).
