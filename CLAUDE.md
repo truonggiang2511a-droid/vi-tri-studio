@@ -264,6 +264,13 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
   Bài học: hàm SQL mới phải chạy thử trên Postgres thật, Supabase giả trong node không bắt được lỗi cú pháp PL/pgSQL. Connector báo
   "Không tìm thấy — 405" = code chưa lên web (`/mcp` chưa có). CHƯA thử với Claude thật (sau khi lên web: claude.ai › Cài đặt › Connectors ›
   Thêm connector tuỳ chỉnh › `https://vitristudio.com/mcp`, đăng nhập giang.test, bấm Cho phép).
+  **23:02 ĐÃ LÊN WEB** (Giang hẹn "gần đêm"): gộp main theo thứ tự PR #3 (giọng Vbee AI đạo diễn) → #2 (kịch bản bản 2 không áp cho AI đạo diễn) →
+  #4 (MCP), build Cloudflare main thành công (2956a46). Kiểm tra web thật: `/api/config` còn `meta_pixel`; `dao-dien.js` có `vitri.dd.voice` +
+  `vt_dd_poll`; `/dao-dien` có `voiceRow` (lưu ý `/dao-dien.html` trả 307 sang `/dao-dien` — curl phải `-L`); `GET /api/script` → `ready`, `v2:false`
+  (khách thường); `/.well-known/oauth-protected-resource/mcp` + `/.well-known/oauth-authorization-server` đúng JSON; `POST /mcp` không token → 401 +
+  `www-authenticate: Bearer resource_metadata=…`; `/oauth/authorize` không tham số → 400 trang tiếng Việt "Chưa kết nối được". Cả 3 tính năng vẫn CHỈ
+  admin (SCRIPT_V2 chưa đặt, `voiceAdmin`, `vt_mcp_config.open = 'admin'`); Giang thử ~3 ngày rồi mới mở cho khách. Bài học: build Cloudflare trên
+  NHÁNH (không phải main) luôn báo "failure" ở repo này (cả nhánh chỉ sửa CLAUDE.md) — chỉ build trên main mới deploy; đừng coi đó là lỗi code.
 
 - 2026-11-20 16:30 (Giang: khách dùng giọng Vbee làm giọng chính ở app cũ thì AI đạo diễn có dùng giọng đó không? → KHÔNG: `js/dd-voice.js`
   gắn cứng `VOICE.id = 'nu-nam'` (= Google Nữ HD Chirp 3 HD), không gửi khoá Vbee; chú thích đầu file ghi "Google HD / Vbee" là sai). Làm, CHỈ tài khoản
