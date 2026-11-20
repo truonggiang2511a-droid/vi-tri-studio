@@ -2276,7 +2276,7 @@ async function scan() {
     state.streets = res.streets || null;
     state.adminArea = res.area || null;
     updateAreaPlaceholders();
-    state.selected = [...autoPick(res.pois), ...manual.map(p => p.id)].slice(0, MAX_POIS);
+    state.selected = [...autoPick(res.pois, 6, { v2: kb2() }), ...manual.map(p => p.id)].slice(0, MAX_POIS);
     state.selectedRoads = [...autoPickRoads(state.roads), ...(state.myRoads || []).map(m => m.id)];
     // 24/10: mặc định gắn ★ điểm nhấn cho 2 trục đường lớn gần nhà nhất để video đầu tiên đã đẹp (khách bỏ ★ được)
     const keepStars = (state.roadStars || []).filter(id => state.selectedRoads.includes(id));
@@ -2813,6 +2813,7 @@ async function checkAi() {
       fetch('/api/script').then(r => r.ok ? r.json() : null).catch(() => null),
     ]);
     ai.tts = !!a?.ready; ai.ttsProvider = a?.provider || null; ai.script = !!b?.ready;
+    ai.v2 = !!b?.v2; ai.v2off = !!b?.v2off;
     ai.gated = a?.gated !== false;
     if (a?.voices?.length) renderVoices(a.voices);
   } catch { /* để mặc định */ }
@@ -2874,8 +2875,14 @@ function altScript() {
   $('scrMsg').textContent = 'Đã đổi sang cách viết khác. Sửa câu nào chưa ưng ngay trong danh sách, rồi bấm "Tạo giọng đọc" ở Bước 2.';
 }
 
-async function aiRewrite() {
+// Kịch bản bản 2 (20/11, lib/script.js v2On): admin (@vitristudio.com) thử trước; SCRIPT_V2=on mở cho mọi khách, =off tắt hẳn
+const kb2 = () => !ai.v2off && (ai.v2 || /@vitristudio\.com$/i.test(String(account.profile?.login || '')));
+const KB_FRAME = 'vitri.kbframe';
+const kbLastFrame = () => { try { return localStorage.getItem(KB_FRAME) || ''; } catch { return ''; } };
+// keepOwn (bản 2): khách đã tự sửa vài câu mà AI chưa viết → AI chỉ viết các cảnh còn lại, giữ nguyên câu của khách
+async function aiRewrite({ keepOwn = false } = {}) {
   const segs = scriptSegments();
+  const own = keepOwn ? Object.fromEntries(Object.entries(state.scriptEdits || {}).filter(([, v]) => String(v || '').trim())) : null;
   if (!ai.script) { altScript(); return false; }
   const btn = $('aiScriptBtn');
   btn.disabled = true; $('aiScriptBig').disabled = true;
@@ -2912,19 +2919,25 @@ async function aiRewrite() {
       if (kind === 'region') return [sg.key, { canh: SCENE.region, diem_moc: (regionScene()?.anchors || []).slice(0, 4).map(a => ({ ten: a.name, phut_o_to: a.min, duong_di: kmSpeak(a.km) })) }];
       if (kind === 'infra') return [sg.key, { canh: SCENE.infra, tuyen: (regionScene()?.infra || []).slice(0, 2).map(r => (r.metro ? { ten: 'Tuyến ' + r.label, loai: 'metro đang thi công', ga_gan_nhat: r.metro.station, ga_cach: kmSpeak(r.nearKm) } : { ten: r.label, cach: kmSpeak(r.nearKm) })) }];
       return [sg.key, { canh: SCENE[kind] || sg.label }];
-    }));
+    }).filter(([k]) => !own || !(k in own)));
+    if (own) {
+      if (!Object.keys(segments).length) return true; // khách đã tự viết hết các cảnh
+      facts.loi_khach_tu_viet = own;
+    }
+    const v2 = kb2();
     if (ai.gated && !account.profile && !(await requireLogin('Đăng nhập để AI viết kịch bản.'))) { $('ttsMsg').textContent = ''; return; }
     const res = await fetch('/api/script', {
       method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ facts, segments, tone: state.aiTone || 'ke-chuyen', lat: state.house?.lat, lng: state.house?.lng }),
+      body: JSON.stringify({ facts, segments, tone: state.aiTone || 'ke-chuyen', lat: state.house?.lat, lng: state.house?.lng, ...(v2 ? { kb: 2, avoid: kbLastFrame() } : {}) }),
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) {
       if (await handleAiError(res.status, j)) { $('scrMsg').textContent = j.error || ''; return; }
       throw new Error(j.error || 'HTTP ' + res.status);
     }
-    state.scriptEdits = { ...j.segments };
+    state.scriptEdits = own ? { ...j.segments, ...own } : { ...j.segments };
     state.scriptAi = true;
+    if (j.meta?.frame) { try { localStorage.setItem(KB_FRAME, j.meta.frame); } catch { /* bỏ qua */ } }
     renderScript(); scheduleRebuild(); save();
     $('scrMsg').textContent = 'AI đã viết xong kịch bản.';
     // Không xoá giọng cũ: câu nào lời giữ nguyên thì dùng lại, đổi lời thì voiceOk tự báo thiếu
@@ -3022,16 +3035,17 @@ function skipVoice() {
   toast('Video sẽ chỉ có nhạc nền và SFX. Muốn thêm giọng đọc thì quay lại bước 3.', 4000);
 }
 // Bước 1 · ✨ AI viết (chỉ viết lời, KHÔNG tạo giọng)
-async function aiWrite({ ask = true } = {}) {
+async function aiWrite({ ask = true, keepOwn = false } = {}) {
   if (voBusy || ttsBusy) return false;
   if (needTone()) { askTone(); return false; }
   if (ask && !confirmReplace('AI viết kịch bản mới')) return false;
   const w = $('aiWriteBtn');
   voBusy = true; w.disabled = true; w.textContent = '✨ AI đang viết kịch bản… (15–25 giây)';
   try {
-    const ok = await aiRewrite();
+    const ok = await aiRewrite({ keepOwn });
     if (ok) {
-      state.scriptOwn = false; save();
+      if (!keepOwn) state.scriptOwn = false;
+      save();
       if (ask) { $('scrMsg').textContent = 'AI đã viết xong. Đọc lại, sửa câu nào chưa ưng ngay trong danh sách, rồi bấm "Tạo giọng đọc" ở Bước 2.'; nudgeVoice(); }
     }
     return ok;
@@ -3083,6 +3097,10 @@ async function makeScriptAndVoice() {
     if (needTone()) { askTone(); return false; }
     const ok = await aiWrite({ ask: false });
     if (!ok && voMode() === 'ai') { /* AI lỗi: aiRewrite đã báo, đọc kịch bản mẫu */ }
+  } else if (kb2() && voMode() === 'ai' && !state.scriptAi && state.scriptOwn) {
+    // 20/11: trước đây khách sửa 1 câu là các cảnh còn lại đọc câu mẫu (30 ngày: 50 căn bị vậy)
+    if (needTone()) { askTone(); return false; }
+    await aiWrite({ ask: false, keepOwn: true });
   }
   await voiceOnly();
 }

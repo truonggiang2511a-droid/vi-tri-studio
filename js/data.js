@@ -1215,7 +1215,32 @@ export function autoPickRoads(roads, max = 4) {
   return roads.filter(r => pick.includes(r)).map(r => r.id); // giữ thứ tự danh sách gốc
 }
 
-export function autoPick(pois, max = 6) {
+// opts.v2 (20/11, kịch bản bản 2 — admin thử trước): chọn điểm "đáng nói" với người mua. Đo 30 ngày: lời AI hay phải đọc
+// Ủy ban nhân dân, trạm y tế xã, khu dân cư, chợ cách 5 km → câu nào cũng chỉ còn "<tên> cách X km". Bản 2 ưu tiên trường,
+// chợ/siêu thị, bệnh viện, KCN, công viên gần nhà; hành chính chỉ khi ≤ 1,5 km, khu đô thị ≤ 2 km, trạm y tế xã khi không có bệnh viện ≤ 5 km.
+function autoPickV2(pois, max) {
+  const picked = [];
+  const byCat = {};
+  const dist = p => (p.route ? p.route.km : p.km);
+  for (const p of pois) (byCat[p.cat] ||= []).push(p);
+  for (const arr of Object.values(byCat)) arr.sort((a, b) => dist(a) - dist(b));
+  const add = p => { if (p && !picked.includes(p.id) && picked.length < max) picked.push(p.id); };
+  const near = (c, km) => (byCat[c] || []).filter(p => dist(p) <= km);
+  add(near('truong', 3)[0] || byCat.truong?.[0]);
+  add(near('cho', 3).find(p => p.kind === 'marketplace' || /chợ|siêu thị|bách hoá|bách hóa|winmart|co\.?op|aeon|lotte|emart|go!/i.test(p.name)) || near('cho', 3)[0] || byCat.cho?.[0]);
+  add(near('yte', 5).find(p => p.kind === 'hospital' || /bệnh viện|hospital/i.test(p.name)) || near('yte', 1.5)[0]);
+  add(near('kcn', 8)[0]);
+  add(near('congvien', 3)[0]);
+  add(near('khudothi', 2)[0]);
+  // Còn chỗ: thêm trường / chợ / bệnh viện gần thứ hai (trường, chợ ≤ 3 km; bệnh viện ≤ 5 km), hành chính để sau cùng
+  for (const c of ['truong', 'cho', 'yte']) add(near(c, c === 'yte' ? 5 : 3).find(p => !picked.includes(p.id) && (c !== 'yte' || /bệnh viện|hospital/i.test(p.name))));
+  add(near('hanhchinh', 1.5)[0]);
+  // Khu quá vắng: giữ cách chọn cũ để video không trống
+  return picked.length >= 3 ? picked : null;
+}
+
+export function autoPick(pois, max = 6, opts = {}) {
+  if (opts.v2) { const r = autoPickV2(pois, max); if (r) return r; }
   const picked = [];
   const byCat = {};
   for (const p of pois) (byCat[p.cat] ||= []).push(p);
