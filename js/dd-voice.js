@@ -1,5 +1,5 @@
 // AI đạo diễn — giọng đọc + tài khoản (không phụ thuộc hộp thoại của trang chính index.html).
-// Giọng: /api/tts của app (giọng Google HD / Vbee như kiểu cũ, cùng giới hạn lượt giọng mỗi căn). Có bộ nhớ theo câu:
+// Giọng: /api/tts của app (mặc định giọng Google Nữ HD; giọng Vbee của khách — xem setVoice; cùng giới hạn lượt giọng mỗi căn). Có bộ nhớ theo câu:
 // khách sửa / đổi thứ tự → chỉ câu mới phải đọc lại. Lượt: kiểm tra trước (vt_me), TRỪ SAU khi xuất xong (vt_export_begin).
 import { rpc } from './account.js';
 import { speakNumbers, speakPhones } from './vinum.js';
@@ -8,7 +8,34 @@ import { kvGet, kvPut } from './dd-photos.js';
 
 const TOKEN_KEY = 'vitri.session.v1';
 export const token = () => { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } };
-export const VOICE = { id: 'nu-nam', speed: 0 };   // giọng mặc định của app cũ
+export const VOICE = { id: 'nu-nam', speed: 0 };   // giọng mặc định của app cũ (máy chủ Google: Nữ HD — Chirp 3 HD)
+
+// 20/11 (Giang): khách chọn giọng Vbee làm giọng chính ở app cũ thì AI đạo diễn cũng đọc giọng đó. CHỈ tài khoản
+// @vitristudio.com thử trước (dao-dien.js voiceAdmin) — khách thường vẫn giọng mặc định như trước, không đổi gì.
+// Giọng Vbee cần khoá Vbee của khách trên máy này (localStorage 'vitri.vbeeKey', app cũ lưu) → gửi header x-vbee-*;
+// máy chủ không trừ lượt giọng khi dùng khoá của khách (trừ ký tự trong tài khoản Vbee của khách), xuất video vẫn trừ lượt.
+const DD_VOICE = 'vitri.dd.voice';
+export const isVbee = (id = VOICE.id) => String(id || '').startsWith('vb:');
+export function vbeeKey() {
+  try { const k = JSON.parse(localStorage.getItem('vitri.vbeeKey') || 'null'); return k && k.app && k.token ? k : null; } catch { return null; }
+}
+const vbeeHeaders = () => { const k = vbeeKey(); return k ? { 'x-vbee-app': k.app, 'x-vbee-token': k.token } : {}; };
+export function setVoice(id, keep = true) {
+  VOICE.id = id || 'nu-nam';
+  if (keep) try { localStorage.setItem(DD_VOICE, VOICE.id); } catch { /* bỏ qua */ }
+}
+// Giọng lúc mở trang: giọng đã chọn ở AI đạo diễn → giọng Vbee đang dùng ở app cũ (cùng máy, còn khoá) → mặc định
+export function initialVoice() {
+  let id = '';
+  try { id = localStorage.getItem(DD_VOICE) || ''; } catch { /* bỏ qua */ }
+  if (!id) try { id = JSON.parse(localStorage.getItem('vitri.project.v1') || '{}').voiceId || ''; } catch { /* bỏ qua */ }
+  if (isVbee(id) && !vbeeKey()) id = '';   // giọng Vbee mà máy không còn khoá → không đọc được
+  return id || 'nu-nam';
+}
+// Danh sách giọng của máy chủ (giọng Google/FPT + giọng Vbee của khách nếu máy có khoá)
+export async function listVoices() {
+  try { const r = await fetch('/api/tts', { headers: vbeeHeaders() }); return r.ok ? ((await r.json()).voices || []) : []; } catch { return []; }
+}
 
 // Chữ hiển thị → chữ để đọc (giống speakable() của app cũ)
 export function speakable(html) {
@@ -25,7 +52,7 @@ export const hasVoice = text => cache.has(keyOf(text));
 
 async function ttsOnce(text, loc, attempt = 0) {
   const res = await fetch('/api/tts', {
-    method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token() },
+    method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token(), ...(isVbee() ? vbeeHeaders() : {}) },
     body: JSON.stringify({ text, voice: VOICE.id, speed: VOICE.speed, lat: loc?.lat, lng: loc?.lng }),
   });
   if (res.status === 429 && attempt < 3) {   // máy chủ đông: xếp hàng thử lại như app cũ
@@ -54,7 +81,8 @@ async function ttsOnce(text, loc, attempt = 0) {
 // bấm dựng lại, đổi thứ tự… đều KHÔNG gọi máy chủ đọc lại — chỉ câu mới / câu đã sửa mới tốn lượt giọng.
 // 16/11 chiều (Giang: trên điện thoại chờ giọng lâu): đọc 5 câu cùng lúc (trước 3), câu DÀI NHẤT gọi trước (câu căn nhà ~70 chữ
 // là chặng lâu nhất — gọi trước thì các câu ngắn chạy song song phía sau), và câu đang đọc dở (prefetchVoices) không bị gọi lại lần 2.
-const POOL = 5;
+// Vbee giới hạn số yêu cầu cùng lúc (mã 429) và giọng nhân bản phải chờ Vbee gửi kết quả về → chỉ 2 câu cùng lúc (app cũ gọi lần lượt).
+const POOL = 5, POOL_VBEE = 2;
 const inflight = new Map();   // khoá → Promise<AudioBuffer> đang gọi máy chủ
 function voiceOne(t, loc) {
   const k = keyOf(t);
@@ -89,7 +117,7 @@ export async function voiceLines(texts, loc, onProgress) {
       onProgress?.(++done, need.length);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(POOL, need.length) }, worker));
+  await Promise.all(Array.from({ length: Math.min(isVbee() ? POOL_VBEE : POOL, need.length) }, worker));
   return t => cache.get(keyOf(t)) || null;
 }
 // Đọc trước (chạy nền, không báo lỗi) các câu chắc chắn không đổi — vd. câu mở đầu, câu căn nhà, câu kêu gọi — trong lúc

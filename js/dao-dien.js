@@ -13,7 +13,7 @@ import { SB_URL, SB_KEY } from './sb.js';
 import { exportMp4, decodeAudioFile, mixAudio, canEncodeMp4 } from './export.js';
 import { createHybrid } from './dd-old.js';
 import { setImageryToken, preferSession, warmSession, onTileSource } from './render.js';
-import { token, voiceLines, voiceOf, prefetchVoices, canExport, chargeExport } from './dd-voice.js';
+import { token, voiceLines, voiceOf, prefetchVoices, canExport, chargeExport, VOICE, setVoice, initialVoice, listVoices, isVbee, vbeeKey } from './dd-voice.js';
 import { MAX_PHOTOS, savePhotos, loadPhotoBlobs, shrink, toBitmap } from './dd-photos.js';
 import { track, funnel } from './track.js';
 import { xuatStart, xuatCheckCrash, devClass } from './xuatlog.js';
@@ -322,7 +322,7 @@ async function runAgent() {
   const st0 = buildStory(storeData(), S.listing, S.buyer, S.edits), chosen = st0.pois.map(p => p.id);
   // 16/11 chiều (Giang: trên điện thoại chờ lâu): đọc giọng TRƯỚC các câu chắc chắn không đổi (mở đầu, căn nhà, kêu gọi, ảnh…)
   // song song với tìm đường đi / kết nối vùng; đường ra trục đường lớn cũng chạy song song luôn (trước chạy sau cùng)
-  if (token()) prefetchVoices(stableLines(), S.house);
+  if (token()) { await Promise.race([voicePick, tick(3000)]); prefetchVoices(stableLines(), S.house); }   // giọng đã chọn xong mới đọc trước
   const roadJob = roadRoutesFor(st0);
   await routesFor(chosen);
   // ranh vùng quan trọng của tiện ích đã chọn + tiện ích trong vòng radar (khu công nghiệp, bệnh viện, đại học, công viên…, tối đa 3)
@@ -609,6 +609,54 @@ async function getMusic(name) {
   return musicBuf[name];
 }
 const mixFor = async d => mixAudio({ music: await getMusic(S.music), voiceSegs: d.voiceSegs, sfx: { events: d.sfx, vol: 0.8 }, duration: d.duration, musicVol: 0.8 });
+// ---------- Giọng đọc (20/11, Giang: khách dùng giọng Vbee làm giọng chính ở app cũ thì AI đạo diễn cũng dùng giọng đó) ----------
+// CHỈ tài khoản @vitristudio.com thấy ô chọn và tự nhận giọng từ app cũ; khách thường giữ giọng mặc định (Nữ HD) như trước.
+const voiceAdmin = login => /@vitristudio\.com$/i.test(String(login || ''));
+let voiceList = [];
+async function initVoicePick() {
+  if (!token()) return;
+  let login = '';
+  try { login = (await rpc('vt_me', { p_token: token(), p_lat: null, p_lng: null }))?.profile?.login; } catch { return; }
+  if (!voiceAdmin(login)) return;
+  setVoice(initialVoice(), false);
+  voiceList = await listVoices();
+  fillVoices();
+  $('voiceRow').hidden = false;
+}
+const voicePick = initVoicePick().catch(() => null);
+function fillVoices() {
+  const sel = $('voice'); sel.textContent = '';
+  const base = voiceList.filter(v => v.provider !== 'vbee');
+  // máy chủ Google: 'nu-nam' (mặc định của AI đạo diễn) = giọng Nữ HD → hiện 1 dòng, không lặp 'g-nu-hd'
+  const opts = base.some(v => v.id === 'nu-nam') ? base : [{ id: 'nu-nam', label: 'Nữ (HD)' }, ...base.filter(v => v.id !== 'g-nu-hd')];
+  const opt = (v, label) => Object.assign(document.createElement('option'), { value: v.id, textContent: label || v.label, selected: v.id === VOICE.id });
+  const g1 = Object.assign(document.createElement('optgroup'), { label: 'Giọng của app (nhanh nhất)' });
+  for (const v of opts) g1.append(opt(v, v.id === 'nu-nam' ? v.label + ' · mặc định' : v.label));
+  sel.append(g1);
+  const vb = voiceList.filter(v => v.provider === 'vbee');
+  const groups = [['rieng', '⭐ Giọng riêng của anh/chị'], ['dexuat', '🎙️ Đề xuất cho video BĐS'], ['vbee', 'Giọng Vbee'], ['congdong', 'Giọng cộng đồng nhiều người dùng']];
+  for (const [k, name] of groups) {
+    const items = vb.filter(v => (v.group || (v.own ? 'rieng' : 'vbee')) === k).sort((a, b) => a.label.localeCompare(b.label, 'vi'));
+    if (!items.length) continue;
+    const g = Object.assign(document.createElement('optgroup'), { label: name });
+    for (const v of items) g.append(opt(v));
+    sel.append(g);
+  }
+  // giọng Vbee đang dùng mà lần này Vbee trả thiếu → vẫn giữ (đổi giọng = phải đọc lại hết)
+  if (isVbee() && !vb.some(v => v.id === VOICE.id)) sel.append(opt({ id: VOICE.id }, 'Giọng Vbee đang dùng'));
+  sel.value = VOICE.id;
+  syncVoiceUi();
+}
+function syncVoiceUi(changed = false) {
+  const v = voiceList.find(x => x.id === VOICE.id);
+  $('voiceDemo').hidden = !v?.demo;
+  const m = $('voiceMsg');
+  if (!vbeeKey()) m.textContent = 'Muốn dùng giọng Vbee (kể cả giọng nhân bản của anh/chị): kết nối tài khoản Vbee ở app cũ, mục Giọng đọc, trên chính máy này.';
+  else if (changed && story) m.textContent = 'Bấm "🔄 Tạo lại video" để AI đọc lại bằng giọng này.' + (isVbee() ? ' Giọng Vbee tạo chậm hơn (2 câu một lúc) và trừ ký tự trong tài khoản Vbee của anh/chị.' : '');
+  else m.textContent = isVbee() ? 'Đang dùng giọng Vbee của anh/chị: tạo chậm hơn giọng của app, trừ ký tự trong tài khoản Vbee.' : '';
+}
+$('voice').onchange = () => { setVoice($('voice').value); syncVoiceUi(true); if (story) setDirty(true); };
+$('voiceDemo').onclick = () => { const v = voiceList.find(x => x.id === VOICE.id); if (v?.demo) new Audio(v.demo).play().catch(() => null); };
 function fillMusic() {
   const m = $('music'); m.textContent = '';
   const sug = story?.style?.suggest;

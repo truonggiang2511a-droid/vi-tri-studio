@@ -133,6 +133,7 @@ textarea { resize: vertical; line-height: 1.45; }
 .edit .sc { background: var(--card); }
 .sel { display: flex; align-items: center; gap: 8px; color: var(--muted); }
 .sel select { width: auto; padding: 7px 10px; font-size: 14px; border-radius: 10px; }
+#voice { max-width: min(62vw, 360px); }
 .sel input { width: 9.5em; padding: 7px 10px; font-size: 16px; border-radius: 10px; text-transform: uppercase; }
 .tog small { color: var(--muted); opacity: .8; }
 /* bài đăng: mô tả + bình luận ghim chép 1 chạm */
