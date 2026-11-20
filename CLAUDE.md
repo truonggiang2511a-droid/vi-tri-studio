@@ -61,7 +61,7 @@ Còn dùng trong code (đối chiếu `grep env` 25/10): `VIETMAP_KEY` (đườn
 `TTS_TIER=off` (tắt tự đổi loại giọng Google khi hết hạn mức miễn phí — xem nhật ký 31/10 16:10).
 `ARCGIS_ROUTE=off` (bỏ ArcGIS khỏi vẽ đường đi, quay về Vietmap → OSRM — xem nhật ký 31/10 17:05).
 `ISO_CAP` (số vùng lái xe tối đa trong 30 ngày, mặc định 4800 — chặn trước 5.000 vùng miễn phí, xem nhật ký 1/11 10:10).
-`SCRIPT_V2` (kịch bản AI bản 2, 20/11): chưa đặt = chỉ tài khoản `@vitristudio.com` dùng bản 2; `on` = mở cho mọi khách; `off` = tắt hẳn, kể cả admin (xem nhật ký 20/11).
+`SCRIPT_V2` (kịch bản AI bản 2, 20/11, CHỈ app cũ — AI đạo diễn gửi `long: true` nên không bị áp): chưa đặt = chỉ tài khoản `@vitristudio.com` dùng bản 2; `on` = mở cho mọi khách; `off` = tắt hẳn, kể cả admin (xem nhật ký 20/11).
 
 ### Bắt đầu nhanh (mỗi phiên mới)
 ```bash
