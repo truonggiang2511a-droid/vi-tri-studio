@@ -42,7 +42,7 @@ NQ 87/2025, rủi ro qua `/meta/risk/check`), cảnh rủi ro/giá trong video q
 |---|---|---|
 | Giao diện (nguồn) | `js/`, `index.html`, `admin.html`, `styles.css`, `landing.css` | Sửa ở đây |
 | Giao diện (bản chạy) | `site/` | **Được commit vào git**. Cloudflare phục vụ thẳng thư mục này, không có bước build trên Cloudflare |
-| Máy chủ | `worker.js` (dạng Worker, đang dùng) + `functions/api/*.js` (dạng Pages, dự phòng) | Mọi route `/api/*` phải khai báo ở **cả hai** (thực tế 25/10: `functions/api/` chỉ có 6 route cũ — tts, script, sepay, resolve, config, capi; các route map/lead/page-event/telegram, `/can/*`, `/m/*`, `/goi/*` chỉ có trong `worker.js` → bản Pages dự phòng KHÔNG chạy đủ. Route mới: bắt buộc ở `worker.js`) |
+| Máy chủ | `worker.js` (dạng Worker, đang dùng) + `functions/api/*.js` (dạng Pages, dự phòng) | Mọi route `/api/*` phải khai báo ở **cả hai** (thực tế 25/10: `functions/api/` chỉ có 6 route cũ — tts, script, sepay, resolve, config, capi; các route map/lead/page-event/telegram, `/can/*`, `/m/*`, `/goi/*` chỉ có trong `worker.js` → bản Pages dự phòng KHÔNG chạy đủ. Route mới: bắt buộc ở `worker.js`; `/mcp`, `/oauth/*`, `/.well-known/*` (20/11) chỉ ở `worker.js` + phải có trong `run_worker_first`) |
 | Logic máy chủ | `lib/*.js` | `vt.js` = env + gọi Supabase RPC |
 | Cơ sở dữ liệu | Supabase, hàm `vt_*` trong `supabase/*.sql` | Mọi quyền nằm trong hàm SQL (security definer) |
 | Thanh toán | SePay webhook → `/api/sepay` → `vt_payment_in` | Mã đơn `VTxxxxxx` trong nội dung chuyển khoản |
@@ -89,6 +89,7 @@ Tài khoản thử nội bộ: `giang.test@vitristudio.com` (`no_limits`). Căn 
 | `js/mau1.js` + `js/mau1-icons.js` + `music/sfx_lk_a2.m4a`/`sfx_lk_b2.m4a` + `music/sfx_key1..6.wav` | Chữ điểm nhấn + icon "mẫu 1" lấy từ Hook Kit (skill batdongsan-editor), 30/10, chỉ admin — xem nhật ký 30/10 |
 | `dao-dien.html` + `dao-dien.css` + `js/dao-dien.js` → `site/dao-dien.*` | **AI đạo diễn** (11/11): chế độ mới cho khách mới, trang riêng `/dao-dien`, kiểu cũ giữ nguyên. **Mở cho mọi khách từ 16/11** (nút `#ddEntry` dưới ô toạ độ bước 1, không còn cổng `?thu=1`). Xem nhật ký 11/11 + 16/11 |
 | `js/dd3d.js` (vẽ 3D MapLibre GL + lớp 2D, phụ đề, vùng an toàn), `js/dd-old.js` (từ vòng 9: mở đầu 3D + phần sau vẽ bằng bộ vẽ app cũ), `js/dd-parse.js` (đọc tin đăng), `js/dd-agent.js` (chọn tiện ích, viết lời, nhạc), `js/dd-voice.js` (giọng /api/tts + kiểm tra/trừ lượt; giọng Vbee của khách cho admin thử — nhật ký 20/11 16:30) | Bộ máy AI đạo diễn. `js/thu-3d.js` + `thu-3d.html` = trang thử nội bộ, KHÔNG đóng gói vào `site/` |
+| `lib/mcp.js` + `lib/oauth.js` + `supabase/vt_mcp.sql` | **Kết nối Claude của khách (MCP)** 20/11: `/mcp` (Streamable HTTP, chỉ JSON), OAuth 2.1 `/oauth/{register,authorize,approve,who,login,token}` + `/.well-known/oauth-*` — CHỈ trong `worker.js` (+ `run_worker_first`). Bảng `vt_dd_projects` (video AI đạo diễn trên máy chủ) + trang `/dao-dien?p=<id>` đồng bộ. Công tắc `vt_mcp_config.open` = admin / quy / off. Xem nhật ký 20/11 18:00 |
 | `supabase/*.sql` | Bảng + hàm `vt_*` (tài khoản, lượt, đơn, trang, lead, giới hạn làm lại, chống lạm dụng) |
 | `tools/` | `build_poi_tiles.py` (dựng `poi/` từ Overture, chạy hằng tháng), `make_music.py`, `make_sample.py`, `make_sample_voice.py` |
 
@@ -221,6 +222,45 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 ---
 
 ## 5. Nhật ký bài học
+
+- 2026-11-20 18:00 (Giang: "làm MCP cho Claude của khách lấy hết tài nguyên vitristudio làm video, chỉ gói 90 ngày, admin thử trước, không đụng
+  quảng cáo / thanh toán / Pixel"): **MCP "Vị Trí Studio"** gắn vào AI đạo diễn. Kiến trúc: Worker gói miễn phí không quét bản đồ / dựng được
+  (CPU, ~50 lần gọi ra ngoài) → Claude chỉ tạo / đọc / sửa DỮ LIỆU video; trang `/dao-dien?p=<id>` trên trình duyệt khách (đã đăng nhập) tự quét,
+  chọn tiện ích, viết lời, đọc giọng, dựng 3D rồi gửi **ảnh chụp** (`snap`: từng cảnh key / mô tả / dữ liệu thật / lời / số chữ tối đa / có giọng,
+  tiện ích đã chọn + 150 gợi ý có id, trục đường, điểm mốc, hạ tầng, lý do nên mua, số liệu `aiPayload`, bài đăng) lên `vt_dd_projects`. Claude sửa
+  → `rev` tăng → trang hỏi `vt_dd_poll` 4 giây/lần (chỉ khi trang hiện, không lúc đang xuất), thấy bản mới thì `applyProject` + `redo()` (chỉ đọc
+  lại giọng câu đã đổi) + gửi ảnh chụp mới. Khách sửa trên web → `vt_dd_save` (bản máy chủ mới hơn thì máy chủ thắng). Khách đủ điều kiện dựng
+  trên web (không qua Claude) → `vt_dd_create` tự lưu (cùng căn ≤ ~25 m trong 60 ngày dùng lại video cũ) để Claude thấy. Khách KHÔNG đủ điều kiện:
+  chỉ thêm 1 lần gọi `vt_dd_ok` (= false) sau khi Agent dựng xong, trang y như cũ. Xuất video + trừ lượt KHÔNG đổi.
+  Lệnh (tên tiếng Việt): `tai_nguyen` (tài khoản + toàn bộ danh mục: loại BĐS, khách mua, 6 phong cách, 2 kiểu hiện tiện ích, 9 nhạc, giọng, mẫu
+  thẻ, kêu gọi, tuỳ chọn, cảnh + số chữ), `tao_video` (vị trí = toạ độ / link Google Maps kể cả rút gọn qua `handleResolve`, tin đăng `parseListing`,
+  lời viết sẵn chỉ cho intro/house/lot/cta/photos), `danh_sach_video`, `xem_video` (`trang_thai` cho_dung / dang_cap_nhat / san_sang + trang có
+  đang mở không theo `seen_at` < 25 s), `sua_video` (lời theo key cảnh, thêm/bỏ tiện ích theo id, tiện ích mới theo toạ độ ≤ 15 km → `opts.manual`,
+  trục đường, điểm mốc, hạ tầng metro/road/build, tin đăng / thêm ý, `sua_thong_tin` → `opts.fix` = `S.listingFix`, phong cách, nhạc, giọng →
+  `opts.voice`, kiểu hiện, mẫu thẻ, kêu gọi, giá cuối, quả địa cầu, bản đầy đủ…; base rev, CONFLICT thì tự đọc lại 1 lần), `xoa_video` (cần
+  `xac_nhan`). 2 prompt: `lam_video_vi_tri`, `viet_lai_kich_ban`. `instructions` (initialize) ghi quy trình + luật viết lời.
+  Lời Claude viết được máy kiểm (như `checkScript`): số có đơn vị so ĐÚNG loại (`N phút` chỉ so số phút trong dữ liệu, `N km / mét` so khoảng
+  cách đổi km↔mét) — bản đầu so mọi số nên "99 phút" lọt vì có tiện ích cách 99 m, và chữ cấm so cả tên khoá JSON nên "view" lọt vì có
+  "overview" → `factBase` chỉ lấy GIÁ TRỊ dữ liệu, không lấy khoá, không lấy số kỹ thuật (thời lượng, bản). Số / chi tiết không có trong dữ liệu,
+  số điện thoại → từ chối câu đó (kèm lý do, gợi ý đưa ý thật vào `tin_dang_them` trước); TP.HCM / QL / KCN / UBND / m2 tự đổi chữ đầy đủ; quá
+  số chữ, lời kết hẹn đi xem → chỉ cảnh báo. Lời lưu dạng `<b>số</b>` như `aiWrite`.
+  OAuth: DCR (Claude đăng ký client công khai, chỉ nhận `https://claude.(ai|com)/api/mcp/auth_callback` + `http://localhost|127.0.0.1:<cổng>/callback`
+  cho Claude Code, ≤ 300 client/giờ, client không dùng tự dọn sau 2 ngày), PKCE S256 bắt buộc, trang đồng ý tiếng Việt dùng CHÍNH phiên đăng nhập
+  của app (`localStorage['vitri.session.v1']`, chưa đăng nhập thì đăng nhập ngay trên trang qua `/oauth/login` → `vt_login`), CSP nonce +
+  `frame-ancestors 'none'`, token 1 giờ / refresh 60 ngày xoay vòng (mã cũ còn dùng 2 phút cho lần làm mới trùng), 401 kèm
+  `WWW-Authenticate: Bearer resource_metadata=".../.well-known/oauth-protected-resource/mcp"`, mỗi tài khoản tối đa 5 kết nối. Giới hạn: tạo 30 /
+  ngày, sửa 400, đọc 3.000, tối đa 300 video. Không có biến môi trường mới.
+  Công tắc `vt_mcp_config.open`: `admin` (mặc định: `no_limits` + `@vitristudio.com`) → mở cho khách gói 90 ngày: `update vt_mcp_config set
+  open = 'quy' where id = 1;` (gói Không giới hạn còn hạn VÀ từng trả đơn `package_id = 'quy'`; chỉ ĐỌC vt_orders) → tắt hẳn: `'off'`.
+  Thử: máy thử `/tmp/mcp/dev.mjs` (lib thật + Supabase GIẢ mô phỏng hàm SQL + `/api/map` chuyển web thật qua curl + giọng giả) với `/tmp/mcp/e2e.py`
+  (59 bước: DCR, trang đồng ý 390 px, PKCE sai, đổi code, làm mới, 401, initialize/tools/prompts, tạo video, trang tự dựng ~20 s gửi ảnh chụp
+  ~30 KB, Claude sửa → trang tự áp dụng ~17 s, chỉ đọc lại 4 câu, web sửa → Claude thấy, người khác mở link, chưa đăng nhập) + `e2e2.py`
+  (admin dựng trên web tự lưu, khách thường không đổi, quay lại sau đăng nhập). Bài học: bộ thử urllib tự theo chuyển hướng 302 → dùng opener
+  không chuyển hướng; id điểm mốc có dấu ':' ("anchor:center:Trung tâm…") → tách key ở dấu ':' ĐẦU TIÊN; ô chọn `#flow` chữ dài làm trang rộng
+  465 px khi mở "Sửa video" (lỗi có sẵn) → giới hạn bề rộng select. **Supabase MCP: câu lệnh ghi (DDL) cần khách bấm xác nhận — app Claude trên
+  điện thoại tự huỷ hộp xác nhận sau 0,5 s** → chạy migration từ claude.ai trên máy tính (hoặc dán SQL Editor). CHƯA chạy migration thật lúc
+  viết dòng này; CHƯA thử với Claude thật (sau khi lên web: claude.ai › Cài đặt › Connectors › Thêm connector tuỳ chỉnh › `https://vitristudio.com/mcp`,
+  đăng nhập giang.test, bấm Cho phép).
 
 - 2026-11-20 16:30 (Giang: khách dùng giọng Vbee làm giọng chính ở app cũ thì AI đạo diễn có dùng giọng đó không? → KHÔNG: `js/dd-voice.js`
   gắn cứng `VOICE.id = 'nu-nam'` (= Google Nữ HD Chirp 3 HD), không gửi khoá Vbee; chú thích đầu file ghi "Google HD / Vbee" là sai). Làm, CHỈ tài khoản

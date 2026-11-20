@@ -13,6 +13,8 @@ export { AiRelay } from './lib/ai-relay.js';
 export { VbeeBox } from './lib/vbee-box.js';
 import { MEDIA_SIZES } from './lib/media-sizes.js';
 import { handleMap } from './lib/map.js';
+import { handleOauth, handleWellKnown } from './lib/oauth.js';
+import { handleMcp } from './lib/mcp.js';
 import { handleMedia, handleLead, handleTelegram, handleCan, handlePageEvent, handleCallLink, runCron } from './lib/pages.js';
 
 const ROUTES = { '/api/tts': handleTts, '/api/script': handleScript, '/api/sepay': handleSepay, '/api/resolve': handleResolve, '/api/config': handleConfig, '/api/capi': handleCapi, '/api/so-ocr': handleSoOcr, '/api/align': handleAlign };
@@ -76,6 +78,10 @@ export default {
       return Response.redirect(canon + url.pathname + url.search, 301);
     }
     const path = url.pathname.replace(/\/+$/, '');
+    // kết nối Claude của khách (MCP + OAuth 2.1, 20/11/2026): lib/mcp.js, lib/oauth.js, supabase/vt_mcp.sql
+    if (path === '/mcp') { setEnv(env); return handleMcp(request); }
+    if (path.startsWith('/oauth/')) { setEnv(env); return handleOauth(request); }
+    if (path.startsWith('/.well-known/oauth-') || path === '/.well-known/openid-configuration') { setEnv(env); return handleWellKnown(request); }
     if (path.startsWith('/api/map/')) { setEnv(env); return handleMap(request, ctx); }
     if (path.startsWith('/can/')) { setEnv(env); return handleCan(request); }
     if (path.startsWith('/m/')) { setEnv(env); return handleMedia(request, ctx); }
