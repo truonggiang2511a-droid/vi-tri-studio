@@ -121,6 +121,11 @@ textarea { resize: vertical; line-height: 1.45; }
 .note { margin-top: 12px; padding: 14px; border-radius: 14px; background: rgba(245,196,81,.08); border: 1px solid rgba(245,196,81,.4); font-size: 14px; line-height: 1.5; }
 .note b { display: block; margin-bottom: 4px; }
 .note span { color: var(--muted); }
+/* đồng bộ với Claude (20/11): video mở từ link Claude tạo / Claude vừa sửa */
+.note.sync { margin: 0 0 12px; padding: 10px 12px; font-size: 13.5px; background: rgba(94,234,245,.07); border-color: rgba(94,234,245,.35); }
+.note.sync.run { background: rgba(245,196,81,.1); border-color: rgba(245,196,81,.5); }
+.note.sync.warn { background: rgba(255,120,120,.08); border-color: rgba(255,120,120,.4); }
+#projNote .cta { margin-top: 10px; }
 .stale { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 4px; background: rgba(11,18,32,.72); font-weight: 800; font-size: 16px; padding: 20px; }
 .stale small { font-weight: 500; color: var(--muted); font-size: 13px; }
 #redo { margin-top: 12px; }
@@ -133,7 +138,7 @@ textarea { resize: vertical; line-height: 1.45; }
 .edit .sc { background: var(--card); }
 .sel { display: flex; align-items: center; gap: 8px; color: var(--muted); }
 .sel select { width: auto; padding: 7px 10px; font-size: 14px; border-radius: 10px; }
-#voice { max-width: min(62vw, 360px); }
+#voice, #flow, #labelStyle, #music, #tone, #ctaMode { max-width: min(62vw, 360px); }   /* chữ lựa chọn dài không đẩy trang rộng hơn điện thoại */
 .sel input { width: 9.5em; padding: 7px 10px; font-size: 16px; border-radius: 10px; text-transform: uppercase; }
 .tog small { color: var(--muted); opacity: .8; }
 /* bài đăng: mô tả + bình luận ghim chép 1 chạm */

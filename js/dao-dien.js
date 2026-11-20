@@ -14,7 +14,7 @@ import { exportMp4, decodeAudioFile, mixAudio, canEncodeMp4 } from './export.js'
 import { createHybrid } from './dd-old.js';
 import { setImageryToken, preferSession, warmSession, onTileSource } from './render.js';
 import { token, voiceLines, voiceOf, prefetchVoices, canExport, chargeExport, VOICE, setVoice, initialVoice, listVoices, isVbee, vbeeKey } from './dd-voice.js';
-import { MAX_PHOTOS, savePhotos, loadPhotoBlobs, shrink, toBitmap } from './dd-photos.js';
+import { MAX_PHOTOS, savePhotos, loadPhotoBlobs, shrink, toBitmap, kvGet, kvPut } from './dd-photos.js';
 import { track, funnel } from './track.js';
 import { xuatStart, xuatCheckCrash, devClass } from './xuatlog.js';
 
@@ -36,6 +36,7 @@ function save() {
   // + mọi chỉnh sửa (tiện ích, trục đường, lời đọc, màu bìa…) và tiện ích ghim tay: đi đăng ký / mua lượt rồi quay về vẫn còn nguyên
   try { localStorage.setItem(SAVE_KEY, JSON.stringify({ coord: $('coord').value, listing: $('listing').value, buyer: S.buyer, brand: $('brand').value, music: S.music,
     edits: S.edits, manual: S.manual, bird: $('bird').checked, tone: $('tone').value })); } catch { /* bỏ qua */ }
+  cloudDirty();
 }
 function restore() {
   // từ kiểu cũ bấm "AI đạo diễn" khi đã dán toạ độ: /dao-dien.html?c=… → điền sẵn, sang bước 2
@@ -82,6 +83,7 @@ async function step1(quiet = false) {
 }
 function setHouse(h) {
   if (S.house && haversineKm(S.house, h) < 0.01) return;
+  if (proj && !proj.opening && haversineKm({ lat: proj.lat, lng: proj.lng }, h) > 0.03) detachProject();
   S.house = h; S.scan = null; S.routes = {}; S.anchors = []; S.infra = null; S.edits = {}; S.manual = [];
   startScan();
 }
@@ -96,6 +98,7 @@ function startScan() {
     S.scan = res;
     timeBucket('dd_quet', t0, [5, 10, 20, 40]);
     for (const m of S.manual) if (!res.pois.some(p => p.id === m.id)) res.pois.push(m);   // tiện ích khách đã ghim tay (giữ qua tải lại trang)
+    mergeManual(proj?.opts?.manual);   // tiện ích Claude thêm theo toạ độ (video đồng bộ với Claude)
     st.className = 'scan ok'; st.textContent = `✓ Đã quét ${res.pois.length} tiện ích quanh nhà`;
     renderPoiPick();
     loadRegion(h);
@@ -286,6 +289,7 @@ async function addPhotos(files) {
 }
 function photosChanged() {
   savePhotos(S.photos.map(p => p.blob));
+  kvPut('photosHouse', houseKey());   // ảnh này của căn nào (video mở từ link Claude chỉ nạp ảnh đúng căn)
   renderPhotos();
   if (story) edited();
 }
@@ -307,6 +311,7 @@ async function nextTask(i, extra) {
 }
 async function runAgent() {
   if (!S.house) { goStep(1); return; }
+  agentDone = false;
   const tA = performance.now();
   if (!S.listing) S.listing = { kind: 'nhapho' };
   if (!S.buyer) S.buyer = suggestBuyer(S.listing.kind);
@@ -351,6 +356,8 @@ async function runAgent() {
   timeBucket(token() ? 'dd_dung' : 'dd_dung_kg', tA, [15, 25, 40, 60]);   // kg = chưa đăng nhập (không đọc giọng)
   fillMusic();
   await rebuild();
+  agentDone = true;
+  afterAgent();
 }
 const tick = ms => new Promise(r => setTimeout(r, ms));
 // 16/11: đo thời gian THẬT trên máy khách (phễu nội bộ, không gửi Meta/TikTok): dd_quet_10 = quét xong trong ≤ 10 s, _99 = lâu hơn mức cuối.
@@ -461,6 +468,7 @@ async function rebuild() {
   const missing = allLines(story).some(t => !voiceOf(t));
   $('voiceNote').hidden = !(missing && (!token() || voiceErr === 'login'));
   mixReady();
+  snapSoon();
 }
 // Khách sửa (thứ tự / thêm / bỏ / lời): cập nhật bảng ngay, video tạo lại khi bấm "Tạo lại video" (đọc lại câu đã sửa)
 let dirty = false;
@@ -468,7 +476,7 @@ function setDirty(v) {
   dirty = v; $('redo').hidden = !v; $('stale').hidden = !v; $('exportBox').hidden = v;
   if (v) { stop(); $('play').classList.add('hide'); }
 }
-function edited() { story = currentStory(); renderBoard(); setDirty(true); save(); }
+function edited() { story = currentStory(); renderBoard(); setDirty(true); save(); snapSoon(); }
 
 // ✨ AI viết lời (máy chủ /api/script như kiểu cũ: Claude viết + máy bắt số bịa + biên tập). Công thức theo khách:
 // mua để ở → P.A.S (đánh trúng nỗi đau), đầu tư cho thuê → A.I.D.A, kết nối khu vực → chuyên gia đầu tư. Lời dài hơn (long).
@@ -655,7 +663,7 @@ function syncVoiceUi(changed = false) {
   else if (changed && story) m.textContent = 'Bấm "🔄 Tạo lại video" để AI đọc lại bằng giọng này.' + (isVbee() ? ' Giọng Vbee tạo chậm hơn (2 câu một lúc) và trừ ký tự trong tài khoản Vbee của anh/chị.' : '');
   else m.textContent = isVbee() ? 'Đang dùng giọng Vbee của anh/chị: tạo chậm hơn giọng của app, trừ ký tự trong tài khoản Vbee.' : '';
 }
-$('voice').onchange = () => { setVoice($('voice').value); syncVoiceUi(true); if (story) setDirty(true); };
+$('voice').onchange = () => { setVoice($('voice').value); syncVoiceUi(true); if (story) setDirty(true); save(); };
 $('voiceDemo').onclick = () => { const v = voiceList.find(x => x.id === VOICE.id); if (v?.demo) new Audio(v.demo).play().catch(() => null); };
 function fillMusic() {
   const m = $('music'); m.textContent = '';
@@ -1280,6 +1288,265 @@ async function makePage() {
   } finally { btn.disabled = false; }
 }
 
+// ---------- Đồng bộ với Claude của khách (MCP, 20/11/2026) ----------
+// /dao-dien?p=<id>: video Claude tạo (hoặc khách đủ điều kiện dựng trên web) lưu ở vt_dd_projects. Trang tự quét + dựng, gửi "ảnh chụp"
+// (cảnh, lời, tiện ích, số liệu thật) lên để Claude đọc; hỏi 4 giây/lần, Claude sửa (rev tăng) thì áp dụng, đọc lại giọng câu đã đổi,
+// dựng lại. Khách sửa trên web cũng lưu lên (Claude thấy bản mới nhất). Khách KHÔNG đủ điều kiện (vt_dd_ok = false) không có ?p
+// → trang chạy y như cũ. Xuất video + trừ lượt không đổi (vẫn bấm trên trang).
+const P_KEY = 'vitri.dd.p', POLL_MS = 4000;
+let proj = null, applying = false, agentDone = false, pollT = 0, syncChain = Promise.resolve(), syncOkJob = null;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function projectIdFromUrl() {
+  const q = new URLSearchParams(location.search).get('p');
+  if (q && /^[0-9a-f-]{36}$/i.test(q)) return q;
+  // đi đăng nhập rồi quay lại (/?dd=1#dangky → /dao-dien): lấy lại id đã nhớ (≤ 30 phút)
+  try { const r = JSON.parse(localStorage.getItem(P_KEY) || 'null'); if (r?.id && Date.now() - r.t < 1800000 && token()) { localStorage.removeItem(P_KEY); return r.id; } } catch { /* bỏ qua */ }
+  return null;
+}
+function syncBadge(text, cls = '') {
+  const b = $('ddSync'); if (!b) return;
+  b.hidden = !text; b.className = 'note sync ' + cls; b.textContent = text || '';
+}
+function projNote(text, login = false) {
+  const n = $('projNote'); n.hidden = !text; n.textContent = '';
+  if (!text) return;
+  n.append(Object.assign(document.createElement('b'), { textContent: '🤖 Video Claude tạo' }), Object.assign(document.createElement('span'), { textContent: text }));
+  if (login) { const b = Object.assign(document.createElement('button'), { className: 'cta gold', type: 'button', textContent: 'Đăng nhập để mở video' }); b.onclick = () => goLogin(); n.append(b); }
+}
+const fixToListing = f => (f ? Object.fromEntries(Object.entries(f).filter(([, v]) => v != null && v !== '')) : null);
+function mergeManual(list) {
+  if (!Array.isArray(list) || !S.house) return;
+  for (const m of list) {
+    if (!m?.id || !Number.isFinite(m.lat)) continue;
+    const poi = { id: m.id, name: m.name, cat: m.cat || 'congcong', kind: 'manual', lat: m.lat, lng: m.lng, km: haversineKm(S.house, m), manual: true };
+    if (!S.manual.some(x => x.id === m.id)) S.manual.push(poi);
+    if (S.scan && !S.scan.pois.some(x => x.id === m.id)) S.scan.pois.push(poi);
+  }
+}
+// áp dữ liệu máy chủ vào trang (lần đầu mở, hoặc Claude vừa sửa)
+function applyProject(p) {
+  applying = true;
+  try {
+    const o = p.opts || {};
+    proj.opts = o;
+    $('listing').value = p.listing || '';
+    S.listingFix = fixToListing(o.fix);
+    S.buyer = p.buyer || null; S.buyerTouched = !!p.buyer;
+    S.edits = structuredClone(p.edits || {});
+    $('tone').value = S.edits.tone && [...$('tone').options].some(x => x.value === S.edits.tone) ? S.edits.tone : 'auto';
+    if (o.music) S.music = o.music;
+    if (typeof o.bird === 'boolean') $('bird').checked = o.bird;
+    if (typeof o.brand === 'string') $('brand').value = o.brand;
+    mergeManual(o.manual);
+    if (o.voice && o.voice !== VOICE.id) voicePick.then(() => {
+      if (isVbee(o.voice) && !vbeeKey()) { proj.voiceNote = 'Giọng Vbee Claude chọn cần kết nối Vbee trên máy này (app cũ › Giọng đọc) — đang dùng giọng mặc định.'; return; }
+      setVoice(o.voice, false); if ($('voice').options.length) { if (![...$('voice').options].some(x => x.value === o.voice)) $('voice').append(new Option('Giọng Claude chọn', o.voice)); $('voice').value = o.voice; }
+    });
+    onListing();
+    if (!S.listing && S.listingFix) S.listing = { kind: 'nhapho', ...S.listingFix };
+    renderUnderstood(); renderBuyers(); renderTones();
+    proj.rev = p.rev;
+    proj.sent = JSON.stringify(cloudPayload());
+  } finally { applying = false; }
+}
+async function openProject(id) {
+  history.replaceState(null, '', location.pathname + '?p=' + id);
+  if (!token()) {
+    try { localStorage.setItem(P_KEY, JSON.stringify({ id, t: Date.now() })); } catch { /* bỏ qua */ }
+    projNote('Đăng nhập đúng tài khoản Vị Trí Studio đã kết nối với Claude để mở video này.', true);
+    return;
+  }
+  projNote('Đang mở video…');
+  let p;
+  try { p = await rpc('vt_dd_get', { p_token: token(), p_id: id }); }
+  catch (e) {
+    if (e.hint === 'AUTH') { try { localStorage.setItem(P_KEY, JSON.stringify({ id, t: Date.now() })); } catch { /* bỏ qua */ } projNote('Phiên đăng nhập đã hết hạn.', true); }
+    else projNote(e.message || 'Chưa mở được video, thử tải lại trang.', e.hint === 'OWNER');
+    history.replaceState(null, '', location.pathname); restore(); return;
+  }
+  proj = { id, rev: p.rev, lat: p.lat, lng: p.lng, opening: true, opts: p.opts || {} };
+  projNote('');
+  $('coord').value = p.coord || `${p.lat}, ${p.lng}`;
+  setHouse({ lat: p.lat, lng: p.lng });
+  applyProject(p);
+  proj.opening = false;
+  $('coordMsg').className = 'msg ok'; $('coordMsg').textContent = `Đã nhận vị trí ${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}`;
+  goStep(2);
+  // ảnh trên máy chỉ dùng khi đúng căn này (tránh ảnh căn trước lọt vào video căn Claude vừa tạo)
+  if ((await kvGet('photosHouse')) === houseKey()) loadPhotoBlobs().then(async blobs => { for (const b of blobs.slice(0, MAX_PHOTOS)) S.photos.push({ blob: b, url: URL.createObjectURL(b), bmp: await toBitmap(b) }); renderPhotos(); });
+  else renderPhotos();
+  startPoll();
+  syncBadge('🤖 Video Claude tạo — Agent đang dựng, xong sẽ gửi kịch bản cho Claude', 'run');
+  runAgent();
+}
+function detachProject() {
+  proj = null; clearInterval(pollT); pollT = 0; syncBadge('');
+  if (/[?&]p=/.test(location.search)) history.replaceState(null, '', location.pathname);
+}
+// video dựng trên web (không qua Claude) của khách đủ điều kiện → lưu lên máy chủ để Claude của khách thấy + sửa được
+async function afterAgent() {
+  if (proj) {
+    // Claude sửa trong lúc Agent đang dựng lần đầu → câu mới chưa có giọng: đọc nốt rồi dựng lại
+    if (token() && !voiceErr && allLines(story).some(t => !voiceOf(t))) await redo();
+    snapSoon(); cloudDirty();
+    syncBadge(`🤖 Đã gửi kịch bản cho Claude · bản ${proj.rev}`, 'ok'); return;
+  }
+  if (!token() || !S.house) return;
+  syncOkJob ||= rpc('vt_dd_ok', { p_token: token() }).then(r => !!r?.ok).catch(() => false);
+  if (!(await syncOkJob) || proj) return;
+  try {
+    const pl = cloudPayload();
+    const r = await rpc('vt_dd_create', { p_token: token(), p_data: { lat: S.house.lat, lng: S.house.lng, coord: $('coord').value.trim().slice(0, 300), ...pl, title: (S.listing?.title || '').slice(0, 80) } });
+    if (!r || r.skip || !r.id) return;
+    proj = { id: r.id, rev: r.rev, lat: S.house.lat, lng: S.house.lng, opts: r.opts || {} };
+    history.replaceState(null, '', location.pathname + '?p=' + r.id);
+    proj.sent = r.existing ? '' : JSON.stringify(pl);   // video cũ cùng căn → lưu bản đang dựng lên
+    startPoll(); cloudDirty(); snapSoon();
+    syncBadge('🤖 Đã lưu — Claude của anh/chị đọc và sửa được video này', 'ok');
+  } catch { /* lưu lên máy chủ lỗi: video trên trang vẫn dùng bình thường */ }
+}
+function cloudPayload() {
+  const o = { ...(proj?.opts || {}), music: S.music, bird: $('bird').checked, brand: $('brand').value.trim(), voice: VOICE.id,
+    manual: S.manual.filter(m => Number.isFinite(m.lat)).map(m => ({ id: m.id, name: m.name, cat: m.cat, lat: m.lat, lng: m.lng })).slice(-12) };
+  if (S.listingFix && Object.keys(S.listingFix).length) o.fix = S.listingFix; else delete o.fix;
+  return { listing: $('listing').value, buyer: S.buyer || null, edits: S.edits || {}, opts: o };
+}
+// nối việc đồng bộ thành một hàng (lưu chỉnh sửa trước, gửi ảnh chụp sau) — không gọi chồng nhau
+const queue = fn => (syncChain = syncChain.then(fn, fn).catch(() => {}));
+let saveT = 0, snapT = 0;
+function cloudDirty() {
+  if (!proj || applying || proj.opening || !token()) return;
+  clearTimeout(saveT); saveT = setTimeout(() => queue(cloudSave), 1500);
+}
+async function cloudSave() {
+  if (!proj || applying) return;
+  const pl = cloudPayload(), js = JSON.stringify(pl);
+  if (js === proj.sent) return;
+  const r = await rpc('vt_dd_save', { p_token: token(), p_id: proj.id, p_base_rev: proj.rev, p_data: pl }).catch(() => null);
+  if (!r) return;
+  if (r.conflict) { await pull(); return; }   // Claude vừa sửa: bản trên máy chủ thắng (đã nhập vào trang)
+  proj.rev = r.rev; proj.sent = js; proj.lastBy = '';
+  snapSoon();
+}
+function snapSoon() {
+  if (!proj || !story || !agentDone) return;
+  clearTimeout(snapT); snapT = setTimeout(() => queue(sendSnap), 1200);
+}
+async function sendSnap() {
+  if (!proj || !story) return;
+  if (saveT && JSON.stringify(cloudPayload()) !== proj.sent) await cloudSave();
+  const rev = proj.rev, snap = buildSnap();
+  const r = await rpc('vt_dd_snap', { p_token: token(), p_id: proj.id, p_rev: rev, p_snap: snap }).catch(() => null);
+  if (r?.stale) { pollOnce(); return; }
+  if (r?.ok && !dirty) syncBadge(proj.lastBy ? `✨ ${proj.lastBy} đã sửa · bản ${rev} — bấm ▶ để xem` : `🤖 Đã đồng bộ với Claude · bản ${rev}`, 'ok');
+}
+function startPoll() {
+  if (pollT) return;
+  pollT = setInterval(pollOnce, POLL_MS);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pollOnce(); });
+}
+let polling = false, pullWaiting = false;
+async function pollOnce() {
+  if (!proj || polling || document.visibilityState !== 'visible' || $('exportBtn').disabled) return;
+  polling = true;
+  try {
+    const r = await rpc('vt_dd_poll', { p_token: token(), p_id: proj.id }).catch(() => null);
+    if (r?.gone) { syncBadge('Video này đã bị xoá khỏi danh sách (Claude hoặc máy khác). Video trên trang vẫn dùng được.', 'warn'); detachProject(); return; }
+    if (r && r.rev > proj.rev) await queue(pull);
+  } finally { polling = false; }
+}
+// Claude (hoặc máy khác) vừa sửa → nhập bản mới, đọc lại giọng câu đã đổi, dựng lại
+async function pull() {
+  if (!proj) return;
+  const p = await rpc('vt_dd_get', { p_token: token(), p_id: proj.id }).catch(() => null);
+  if (!p || p.rev <= proj.rev) return;
+  const by = p.by === 'web' ? 'Máy khác' : 'Claude';
+  applyProject(p); proj.lastBy = by;
+  if (!agentDone) return;   // Agent đang dựng lần đầu: dựng xong tự dùng bản mới (đã gán S.edits)
+  if (pullWaiting) return;
+  pullWaiting = true;
+  try {
+    syncBadge(`✨ ${by} vừa sửa video — đang đọc lại giọng câu đã đổi và dựng lại…`, 'run');
+    await sleep(600);
+    story = currentStory(); renderBoard();
+    await redo();
+    syncBadge(`✨ ${by} đã sửa xong · bản ${proj.rev} — bấm ▶ để xem`, 'ok');
+  } finally { pullWaiting = false; }
+}
+// ---------- Ảnh chụp video cho Claude ----------
+const LONGW = { intro: 38, house: 62, lot: 62, roads: 50, radar: 70, overview: 36, summary: 56, rd: 22, build: 34, score: 56, cta: 34, airport: 30, metro: 30, road: 26, photos: 18, poi: 26, anchor: 30, cluster: 30, orbit: 70 };
+const plainLine = s => String(s || '').replace(/<[^>]+>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').trim();
+const splitKey = key => { const i = key.indexOf(':'); return i < 0 ? [key, ''] : [key.slice(0, i), key.slice(i + 1)]; };   // id điểm mốc có dấu ':' ("center:Trung tâm…")
+function lineOf(st, key) {
+  const [k, id] = splitKey(key), L = st.lines;
+  if (k === 'anchor') return L.anchor[st.anchors.findIndex(a => a.id === id)];
+  if (k === 'poi') return L.poi[st.pois.findIndex(p => p.id === id)];
+  if (k === 'rd') return L.rd?.[st.roads.findIndex(r => r.id === id)];
+  return L[k];
+}
+function sceneTitle(st, key) {
+  const [k, id] = splitKey(key);
+  const nm = k === 'anchor' ? st.anchors.find(a => a.id === id)?.name : k === 'poi' ? st.pois.find(p => p.id === id)?.name : k === 'rd' ? st.roads.find(r => r.id === id)?.name : '';
+  return { intro: 'Mở đầu (quả địa cầu → tỉnh → xã → ghim nhà)', house: `${KINDS[st.kind]?.label || 'Căn nhà'} · lượn 360° cận cảnh`, lot: 'Lô đất · lượn 360° cận cảnh', roads: '❓ Sống ở đây có tiện không? · trục đường lớn',
+    radar: '📡 Radar tiện ích quanh nhà', overview: '❓ Sống ở đây có tiện không? · vòng bán kính', summary: '❓ Vì sao nên mua? · tổng kết', score: '❓ Vì sao nên mua?', build: '🚧 Hạ tầng đang thi công',
+    cta: 'Kêu gọi (cuối video)', photos: 'Ảnh thực tế', metro: '🚇 Metro', road: '🛣 Cao tốc', airport: '✈️ Sân bay', cluster: 'Gom tiện ích', orbit: 'Lượn 360° góc xa',
+    anchor: '🧭 Kết nối vùng · ' + nm, poi: '📍 ' + nm, rd: '🛣 ' + nm }[k] || key;
+}
+const r2 = x => (Number.isFinite(x) ? Math.round(x * 100) / 100 : null);
+function buildSnap() {
+  const st = story, L = S.listing || {}, { facts, segments, back } = aiPayload(st, L);
+  const canh = [];
+  const push = (key, seg) => {
+    const text = lineOf(st, key); if (text == null && key !== 'photos') return;
+    const { canh: mo, ...du } = seg || {};
+    // cảnh căn nhà / mở đầu: kèm thông tin căn (Claude viết lời cần đủ số liệu ngay trong cảnh)
+    if (key === 'house' || key === 'lot') Object.assign(du, { thong_tin_nha: facts.thong_tin_nha, diem_noi_bat: facts.diem_noi_bat, loai_bds: facts.loai_bds, khach_muc_tieu: facts.khach_muc_tieu });
+    if (key === 'intro') Object.assign(du, { xa_phuong: facts.xa_phuong, tinh_thanh: facts.tinh_thanh, loai_bds: facts.loai_bds });
+    canh.push({ key, ten: sceneTitle(st, key), mo_ta: mo || '', du_lieu: du, loi: plainLine(text), toi_da_chu: LONGW[splitKey(key)[0]] || 30,
+      da_sua: !!S.edits.lines?.[key], co_giong: !!(text && voiceOf(text)) });
+  };
+  for (const [k, seg] of Object.entries(segments)) if (back[k] !== 'cta') push(back[k], seg);
+  if (S.photos.length && st.lines.photos) push('photos', { canh: 'Ảnh thực tế cuối video, mỗi ảnh ~3 giây', so_anh: S.photos.length });
+  if (segments.outro) push('cta', segments.outro);
+  const chosen = new Set(st.pois.map(p => p.id)), perCat = {};
+  const cands = (S.scan?.pois || []).filter(p => !chosen.has(p.id) && p.km <= 5 && CAT3D[p.cat]).sort((a, b) => a.km - b.km)
+    .filter(p => (perCat[p.cat] = (perCat[p.cat] || 0) + 1) <= 15).slice(0, 150).map(p => ({ id: p.id, ten: p.name, loai: p.cat, cach_km: r2(p.km) }));
+  const roadSel = new Set(st.roads.map(r => r.id));
+  const lines = allLines(st), voiced = lines.filter(t => voiceOf(t)).length;
+  const issues = [];
+  if (!token()) issues.push('Trang chưa đăng nhập: chưa có giọng đọc.');
+  else if (voiced < lines.length) issues.push(voiceErr ? 'Giọng đọc lỗi: ' + voiceErr : `Còn ${lines.length - voiced} câu chưa có giọng (trang đang đọc / sẽ đọc khi bấm Tạo lại video hoặc Xuất).`);
+  if (!S.photos.length) issues.push('Chưa có ảnh thực tế: người dùng tự thêm ảnh trên trang (ảnh chỉ lưu trên máy, không gửi lên máy chủ).');
+  if (proj?.voiceNote) issues.push(proj.voiceNote);
+  if (dirty) issues.push('Người dùng đang sửa trên trang, chưa bấm "Tạo lại video".');
+  const url = pageLink();
+  return {
+    v: 1, at: new Date().toISOString(),
+    tieu_de: L.title || st.cover?.title || '', loai: st.kind, loai_ten: KINDS[st.kind]?.label, khach: S.buyer,
+    xa: storeData().ward || L.ward || '', tinh: L.province || st.area?.province?.name || '',
+    thoi_luong_giay: dir?.duration ? Math.round(dir.duration * 10) / 10 : null,
+    phong_cach: TONES.some(([v]) => v !== 'auto' && v === S.edits.tone) ? S.edits.tone : autoTone(S.buyer), phong_cach_chon: $('tone').value, kieu_hien: st.flow, che_do: st.engine, nhac: S.music, giong: VOICE.id,
+    tuy_chon: { ban_day_du: !!st.full, qua_dia_cau: !!st.globe, gia_cuoi: !!st.priceEnd, mau_the: st.labelStyle, cta_cach: st.ctaMode, cta_chu: st.ctaKey, duong_chim_bay: !!st.bird, thuong_hieu: $('brand').value.trim() },
+    hieu_tin_dang: summaryChips(L),
+    canh,
+    tien_ich_da_chon: st.pois.map(p => ({ id: p.id, ten: p.name, ten_ngan: shortName(p.name), loai: p.cat, cach_km: r2(p.km), phut: p.min != null ? Math.max(1, Math.round(p.min)) : null })),
+    tien_ich_goi_y: cands,
+    radar: st.radar ? { ban_kinh_km: st.radar.r, so_tien_ich: st.radar.n, diem: st.radar.pts.map(p => ({ ten: p.label, loai: p.cat, doc_ten: !!p.named })) } : null,
+    truc_duong: st.roads.map(r => ({ id: r.id, ten: r.name, cach_km: r2(r.km), phut: r.km < 0.12 ? null : r.min })),
+    truc_duong_goi_y: (S.scan?.roads || []).filter(r => r.level >= 1 && !roadSel.has(r.id) && r.nearKm <= 12).sort((a, b) => a.nearKm - b.nearKm).slice(0, 20)
+      .map(r => ({ id: r.id, ten: r.label, cach_km: r2(r.nearKm), cap: r.level })),
+    diem_moc: (S.anchors || []).map(a => ({ id: a.id, loai: a.type, ten: a.name, km: a.km, phut: a.min, bat: st.anchors.some(x => x.id === a.id) })),
+    ha_tang: { metro: S.infra?.metro ? { ten: S.infra.metro.name, bat: !!st.infra?.metro } : null, road: S.infra?.road ? { ten: S.infra.road.name, bat: !!st.infra?.road } : null },
+    dang_thi_cong: (S.build || []).map(b => ({ id: b.id, ten: b.name, cach_km: r2(b.nearKm), bat: st.build.some(x => x.id === b.id) })),
+    ly_do: st.reasons || [],
+    so_lieu: facts,
+    bai_dang: { mo_ta: postText(st, L, url), binh_luan_ghim: commentText(st, url), trang_web_can: url || null },
+    anh: S.photos.length,
+    giong_doc: { co: voiced, tong: lines.length, dang_nhap: !!token() },
+    luu_y: issues,
+  };
+}
+
 // ---------- gắn sự kiện ----------
 $('full').onchange = () => { S.edits.full = $('full').checked; edited(); };
 $('globe').onchange = () => { S.edits.globe = $('globe').checked ? undefined : false; edited(); };
@@ -1324,7 +1591,7 @@ document.querySelectorAll('.steps li').forEach(li => li.addEventListener('click'
 }));
 renderBuyers();
 $('phInput').addEventListener('change', e => addPhotos([...e.target.files]));
-restore();
+{ const pid = projectIdFromUrl(); if (pid) openProject(pid); else restore(); }
 renderTones();
 // ô ảnh vệ tinh phần vẽ kiểu app cũ: dùng khoá ArcGIS như app cũ (xem trước), xuất video đi phiên bản đồ
 fetch('/api/config').then(r => (r.ok ? r.json() : null)).then(c => setImageryToken(c?.arcgis || ''), () => setImageryToken(''));
@@ -1333,4 +1600,5 @@ onTileSource(k => funnel('o_' + k));
 xuatCheckCrash();   // lần xuất trước không kết thúc bình thường (văng / tắt trang) → đếm cho báo cáo 7h
 funnel('dd_vao');   // phễu nội bộ AI đạo diễn: dd_nut (app cũ) → dd_vao → dd_agent → dd_xuat → dd_xuat_xong / dd_xuat_loi (không gửi Meta/TikTok)
 window.__dd = { S, get story() { return story; }, get dir() { return dir; }, rebuild, exportVideo, setHouse, addPhotos, lines: () => story ? allLines(story) : [],
+  sync: { get proj() { return proj; }, buildSnap: () => story && buildSnap(), pollOnce },
   ...(DEV ? { exportSource: (w, h) => exportSource(w, h, story) } : {}) };
