@@ -115,7 +115,8 @@ export async function refreshAccount() {
     S.leadsNew = r.leads_new || 0;
     S.tgLinked = !!r.tg_linked;
     S.promo = r.promo && r.promo.percent > 0 && new Date(r.promo.until) > Date.now() ? r.promo : null;
-    if (r.pending) S.order = S.order?.code === r.pending.code ? S.order : { ...r.pending };
+    if (r.pending) { S.order = S.order?.code === r.pending.code ? S.order : { ...r.pending }; payRemember(r.pending); }
+    payReconcile();
   } catch (e) {
     if (e.hint === 'AUTH' || e.hint === 'LOCKED') clearSession();
   }
@@ -496,6 +497,7 @@ function stopPoll() { clearInterval(pollTimer); pollTimer = null; }
 
 function showOrder(order, bank) {
   S.order = { ...order, bank };
+  payRemember(order);
   $('payTitle').textContent = order.package_name;
   $('pBank').textContent = bank.name || '';
   $('pAcc').textContent = bank.account;
@@ -524,6 +526,57 @@ function showOrder(order, bank) {
   }, 4000);
 }
 
+// ---------- Bù sự kiện Purchase bị lỡ (21/11/2026) ----------
+// Purchase chỉ bắn khi trang còn mở và đang chờ tiền về (poll 30 phút). Đo 25/10–19/11: 47 đơn trả tiền nhưng Meta
+// chỉ nhận 32 Purchase (khách chuyển khoản xong tắt trang / chuyển app). Nay mỗi đơn tạo trên máy được nhớ lại;
+// lần sau khách mở app (hoặc quay lại trang) thì hỏi vt_order_status (chỉ ĐỌC), đơn đã trả mà chưa báo thì bắn Purchase.
+// event_id cố định 'purchase.<mã đơn>' cho cả Pixel lẫn CAPI và đánh dấu đã báo → mỗi đơn chỉ 1 Purchase, không đếm trùng.
+// KHÔNG đổi tên sự kiện, giá trị (order.amount, VND) hay SQL/thanh toán.
+const PAY_KEY = 'vitri.payTrack.v1';
+const PAY_DAYS = 6; // CAPI chỉ nhận sự kiện trong 7 ngày
+function payLoad() {
+  try {
+    const a = JSON.parse(localStorage.getItem(PAY_KEY) || '[]');
+    return Array.isArray(a) ? a.filter(o => o && o.c && Date.now() - o.at < PAY_DAYS * 86400000) : [];
+  } catch { return []; }
+}
+function paySave(a) { try { localStorage.setItem(PAY_KEY, JSON.stringify(a.slice(-20))); } catch { /* bỏ qua */ } }
+function payRemember(order) {
+  if (!order?.code) return;
+  const a = payLoad();
+  if (!a.some(o => o.c === order.code)) { a.push({ c: order.code, at: Date.now() }); paySave(a); }
+}
+function firePurchase(order, login) {
+  if (!order?.code) return;
+  const a = payLoad();
+  const it = a.find(o => o.c === order.code);
+  if (it?.d) return;
+  track('purchase', { value: order.amount, id: order.package_id, login, event_id: 'purchase.' + order.code });
+  if (it) it.d = 1; else a.push({ c: order.code, at: Date.now(), d: 1 });
+  paySave(a);
+}
+let payLast = 0;
+async function payReconcile() {
+  if (!S.token || Date.now() - payLast < 60000) return;
+  payLast = Date.now();
+  for (const it of payLoad()) {
+    if (it.d || (pollTimer && S.order?.code === it.c)) continue;
+    try {
+      const r = await rpc('vt_order_status', { p_token: S.token, p_code: it.c });
+      const o = r.order, st = o?.status;
+      if (st === 'paid') {
+        // Trả quá 6 ngày thì Meta không nhận nữa: chỉ đánh dấu, không gửi
+        if (o.paid_at && Date.now() - new Date(o.paid_at) > PAY_DAYS * 86400000) paySave(payLoad().map(x => (x.c === it.c ? { ...x, d: 1 } : x)));
+        else firePurchase(o, r.profile?.login || S.profile?.login);
+      } else if (st && st !== 'pending') {
+        paySave(payLoad().filter(x => x.c !== it.c)); // đơn huỷ / hết hạn: bỏ
+      }
+    } catch (e) {
+      if (e.hint === 'AUTH') return;
+    }
+  }
+}
+
 let checking = false;
 async function checkPaid(order) {
   if (checking || S.order?.code !== order.code) return;
@@ -541,7 +594,7 @@ async function checkPaid(order) {
         : `Đã nhận ${money(order.amount)}. Tài khoản hiện có ${p.credits} lượt.`;
       payView('done');
       toast('Thanh toán thành công, đã cộng lượt.', 4000);
-      track('purchase', { value: order.amount, id: order.package_id, login: S.profile?.login });
+      firePurchase(order, S.profile?.login);
     }
   } catch { /* thử lại ở vòng sau */ }
   finally { checking = false; }

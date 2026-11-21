@@ -180,7 +180,9 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
 - Kiểm tra CAPI: đặt `META_TEST_CODE`, `curl -X POST https://vitristudio.com/api/capi -H 'content-type: application/json' -d '{"event":"ViewContent","event_id":"kiemtra.1"}'`, xem tab *Thử nghiệm sự kiện*; xong xoá `META_TEST_CODE`.
 - KHÔNG bật "Sự kiện tự động" (AI của Meta) và không dùng "Công cụ thiết lập sự kiện" của Meta — gây đếm trùng/sai sự kiện.
 - Tài khoản Facebook của Giang từng bị khoá khi đổi quyền tập dữ liệu nhiều lần liền: không hướng dẫn thao tác quyền dồn dập; mỗi thao tác nhạy cảm làm một lần, trên thiết bị quen.
-- Việc còn treo: Purchase chỉ có nguồn Trình duyệt cho tới khi có `META_CAPI_TOKEN`. Purchase thực tế xảy ra ở webhook SePay — nếu sau này cần chắc chắn 100%, gửi CAPI Purchase từ `lib/sepay.js` (cần `vt_payment_in` trả thêm login của khách + lưu `_fbp/_fbc` lúc tạo đơn).
+- 21/11/2026: tập dữ liệu "vitristudio" ĐÃ nhận sự kiện Máy chủ (CAPI) từ 25/10 → `META_CAPI_TOKEN` đã đặt (ghi chú "chưa có" ở mục 1 là cũ). Đã kiểm: Pixel + CAPI cùng `event_id`, Purchase có `value` + `currency: 'VND'` (giá trị đơn thật `order.amount`).
+- 21/11/2026 bù Purchase bị lỡ (`payRemember` / `payReconcile` / `firePurchase` trong js/account.js): đơn tạo trên máy được nhớ ở `localStorage['vitri.payTrack.v1']` (6 ngày); mở app / quay lại trang thì hỏi `vt_order_status` (chỉ đọc, tối đa 1 lần/phút), đơn đã trả mà chưa báo → bắn Purchase với `event_id` cố định `purchase.<mã đơn>` (đường poll cũ cũng dùng id này) → mỗi đơn 1 Purchase. Lý do: 25/10–19/11 có 47 đơn trả nhưng Meta chỉ nhận 32 Purchase (khách chuyển khoản xong tắt trang). Khách không quay lại máy đó thì vẫn lỡ.
+- Việc còn treo: muốn chắc 100% thì gửi CAPI Purchase từ webhook SePay. Purchase thực tế xảy ra ở webhook SePay — nếu sau này cần chắc chắn 100%, gửi CAPI Purchase từ `lib/sepay.js` (cần `vt_payment_in` trả thêm login của khách + lưu `_fbp/_fbc` lúc tạo đơn).
 
 ---
 
