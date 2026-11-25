@@ -849,7 +849,7 @@ function renderBoard() {
   syncTone();
   $('full').checked = !!story.full;
   $('globe').checked = !!story.globe;
-  $('priceEnd').checked = !!story.priceEnd;
+  $('priceEnd').checked = !!story.priceEnd; $('kindOn').checked = story.showKind !== false; $('capOn').checked = story.captions !== false;
   $('flow').value = story.flow;
   $('labelStyle').value = story.labelStyle;
   $('ctaMode').value = story.ctaMode;
@@ -1564,7 +1564,30 @@ $('coord').addEventListener('keydown', e => { if (e.key === 'Enter') step1(); })
 $('listing').addEventListener('input', onListing);
 $('brand').addEventListener('change', save);
 $('editInfo').onclick = () => { const f = $('infoform'); f.hidden = !f.hidden; if (!f.hidden) renderInfoForm(); };
-$('go2').onclick = runAgent;
+$('kindOn').onchange = () => { S.edits.showKind = $('kindOn').checked ? undefined : false; edited(); };
+$('capOn').onchange = () => { S.edits.captions = $('capOn').checked ? undefined : false; edited(); };
+// 25/11 (Giang): bấm "Agent dựng video" → hỏi trắc nghiệm trước (AI hiểu gì, chữ loại sản phẩm, phụ đề, lúc nói giá) rồi mới dựng
+const OPT_ON = { showKind: () => S.edits.showKind !== false, captions: () => S.edits.captions !== false, priceEnd: () => S.edits.priceEnd !== false };
+function paintConfirm() {
+  document.querySelectorAll('#confirm .opt').forEach(o => { const on = OPT_ON[o.dataset.k](); o.querySelectorAll('button').forEach(b => b.classList.toggle('on', (b.dataset.v === '1') === on)); });
+  const L = S.listing || { kind: 'nhapho' };
+  $('confirmChips').textContent = '';
+  summaryChips(L).forEach((c, i) => { const s = document.createElement('span'); s.textContent = c; if (!i) s.className = 'kind'; $('confirmChips').append(s); });
+  $('kindEg').textContent = `(vd "${(KINDS[L.kind]?.label || 'Nhà phố').toUpperCase()}")`;
+}
+function askConfirm() {
+  if (!S.house) { goStep(1); return; }
+  if (!S.listing) S.listing = { kind: 'nhapho' };
+  paintConfirm(); $('confirm').hidden = false; funnel('dd_hoi');
+}
+document.querySelectorAll('#confirm .opt button').forEach(b => b.onclick = () => {
+  const k = b.closest('.opt').dataset.k, v = b.dataset.v === '1';
+  S.edits[k] = v ? undefined : false; save(); paintConfirm();
+});
+$('confirmX').onclick = () => { $('confirm').hidden = true; };
+$('confirmEdit').onclick = () => { $('confirm').hidden = true; const f = $('infoform'); f.hidden = false; renderInfoForm(); f.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
+$('confirmGo').onclick = () => { $('confirm').hidden = true; runAgent(); };
+$('go2').onclick = askConfirm;
 $('play').onclick = play;
 $('cv').onclick = () => playing ? stop() : play();
 $('bird').onchange = edited;

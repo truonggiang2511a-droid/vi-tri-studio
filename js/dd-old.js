@@ -102,7 +102,7 @@ export function createHybrid({ width, height, story, src, voiceOf, lite = false 
     const arr = ph.vkey && texts[ph.vkey];
     if (!arr || ph.t0 < T0 - 1e-6) continue;
     let at = ph.t0 + 0.3;
-    for (const h of arr) { capGroups.push({ t1: ph.t1, chunks: capChunks(h, at, durOf(h)) }); at += durOf(h) + GAP; }
+    for (const h of arr) { capGroups.push({ t1: ph.t1, chunks: story.captions === false ? [] : capChunks(h, at, durOf(h)) }); at += durOf(h) + GAP; }
   }
   const capAt = to => {
     let g = null, c = null;

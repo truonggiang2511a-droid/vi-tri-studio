@@ -267,7 +267,7 @@ export function buildTimeline(story) {
     const say = buf ? buf.duration : story.paceByText ? est(textOf(kind, extra.i)) : 0;
     const dur = Math.max(min, say ? at + say + TAIL : 0);
     // phụ đề: cắt lời thành cụm ngắn (~3 từ có nghĩa), mỗi cụm hiện đúng lúc giọng đọc tới
-    const caps = capChunks(textOf(kind, extra.i), t + at, say || Math.max(1, dur - at - TAIL));
+    const caps = story.captions === false ? [] : capChunks(textOf(kind, extra.i), t + at, say || Math.max(1, dur - at - TAIL));
     scenes.push({ kind, t0: t, t1: t + dur, vo: buf ? { t: t + at, buffer: buf } : null, caps, ...extra });
     t += dur;
   };
@@ -1836,10 +1836,10 @@ export function createDirector3D({ width, height, story, overlay = null, lite = 
     ctx.save(); ctx.globalAlpha = A * (story.photos?.length ? 0.32 : 0.42); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, width, height); ctx.restore();
     const band0 = SAFE.x * width + 8 * k, band1 = width - SAFE.r * width - 8 * k, maxW = band1 - band0;
     const boxes = [
-      { txt: C.title, size: 21, bg: '#FFFFFF', ink: '#111111', w: 900 },
+      C.title && { txt: C.title, size: 21, bg: '#FFFFFF', ink: '#111111', w: 900 },
       C.ward && { txt: C.ward, size: 21, bg: C.color, ink: '#FFFFFF', w: 900 },
       { txt: C.label, size: 14, bg: 'rgba(12,12,12,.88)', ink: '#FFD54A', w: 900, gapTop: 10 },
-      { txt: C.big, size: 56, bg: C.color, ink: '#FFFFFF', w: 900, big: true },
+      C.big && { txt: C.big, size: 56, bg: C.color, ink: '#FFFFFF', w: 900, big: true },
       // lợi ích mạnh nhất (số liệu quét thật) — khung vàng chữ đen, nổi ngay dưới giá
       C.hook && { txt: '📍 ' + C.hook.toUpperCase(), size: 19, bg: '#FFD54A', ink: '#111111', w: 900, gapTop: 10 },
       ...C.lines.slice(0, C.hook ? 1 : 2).map((l, j) => ({ txt: l, size: 16, bg: 'rgba(12,12,12,.72)', ink: '#FFFFFF', w: 700, body: true, gapTop: j ? 4 : 10 })),

@@ -70,6 +70,21 @@
     </label>
     <div class="scan" id="scanState" role="status"></div>
     <button class="cta gold" id="go2">🎬 Agent dựng video</button>
+    <!-- 25/11: hỏi trắc nghiệm trước khi Agent dựng — AI nói đã hiểu gì, khách chọn các tuỳ chọn rồi mới dựng -->
+    <div class="sheet" id="confirm" hidden>
+      <div class="sheet-in" role="dialog" aria-modal="true" aria-label="Xác nhận trước khi dựng">
+        <div class="sheet-top"><b>🤖 AI hiểu như sau — đúng ý chưa?</b><button class="x" id="confirmX" aria-label="Đóng">✕</button></div>
+        <div class="chips" id="confirmChips"></div>
+        <div class="qz"><b>Chữ loại sản phẩm trên thẻ đầu &amp; ảnh bìa <small id="kindEg"></small></b>
+          <div class="opt" data-k="showKind"><button type="button" data-v="1">Hiện</button><button type="button" data-v="0">Ẩn</button></div></div>
+        <div class="qz"><b>Phụ đề chạy theo lời đọc</b>
+          <div class="opt" data-k="captions"><button type="button" data-v="1">Bật</button><button type="button" data-v="0">Tắt</button></div></div>
+        <div class="qz"><b>Nói giá lúc nào?</b>
+          <div class="opt" data-k="priceEnd"><button type="button" data-v="1">Cuối video</button><button type="button" data-v="0">Ngay từ đầu</button></div></div>
+        <p class="tip">Số điện thoại trong tin đăng không bao giờ lên video. Muốn sửa giá, loại, kích thước… bấm “Sửa thông tin”.</p>
+        <div class="row2"><button class="btn2" id="confirmEdit" type="button">✏️ Sửa thông tin</button><button class="cta gold" id="confirmGo" type="button">✅ Đúng rồi, dựng video</button></div>
+      </div>
+    </div>
   </section>
 
   <!-- Bước 3: Agent dựng + bảng phân cảnh -->
@@ -125,6 +140,8 @@
           <div class="meta">
             <label class="tog"><input type="checkbox" id="full"> Bản đầy đủ <small>(YouTube, Zalo · nhiều tiện ích hơn, dài hơn)</small></label>
             <label class="tog"><input type="checkbox" id="globe" checked> Mở đầu từ quả địa cầu <small>(bay từ trái đất xuống tỉnh, thêm ~4 giây)</small></label>
+            <label class="tog"><input type="checkbox" id="kindOn" checked> Chữ loại sản phẩm <small>(vd "NHÀ PHỐ" trên thẻ đầu, ảnh bìa)</small></label>
+            <label class="tog"><input type="checkbox" id="capOn" checked> Phụ đề <small>(chữ chạy theo lời đọc)</small></label>
             <label class="tog"><input type="checkbox" id="priceEnd" checked> Giá để cuối video <small>(khách tò mò xem hết · ảnh bìa ghi "XEM CUỐI VIDEO")</small></label>
           </div>
           <div class="meta">

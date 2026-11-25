@@ -247,6 +247,9 @@ export function buildStory(S, L, buyer, edits = {}) {
   // 16/11 (Giang): "cho giá xuống cuối CTA để khách tò mò xem hết video" — mặc định KHÔNG nói giá / đơn giá ở mở đầu và đoạn căn nhà
   // (công tắc "Giá để cuối video" trong Sửa video, edits.priceEnd = false để nói giá sớm như trước); giá chỉ có ở cảnh kêu gọi cuối
   const priceEnd = edits.priceEnd !== false;
+  // 25/11 (Giang): chữ loại sản phẩm tự điền (vd "NHÀ PHỐ") và phụ đề là TUỲ CHỌN của khách (hỏi trước khi Agent dựng)
+  const showKind = edits.showKind !== false, captions = edits.captions !== false;
+  const kindTxt = showKind ? KINDS[kind].label : '';
   const P = L.price && !priceEnd ? `<b>${L.price}</b>` : '', ppm = priceEnd ? '' : ppmOf(L.price, L.area), PPM = ppm ? `<b>${ppm}</b>` : '';
   const legal = L.legal ? L.legal.toLowerCase() : '', legalOk = /sổ\s*(hồng|đỏ)/i.test(L.legal || '');
   const kcnD = kcn && (mins(kcn) ? `<b>${mins(kcn)} phút</b>` : `<b>${km(kcn.km)}</b>`);
@@ -571,7 +574,7 @@ export function buildStory(S, L, buyer, edits = {}) {
 
   return {
     kind, buyer, persona: `${KINDS[kind].label} · ${BUYERS[buyer].label}`,
-    house: H, info: { price: (!priceEnd && L.price) || KINDS[kind].label, chips: infoChips(L) }, footprint, lot,
+    house: H, info: { price: (!priceEnd && L.price) || kindTxt || L.dims || (L.area ? `${fmtNum(L.area)} m²` : ''), chips: infoChips(L) }, footprint, lot,
     // 16/11: cảnh kết = ảnh đẹp nhất của căn làm nền (nhà phố / biệt thự / nhà vườn: ảnh đầu = mặt tiền; đất, căn hộ: ảnh máy chấm điểm cao nhất;
     // khách bấm ★ để chọn) + thẻ tổng kết + GIÁ (số chạy) + nút kêu gọi
     priceEnd, price: L.price || '', hero: heroOf(kind, edits),
@@ -586,18 +589,18 @@ export function buildStory(S, L, buyer, edits = {}) {
     globe: edits.globe !== false,
     labelStyle: ['trang', 'kinh', 'mau'].includes(edits.labelStyle) ? edits.labelStyle : 'trang', ctaSub: `để nhận thông tin chi tiết về sản phẩm`, ctaLong: `${ctaAsk} nhận thông tin`,
     style: styleOf(kind, buyer), bird: !!edits.bird,
-    watermark: edits.watermark || '',
+    watermark: edits.watermark || '', showKind, captions,
     // bản ngắn: tối đa 5 ảnh thực tế cuối video
     photos: (edits.photos || []).slice(0, full ? 99 : 4), roads, zones: [...zones, ...airportZone(S, infra, anchors), ...landmarkZones(S, anchors, zones)], build,
     // Ảnh bìa (mẫu Giang chọn 11/11): tên căn/dự án, phường, GIÁ BÁN to, 2 dòng phụ — chữ lấy đúng từ tin đăng; màu tự đổi theo căn
     cover: {
       // tin không có giá: ô to ghi diện tích (hoặc tỉnh/thành), không lặp loại nhà / phường đã có ở ô trên
       // tên đã có phường/xã thì bỏ phần đó (phường/xã đã có ô riêng ngay dưới)
-      title: (stripPlace(L.title || KINDS[kind].label, place) || L.title || KINDS[kind].label).toUpperCase(),
+      title: (stripPlace(L.title || kindTxt, place) || L.title || kindTxt).toUpperCase(),
       ward: (place || L.province || '').toUpperCase(),
       label: L.price ? 'GIÁ BÁN' : (L.dims || L.area) ? 'DIỆN TÍCH' : 'KHU VỰC',
       // giá để cuối video: ô to ghi "XEM CUỐI VIDEO" (khách tò mò xem hết)
-      big: (L.price && priceEnd ? 'XEM CUỐI VIDEO' : L.price || L.dims || (L.area && `${fmtNum(L.area)} m²`) || (L.province && L.province !== place ? L.province : '') || KINDS[kind].label).toUpperCase(),
+      big: (L.price && priceEnd ? 'XEM CUỐI VIDEO' : L.price || L.dims || (L.area && `${fmtNum(L.area)} m²`) || (L.province && L.province !== place ? L.province : '') || kindTxt).toUpperCase(),
       // 15/11: dòng lợi ích mạnh nhất ngay khung đầu (vd "300 m tới trường mầm non", "25 phút về trung tâm") — số liệu quét thật
       hook: buyer === 'vung' && center ? `${center.min} phút về trung tâm` : buyer === 'thue' && kcn ? `${mins(kcn) ? mins(kcn) + ' phút' : km(kcn.km)} tới ${zoneName(kcn.name)}`
         : p0 ? `${p0.km >= 1 && mins(p0) ? mins(p0) + ' phút' : km(p0.km)} tới ${p0name}` : center ? `${center.min} phút về trung tâm` : '',
