@@ -13,7 +13,7 @@ import { parseCoordText, checkPolygon, convertLot, MERIDIANS, fmtMeridian } from
 import { decodeAudioFile, mixAudio, preloadTiles, loadTilesAt, exportMp4, exportRealtime, canEncodeMp4, unlockAudioContext } from './export.js';
 import { MOTION } from './motion.js';
 import { processPlan, FULL_QUAD, planNeedsAlpha } from './planimg.js';
-import { onAccountChange, initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount, buyCardSeen } from './account.js';
+import { onAccountChange, initAccount, setAccountLocation, beginExport, exportOk, exportFail, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount, buyCardSeen } from './account.js';
 import { splitVoice, joinForTts, splitAt } from './voicesplit.js';
 import { loadConfig, initTracking, countVisit, funnel } from './track.js';
 import { xuatStart, xuatCheckCrash } from './xuatlog.js';
@@ -3418,6 +3418,7 @@ async function doExport() {
   finally { gating = false; $('exportBtn').disabled = false; $('stepNext').disabled = false; }
   if (!gate) return;
   if (gate.charged) toast(`Đã trừ 1 lượt, còn ${gate.profile.credits} lượt. Căn này còn ${gate.redo?.exports_left ?? 2} lần xuất lại không trừ lượt.`, 4500);
+  else if (gate.pending && gate.mode !== 'reexport') toast('Đang xuất video. Lượt chỉ tính khi video xuất xong; lỗi hoặc huỷ thì không mất lượt.', 4500);
   else if (gate.mode === 'reexport' && gate.redo) toast(`Xuất lại không trừ lượt. Căn này còn ${gate.redo.exports_left} lần xuất lại.`, 3500);
   pause();
   toggleEdit(false);
@@ -3428,7 +3429,7 @@ async function doExport() {
   $('exportBtn').disabled = true; $('stepNext').disabled = true;
   $('exportBox').hidden = false;
   $('resultBox').hidden = true;
-  let wake = null, xlog = null;
+  let wake = null, xlog = null, committed = false;
   try { wake = await navigator.wakeLock?.request('screen'); } catch { /* không bắt buộc */ }
   try {
     const xsc = buildScene();
@@ -3491,6 +3492,10 @@ async function doExport() {
     $('resultVideo').src = resultUrl;
     $('resultBox').hidden = false;
     exportedOnce = true; updateQuick();
+    // Video đã có file → mới tính lượt (kiểu mới); kiểu cũ đã trừ lúc bấm nên exportOk trả null
+    const dn = await exportOk(gate);
+    committed = true;
+    const chargeMsg = dn?.charged ? `Đã trừ 1 lượt, còn ${dn.profile?.credits ?? 0} lượt. ` : '';
     $('resultMeta').textContent = `${width}×${height} · ${Math.round(xtl.duration)} giây · ${(blob.size / 1048576).toFixed(1)} MB · ${ext.toUpperCase()}`;
     $('shareBtn').hidden = !(navigator.canShare && navigator.canShare({ files: [resultFile] }));
     // Ảnh bìa đi kèm video (thẻ mở đầu của phong cách, cùng cỡ video). Lỗi ảnh bìa không được làm hỏng video đã xuất.
@@ -3503,11 +3508,13 @@ async function doExport() {
     funnel('xuat_xong');
     buyCardSeen();
     xlog?.done();
-    if (account.profile && await saveProject({ silent: true })) toast(`Đã dựng xong video${coverFile ? ' và ảnh bìa' : ''}. Căn này đã lưu vào mục Căn đã lưu.`, 4000);
-    else toast(coverFile ? 'Đã dựng xong video và ảnh bìa (nút "Lưu ảnh bìa" ngay dưới video).' : 'Đã dựng xong video.', 4000);
+    if (account.profile && await saveProject({ silent: true })) toast(`${chargeMsg}Đã dựng xong video${coverFile ? ' và ảnh bìa' : ''}. Căn này đã lưu vào mục Căn đã lưu.`, 4500);
+    else toast(chargeMsg + (coverFile ? 'Đã dựng xong video và ảnh bìa (nút "Lưu ảnh bìa" ngay dưới video).' : 'Đã dựng xong video.'), 4500);
     $('resultBox').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (e) {
-    const keep = gate?.charged || gate?.mode === 'unlimited' ? ` Lượt đã trừ vẫn giữ: căn này còn ${gate.redo?.exports_left ?? 0} lần xuất lại không trừ lượt.` : '';
+    if (!committed) exportFail(gate);   // chưa có video thành phẩm → không tính lượt
+    const keep = gate?.charged || gate?.mode === 'unlimited' && !gate?.pending ? ` Lượt đã trừ vẫn giữ: căn này còn ${gate.redo?.exports_left ?? 0} lần xuất lại không trừ lượt.`
+      : gate?.pending && !committed && gate.mode !== 'reexport' ? ' Lượt chưa bị trừ.' : '';
     if (e.name === 'AbortError') toast('Đã huỷ xuất video.' + keep, keep ? 5000 : 2600);
     else { console.error(e); funnel('xuat_loi'); lastIssue = 'Xuất video lỗi: ' + (e.message || e); toast('Xuất video lỗi: ' + (e.message || e) + keep + ' Bấm Hỗ trợ (Zalo) để nhắn Giang.', 8000); pulseSupport(); }
   } finally {
