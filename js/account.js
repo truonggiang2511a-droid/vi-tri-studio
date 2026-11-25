@@ -117,6 +117,7 @@ export async function refreshAccount() {
     S.promo = r.promo && r.promo.percent > 0 && new Date(r.promo.until) > Date.now() ? r.promo : null;
     if (r.pending) { S.order = S.order?.code === r.pending.code ? S.order : { ...r.pending }; payRemember(r.pending); }
     payReconcile();
+    flushExports();   // lượt xuất đã xong / đã huỷ mà chưa báo được máy chủ (mạng đứt, tắt trang) → gửi lại
   } catch (e) {
     if (e.hint === 'AUTH' || e.hint === 'LOCKED') clearSession();
   }
@@ -329,7 +330,71 @@ async function submitAuth(e) {
   }
 }
 
-// ---------- Xuất video: trừ lượt trên máy chủ ----------
+// ---------- Xuất video: lượt CHỈ tính khi video xuất XONG (25/11, Giang duyệt) ----------
+// Máy chủ (vt_export_start) chỉ kiểm tra + giữ chỗ; xuất xong app báo vt_export_done mới trừ 1 lượt (đã gồm giọng đọc);
+// lỗi / huỷ / văng trang thì báo vt_export_abort, không mất lượt. Công tắc vt_config.charge_mode ở máy chủ: 'off' = y như cũ
+// (vt_export_start tự chạy hàm cũ, trả legacy: true). Chưa có hàm mới trên máy chủ → dùng vt_export_begin như trước.
+const PEND_KEY = 'vitri.exportDone.v1';   // danh sách lượt xuất chưa báo xong lên máy chủ: [{id, st: 'run'|'done'|'abort', t}]
+const liveIds = new Set();               // lượt xuất đang chạy ở trang này
+const pendGet = () => { try { const a = JSON.parse(localStorage.getItem(PEND_KEY) || '[]'); return Array.isArray(a) ? a : []; } catch { return []; } };
+const pendSet = a => { try { if (a.length) localStorage.setItem(PEND_KEY, JSON.stringify(a.slice(-20))); else localStorage.removeItem(PEND_KEY); } catch { /* bỏ qua */ } };
+const pendDrop = id => pendSet(pendGet().filter(e => e.id !== id));
+function pendMark(id, st) {
+  const a = pendGet(), x = a.find(e => e.id === id);
+  if (x) { if (x.st === 'done') return; x.st = st; x.t = Date.now(); } else a.push({ id, st, t: Date.now() });
+  pendSet(a);
+}
+// Tab khác đang xuất (dấu nhịp của xuatlog.js còn mới) → không huỷ lượt đang chạy của tab đó
+function otherTabExporting() {
+  try { const r = JSON.parse(localStorage.getItem('vitri.xuatDang') || 'null'); return !!r && Date.now() - (r.beat || r.t || 0) < 15000; } catch { return false; }
+}
+async function settleExport(id) {
+  const e = pendGet().find(x => x.id === id);
+  if (!e || !S.token) return null;
+  try {
+    if (e.st === 'done') {
+      const r = await rpc('vt_export_done', { p_token: S.token, p_id: id });
+      pendDrop(id);
+      if (r?.profile) { S.profile = r.profile; if (r.redo) S.redo = r.redo; if (r.until) S.reexportUntil = r.until; emit(); }
+      return r;
+    }
+    await rpc('vt_export_abort', { p_token: S.token, p_id: id });
+    pendDrop(id);
+  } catch { if (Date.now() - e.t > 3 * 86400000) pendDrop(id); /* mạng lỗi / chưa đăng nhập: giữ lại, gửi lần sau */ }
+  return null;
+}
+let flushing = false;
+export async function flushExports() {
+  if (flushing || !S.token) return;
+  flushing = true;
+  try {
+    const other = otherTabExporting();
+    for (const e of pendGet()) {
+      if (e.st === 'run') {
+        if (liveIds.has(e.id) || (other && Date.now() - e.t < 30 * 60000)) continue;
+        pendMark(e.id, 'abort');   // văng / tắt trang giữa chừng: không có video → không tính lượt
+      }
+      await settleExport(e.id);
+    }
+  } finally { flushing = false; }
+}
+// Xuất xong → tính lượt. Trả kết quả máy chủ ({charged, profile…}) hoặc null (kiểu cũ / chưa gửi được, sẽ gửi lại sau)
+export async function exportOk(gate) {
+  const id = gate?.export_id;
+  if (!id) return null;
+  liveIds.delete(id);
+  pendMark(id, 'done');
+  return Promise.race([settleExport(id), new Promise(r => setTimeout(() => r(null), 6000))]);
+}
+// Xuất lỗi / huỷ → bỏ giữ chỗ, không tính lượt
+export function exportFail(gate) {
+  const id = gate?.export_id;
+  if (!id) return;
+  liveIds.delete(id);
+  pendMark(id, 'abort');
+  settleExport(id);
+}
+
 export async function beginExport(loc) {
   if (!S.profile) {
     const ok = await requireLogin(`Đăng ký miễn phí để xuất video. Tài khoản mới được tặng ${S.info?.trial_credits ?? 3} video.`);
@@ -337,7 +402,13 @@ export async function beginExport(loc) {
   }
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const r = await rpc('vt_export_begin', { p_token: S.token, p_lat: loc.lat, p_lng: loc.lng });
+      const args = { p_token: S.token, p_lat: loc.lat, p_lng: loc.lng };
+      let r;
+      try { r = await rpc('vt_export_start', args); }
+      catch (e) {
+        if (/Could not find the function|vt_export_start/i.test(e.message || '')) r = await rpc('vt_export_begin', args);   // máy chủ chưa có bản mới
+        else throw e;
+      }
       S.profile = r.profile;
       if (!r.ok) {
         emit();
@@ -348,7 +419,8 @@ export async function beginExport(loc) {
       S.reexportUntil = r.until;
       S.redo = r.redo || null;
       emit();
-      if (r.charged || r.mode === 'unlimited') track('export');
+      if (r.export_id) { liveIds.add(r.export_id); pendMark(r.export_id, 'run'); }
+      if (r.charged || r.would_charge || r.mode === 'unlimited') track('export');   // thời điểm bắn sự kiện giữ như cũ
       return r;
     } catch (e) {
       if ((e.hint === 'AUTH') && attempt === 0) {
@@ -364,7 +436,6 @@ export async function beginExport(loc) {
   return null;
 }
 
-// Lỗi từ /api/tts, /api/script: mở đúng hộp thoại. Trả về true nếu đã xử lý.
 export async function handleAiError(status, j) {
   if (status === 401 || j?.code === 'AUTH') {
     clearSession();
