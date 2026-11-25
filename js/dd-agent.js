@@ -176,7 +176,7 @@ export function buildStory(S, L, buyer, edits = {}) {
   if (kind === 'datnen' || kind === 'nhavuon') {
     lot = { ring: rectM(H, w, l, front), label: `${KINDS[kind].label} ${L.dims || (L.area ? fmtNum(L.area) + ' m²' : '')}`.trim(),
       chips: [L.area && `${fmtNum(L.area)} m²`, L.w && `Mặt tiền ${fmtNum(L.w)} m`, L.thoCu, L.legal].filter(Boolean).slice(0, 3), green: kind === 'nhavuon' };
-  } else if (kind !== 'canho') {
+  } else if (kind !== 'canho' && kind !== 'duan') {
     footprint = { ring: rectM(H, w, l, front), height: Math.min(30, 3.6 * floorsN + 1) };
   }
 
@@ -233,8 +233,8 @@ export function buildStory(S, L, buyer, edits = {}) {
   // hạ tầng đang thi công (đường / cao tốc OSM + metro đang xây — METRO_BUILD) trong 5 km: luôn vào video (15/11, Giang: bị thiếu)
   const build = (S.build || []).filter(b => b.nearKm <= 5 && !(edits.buildOff || []).includes(b.id)).slice(0, 2).map(b => ({
     id: b.id, name: b.label, km: b.nearKm, station: b.metro?.station || '', ways: b.ways.map(w => w.map(([la, ln]) => [ln, la])).filter(w => w.length > 1) })).filter(b => b.ways.length);
-  const kwFull = { nhapho: 'căn nhà', bietthu: 'căn biệt thự', nhavuon: 'căn nhà vườn', canho: 'căn hộ', datnen: 'lô đất' }[kind];
-  const kw = { nhapho: 'nhà', bietthu: 'biệt thự', nhavuon: 'nhà vườn', canho: 'căn hộ', datnen: 'lô đất' }[kind];
+  const kwFull = { duan: 'dự án', nhapho: 'căn nhà', bietthu: 'căn biệt thự', nhavuon: 'căn nhà vườn', canho: 'căn hộ', datnen: 'lô đất' }[kind];
+  const kw = { duan: 'dự án', nhapho: 'nhà', bietthu: 'biệt thự', nhavuon: 'nhà vườn', canho: 'căn hộ', datnen: 'lô đất' }[kind];
   const p0 = pois[0], center = anchors.find(a => a.type === 'center') || (S.anchors || []).find(a => a.type === 'center');
   const kcn = pois.find(p => p.cat === 'kcn');
   // ---- Lời Agent (chưa bấm AI viết) theo LOẠI KHÁCH × PHONG CÁCH (15/11, Giang: đánh trúng nỗi lo khách để tăng chuyển đổi) ----
@@ -541,7 +541,7 @@ export function buildStory(S, L, buyer, edits = {}) {
     : `${j === (roadFront ? 1 : 0) ? 'Từ nhà ra' : 'Ra'} <b>${r.name}</b> ${j === (roadFront ? 1 : 0) ? 'chỉ khoảng' : 'khoảng'} <b>${r.min} phút</b>${roadWhy(r)}.`);
   // tổng kết (vòng 9, Giang: đoạn kết có thẻ 3 con số lớn): đọc đúng 3 con số trên thẻ; không đủ số liệu thì câu kiểu app cũ
   const summaryLine = reasonLine ? reasonLine : sumLine ? sumLine : buyer === 'thue' ? `Tất cả chỉ trong bán kính <b>${fmtNum(oldR)} km</b>, ở tiện, đi làm đi học đều gần.`
-    : `Tất cả chỉ trong bán kính <b>${fmtNum(oldR)} km</b> quanh ${kind === 'canho' ? 'căn hộ' : 'nhà'}, sống tiện, đi lại dễ.`;
+    : `Tất cả chỉ trong bán kính <b>${fmtNum(oldR)} km</b> quanh ${kind === 'canho' ? 'căn hộ' : kind === 'duan' ? 'dự án' : 'nhà'}, sống tiện, đi lại dễ.`;
   const lines = {
     intro, overview: overviewLine, rd: rdLines, summary: summaryLine,
     radar: radarLine, house: houseLine ? cap(houseLine) : '', lot: lotLine ? cap(lotLine) : '',
@@ -645,10 +645,10 @@ function ppmOf(price, area) {
   const v = tr / area;
   return `${fmtNum(v >= 10 ? Math.round(v) : Math.round(v * 10) / 10)} triệu/m²`;
 }
-const kwOf = kind => ({ nhapho: 'căn nhà', bietthu: 'căn biệt thự', nhavuon: 'căn nhà vườn', canho: 'căn hộ', datnen: 'lô đất' }[kind] || 'căn nhà');
+const kwOf = kind => ({ duan: 'dự án', nhapho: 'căn nhà', bietthu: 'căn biệt thự', nhavuon: 'căn nhà vườn', canho: 'căn hộ', datnen: 'lô đất' }[kind] || 'căn nhà');
 // Từ khoá kêu gọi mặc định theo loại (khách sửa được)
 export const ctaKeyOf = kind => CTA_KEY[kind] || 'XEM NHÀ';
-const CTA_KEY = { nhapho: 'XEM NHÀ', bietthu: 'XEM BIỆT THỰ', nhavuon: 'XEM NHÀ VƯỜN', canho: 'XEM CĂN HỘ', datnen: 'XEM ĐẤT' };
+const CTA_KEY = { duan: 'XEM DỰ ÁN', nhapho: 'XEM NHÀ', bietthu: 'XEM BIỆT THỰ', nhavuon: 'XEM NHÀ VƯỜN', canho: 'XEM CĂN HỘ', datnen: 'XEM ĐẤT' };
 // tên loại ngắn để đọc gộp ("trường mầm non", "chợ", "bệnh viện") — tên riêng đầy đủ đã hiện trên nhãn bản đồ
 function catWord(p) {
   const n = p.name || '';

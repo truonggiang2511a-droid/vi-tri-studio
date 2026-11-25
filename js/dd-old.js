@@ -18,7 +18,7 @@ const FMT = 'v', LW = FORMATS[FMT].LW;
 const XF = 0.45;      // giây hoà hình ở chỗ nối (= HOLD cuối vòng lượn trong dd3d.js)
 const GAP = 0.18;     // nghỉ giữa các câu đọc liền nhau trong cùng một cảnh app cũ (kết nối vùng có nhiều điểm mốc)
 const PHONE_GRADE = 'contrast(1.07) saturate(1.14) brightness(1.01)';   // như bản xuất app cũ (export.js)
-const LABEL = { nhapho: 'VỊ TRÍ CĂN NHÀ', bietthu: 'VỊ TRÍ BIỆT THỰ', nhavuon: 'VỊ TRÍ NHÀ VƯỜN', canho: 'VỊ TRÍ CĂN HỘ', datnen: 'VỊ TRÍ LÔ ĐẤT' };
+const LABEL = { nhapho: 'VỊ TRÍ CĂN NHÀ', bietthu: 'VỊ TRÍ BIỆT THỰ', nhavuon: 'VỊ TRÍ NHÀ VƯỜN', canho: 'VỊ TRÍ CĂN HỘ', datnen: 'VỊ TRÍ LÔ ĐẤT', duan: 'VỊ TRÍ DỰ ÁN' };
 const plain = h => String(h || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 const est = h => { const n = plain(h).split(' ').filter(Boolean).length; return n ? n / 3.1 : 0; };   // ≈ 3,1 chữ/giây (như dd3d)
 const fmtN = v => String(Math.round(v * 10) / 10).replace('.', ',');
@@ -49,7 +49,7 @@ export function oldScene(src, story) {
     house: { lat: H.lat, lng: H.lng }, label: LABEL[kind] || LABEL.nhapho, rent: false, sub,
     title: 'Vị trí & tiện ích', brand: src.brand || '', phone: story.phone || '', logo: null, logoBg: null, avatar: null, avatarCut: false, wm: '',
     photos: (story.photos || []).filter(Boolean), photoLabels: (story.photos || []).map(() => ''), clips: [],
-    info: { price: L.price || '', area: L.dims || (L.area ? `${fmtN(L.area)} m²` : ''), thoCu: kind === 'canho' ? '' : L.thoCu || '',
+    info: { price: L.price || '', area: L.dims || (L.area ? `${fmtN(L.area)} m²` : ''), thoCu: kind === 'canho' || kind === 'duan' ? '' : L.thoCu || '',
       beds: kind === 'datnen' ? '' : L.beds ? String(L.beds) : '', legal: L.legal || '', floors: kind === 'datnen' ? '' : L.floors || '', roadWidth: '' },
     radiusKm: story.oldR || 2, speed: 'nhanh',
     pois, roads, iso: null, region: anchors.length || infra.length ? { anchors, infra } : null,
@@ -64,7 +64,7 @@ export function oldScene(src, story) {
     drawPin: (ctx, x, y, s, t, pitch, rings = true) => {
       const k = (540 / 405) * s;
       if (rings) goldRings(ctx, x, y, t, k, Math.max(0.35, Math.cos(pitch * Math.PI / 180)));
-      drawGoldPin(ctx, x, y, k, kind === 'datnen' || kind === 'nhavuon' ? 'pin' : kind === 'canho' ? 'city' : 'house');
+      drawGoldPin(ctx, x, y, k, kind === 'datnen' || kind === 'nhavuon' ? 'pin' : kind === 'canho' || kind === 'duan' ? 'city' : 'house');
     },
   };
 }

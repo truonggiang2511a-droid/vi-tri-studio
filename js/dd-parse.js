@@ -11,12 +11,18 @@ export const KINDS = {
   nhavuon: { label: 'Nhà vườn', icon: '🌳' },
   canho: { label: 'Căn hộ', icon: '🏢' },
   datnen: { label: 'Lô đất', icon: '📐' },
+  duan: { label: 'Dự án', icon: '🏗️' },
   nhapho: { label: 'Nhà phố', icon: '🏠' },
 };
 function kindOf(t) {
   if (/biệt\s*thự|villa/i.test(t)) return 'bietthu';
   if (/nhà\s*vườn|đất\s*vườn\s*có\s*nhà|homestay|farmstay/i.test(t)) return 'nhavuon';
   if (/căn\s*hộ|chung\s*cư|apartment|condotel|officetel|penthouse/i.test(t)) return 'canho';
+  // Dự án (khu đô thị, khu dân cư, nhà ở xã hội…): tin bắt đầu bằng "Dự án …" hoặc có ≥ 2 dấu hiệu của chủ đầu tư / mở bán
+  // (1 chữ "dự án" lẻ như "gần dự án Vinhomes" thì KHÔNG tính — tránh nhầm nhà phố cạnh dự án)
+  if (/^\s*(?:[^\n]{0,12})?dự\s*án\b/i.test(t) || (t.match(/dự\s*án|chủ\s*đầu\s*tư|mở\s*bán|bảng\s*hàng|chiết\s*khấu|booking|tiến\s*độ\s*thanh\s*toán/gi) || []).length >= 2) {
+    if (!/(\d\s*(tầng|lầu)|trệt|nhà\s*(phố|mặt\s*tiền|hẻm|cấp))/i.test(t)) return 'duan';
+  }
   // "đất" đứng đầu tin hoặc "lô đất / đất nền / đất thổ cư" mà không có số tầng, phòng ngủ → lô đất
   const land = /(lô\s*đất|đất\s*nền|nền\s*đất|đất\s*thổ\s*cư|bán\s*đất|đất\s*ở|đất\s*vườn|đất\s*nông\s*nghiệp)/i.test(t);
   const built = /(\d\s*(tầng|lầu)|trệt|phòng\s*ngủ|\bpn\b|wc|toilet|nhà\s*(phố|mặt\s*tiền|hẻm|cấp))/i.test(t);

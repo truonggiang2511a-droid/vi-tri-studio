@@ -618,7 +618,7 @@ export function createDirector3D({ width, height, story, overlay = null, lite = 
     omt: { type: 'vector', url: 'https://tiles.openfreemap.org/planet' },
     // khối căn nhà (theo kích thước trong tin) / lô đất; căn hộ không vẽ khối (ghim + vòng sáng)
     house: { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon',
-      coordinates: [story.lot ? story.lot.ring : story.footprint ? story.footprint.ring : story.kind === 'canho' ? rectM(H, 0.1, 0.1) : rectM(H, 5, 20)] } } },
+      coordinates: [story.lot ? story.lot.ring : story.footprint ? story.footprint.ring : story.kind === 'canho' || story.kind === 'duan' ? rectM(H, 0.1, 0.1) : rectM(H, 5, 20)] } } },
     train: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
   };
   const layers = [
@@ -992,7 +992,7 @@ export function createDirector3D({ width, height, story, overlay = null, lite = 
   }
   const sceneIdx = t => { const i = tl.scenes.findIndex(s => t < s.t1); return i < 0 ? tl.scenes.length - 1 : i; };
   const sceneAt = t => tl.scenes[sceneIdx(t)];
-  const houseH = t => (story.lot ? 2.2 : story.footprint ? story.footprint.height : story.kind === 'canho' ? 0 : 11) * easeOut(clamp01((t - PIN_T - 0.2) / 0.9));
+  const houseH = t => (story.lot ? 2.2 : story.footprint ? story.footprint.height : story.kind === 'canho' || story.kind === 'duan' ? 0 : 11) * easeOut(clamp01((t - PIN_T - 0.2) / 0.9));
   // 16/11 vòng 13: khối căn nhà / tấm lô chỉ hiện tới hết cảnh căn nhà (kể cả đoạn lùi ra trung cảnh), sang cảnh sau mờ dần 1 s;
   // kiểu ghép app cũ (OPEN): mờ hẳn trước chỗ nối vì phần vẽ kiểu app cũ không có khối
   const HS = tl.scenes.find(s => s.kind === 'house' || s.kind === 'lot');
@@ -1584,14 +1584,14 @@ export function createDirector3D({ width, height, story, overlay = null, lite = 
     const e = u <= 0 ? 1 : easeBounce(clamp01(u / 0.7));
     // vòng 13: ghim đứng trên MÁI khối căn nhà (chiều cao khối × điểm ảnh/mét theo phương ngang màn hình × sin góc nghiêng)
     let roof = 0;
-    if (!story.lot && story.kind !== 'canho') {
+    if (!story.lot && story.kind !== 'canho' && story.kind !== 'duan') {
       const hh = houseH(t) * houseVis(t);
       if (hh > 0.05) { const q = proj(offM(H, 20, map.getBearing() + 90)); roof = hh * Math.hypot(q[0] - x, q[1] - y) / 20 * Math.sin(map.getPitch() * Math.PI / 180); }
     }
     const lift = (u <= 0 ? 0 : (1 - e) * 90 * k) + roof;
     // bóng dưới chân ghim (trên mái khi có khối nhà)
     ctx.beginPath(); ctx.ellipse(x, y - roof + 1 * k, 11 * k, 4 * k, 0, 0, 7); ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fill();
-    goldPin(ctx, x, y - lift, (u <= 0 ? 0.8 : 1) * k, story.kind === 'datnen' || story.kind === 'nhavuon' ? 'pin' : story.kind === 'canho' ? 'city' : 'house');
+    goldPin(ctx, x, y - lift, (u <= 0 ? 0.8 : 1) * k, story.kind === 'datnen' || story.kind === 'nhavuon' ? 'pin' : story.kind === 'canho' || story.kind === 'duan' ? 'city' : 'house');
   }
   // Ghim nhỏ dưới chân nhãn tiện ích: chấm màu nhóm, viền vàng
   function poiPin(ctx, at, cat) {

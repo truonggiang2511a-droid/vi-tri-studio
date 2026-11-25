@@ -513,13 +513,13 @@ function setTone(v) {
   $('tone').value = v; S.edits.tone = v; save();
   if (story && !$('studio').hidden) edited(); else renderTones();
 }
-const BDS = { nhapho: ['Căn nhà', 'đi xem nhà'], bietthu: ['Biệt thự', 'đi xem biệt thự'], nhavuon: ['Nhà vườn', 'đi xem nhà vườn'], canho: ['Căn hộ', 'đi xem căn hộ'], datnen: ['Lô đất', 'đi xem lô đất'] };
+const BDS = { duan: ['Dự án', 'đi xem dự án'], nhapho: ['Căn nhà', 'đi xem nhà'], bietthu: ['Biệt thự', 'đi xem biệt thự'], nhavuon: ['Nhà vườn', 'đi xem nhà vườn'], canho: ['Căn hộ', 'đi xem căn hộ'], datnen: ['Lô đất', 'đi xem lô đất'] };
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 function aiPayload(st, L) {
   const [loai, xem] = BDS[st.kind] || BDS.nhapho, mm = p => (p.min != null ? Math.max(1, Math.round(p.min)) : null);
   const facts = {
     loai_bds: loai, tieu_de: L.title || null,
-    thong_tin_nha: { gia: (!st.priceEnd && L.price) || null, dien_tich: L.dims || (L.area ? `${L.area} m²` : null), loai_dat: L.thoCu || null, so_tang: (st.kind !== 'canho' && L.floors) || null,
+    thong_tin_nha: { gia: (!st.priceEnd && L.price) || null, dien_tich: L.dims || (L.area ? `${L.area} m²` : null), loai_dat: L.thoCu || null, so_tang: (st.kind !== 'canho' && st.kind !== 'duan' && L.floors) || null,
       can_ho_o_tang: L.level || null, phong_ngu: L.beds || null, phap_ly: L.legal || null, duong_truoc_nha: L.road || null },
     diem_noi_bat: L.highlights || [], khach_muc_tieu: { o: 'o', thue: 'cho_thue', vung: 'dau_tu' }[S.buyer] || null, noi_lo_khach_hang: PAINS[S.buyer] || null,
     xa_phuong: storeData().ward || L.ward || null, tinh_thanh: L.province || null,
@@ -1217,7 +1217,7 @@ function postText(st, L, url) {
   const title = L.title || KINDS[st.kind].label;
   const where = [title.toLowerCase().includes(ward.toLowerCase()) ? '' : ward, prov].filter(Boolean).join(', ');
   const info = [L.price && `💰 ${L.price}`, L.dims || (L.area && `${L.area} m²`), L.floors || L.level, L.beds && `${L.beds} phòng ngủ`, L.legal].filter(Boolean).join(' · ');
-  const tags = [...new Set(['batdongsan', 'nhadat', { nhapho: 'nhapho', bietthu: 'bietthu', nhavuon: 'nhavuon', canho: 'canho', datnen: 'datnen' }[st.kind], tagOf(prov), tagOf(ward), 'muabannhadat'].filter(Boolean))];
+  const tags = [...new Set(['batdongsan', 'nhadat', { nhapho: 'nhapho', bietthu: 'bietthu', nhavuon: 'nhavuon', canho: 'canho', datnen: 'datnen', duan: 'duan' }[st.kind], tagOf(prov), tagOf(ward), 'muabannhadat'].filter(Boolean))];
   return [
     `🏠 ${title.toUpperCase()}${where ? ` – ${where}` : ''}`, info, '',
     ...st.pois.slice(0, 4).map(p => `📍 ${p.name}: ${fmtSub(p, st.bird)}`),
@@ -1271,7 +1271,7 @@ async function makePage() {
     const ward = storeData().ward || L.ward || '';
     const p = await rpc('vt_page_save', { p_token: token(), p: {
       id: rec.id || null, title: L.title || [KINDS[st.kind].label, ward].filter(Boolean).join(' · '),
-      price: L.price || '', area: L.dims || (L.area ? `${L.area} m²` : ''), beds: st.kind === 'datnen' || !L.beds ? '' : String(L.beds), legal: L.legal || '',
+      price: L.price || '', area: L.dims || (L.area ? `${L.area} m²` : ''), beds: st.kind === 'datnen' || st.kind === 'duan' || !L.beds ? '' : String(L.beds), legal: L.legal || '',
       address: [ward, L.province].filter(Boolean).join(', '), lat: S.house.lat, lng: S.house.lng, phone: L.phones?.[0] || '', brand: $('brand').value.trim(),
       style: 'vangneon', video_url: '', description: (L.highlights || []).join('\n'), photos,
       pois: st.pois.map(x => ({ name: x.name, cat: x.cat, catName: CATEGORIES[x.cat]?.label || '', km: Math.round(x.km * 100) / 100 })),
