@@ -25,6 +25,9 @@ const fmtN = v => String(Math.round(v * 10) / 10).replace('.', ',');
 
 // Cảnh app cũ dựng từ dữ liệu Agent (giống buildScene của app.js với lựa chọn mặc định của khách mới: Vàng neon, ảnh vệ tinh rõ nét,
 // bay tới từng tiện ích, nhịp Nhanh, 2 trục ★ gần nhà, không mẫu 1, không khoanh tỉnh kiểu cũ — phần đó đã có ở mở đầu 3D)
+// Nhãn trên ghim / thẻ mở đầu kiểu app cũ: theo loại + cho thuê; khách chọn Ẩn chữ loại sản phẩm thì chỉ "VỊ TRÍ"
+const RENT_LABEL = { nhapho: 'VỊ TRÍ NHÀ CHO THUÊ', canho: 'VỊ TRÍ CĂN HỘ CHO THUÊ', bietthu: 'VỊ TRÍ BIỆT THỰ CHO THUÊ', phong: 'VỊ TRÍ PHÒNG CHO THUÊ', matbang: 'VỊ TRÍ MẶT BẰNG CHO THUÊ' };
+const oldLabel = (kind, story) => story.showKind === false ? 'VỊ TRÍ' : (story.rent && RENT_LABEL[kind]) || LABEL[kind] || LABEL.nhapho;
 export function oldScene(src, story) {
   const H = src.house, L = src.listing || {}, kind = story.kind || 'nhapho';
   const byPoi = new Map((src.pois || []).map(p => [p.id, p]));
@@ -46,7 +49,7 @@ export function oldScene(src, story) {
   const sub = [ad.commune || src.ward || '', ad.provinceShort || ''].filter(Boolean).join(' · ');
   return {
     keyLook: '', motion: 'denvang', motionHookOnly: true, priceEnd: !!story.priceEnd,
-    house: { lat: H.lat, lng: H.lng }, label: LABEL[kind] || LABEL.nhapho, rent: false, sub,
+    house: { lat: H.lat, lng: H.lng }, label: oldLabel(kind, story), rent: !!story.rent, sub,
     title: 'Vị trí & tiện ích', brand: src.brand || '', phone: story.phone || '', logo: null, logoBg: null, avatar: null, avatarCut: false, wm: '',
     photos: (story.photos || []).filter(Boolean), photoLabels: (story.photos || []).map(() => ''), clips: [],
     info: { price: L.price || '', area: L.dims || (L.area ? `${fmtN(L.area)} m²` : ''), thoCu: ['canho', 'duan', 'phong', 'matbang'].includes(kind) ? '' : L.thoCu || '',
