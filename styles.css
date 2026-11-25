@@ -810,6 +810,13 @@ input[type=range] { accent-color: var(--accent); width: 100%; }
 .next-card { display: grid; gap: 3px; text-align: left; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2); color: inherit; font: inherit; cursor: pointer; }
 .next-card strong { font-size: 14.5px; }
 .next-card span { font-size: 13px; opacity: .8; line-height: 1.4; }
+/* Thẻ mua gói sau khi xuất video — chỉ khách chưa từng trả tiền (account.js renderBuyCard) */
+.buy-card { display: grid; gap: 8px; margin-top: 10px; padding: 14px; border-radius: 14px; border: 1.5px solid var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.buy-card strong { font-size: 15.5px; }
+.buy-card .bc-line { font-size: 13.5px; line-height: 1.45; opacity: .92; }
+.buy-card .bc-line s { opacity: .6; }
+.buy-card .bc-left { font-weight: 700; }
+.buy-card .btn { width: 100%; }
 /* Banner đơn đang chờ thanh toán */
 .low-banner.order { background: color-mix(in srgb, #2fb67c 16%, var(--surface)); }
 
