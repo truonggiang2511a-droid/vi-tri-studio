@@ -1,9 +1,13 @@
-# Sao lưu dữ liệu Supabase hằng tuần (gói free không có sao lưu tự động).
-# - 3h sáng thứ Hai giờ VN, hoặc bấm tay: Actions › Sao lưu dữ liệu › Run workflow.
-# - Cần 2 secret (Settings › Secrets and variables › Actions):
+# Sao lưu dữ liệu Supabase HẰNG NGÀY (gói free không có sao lưu tự động).
+# - 3h sáng giờ VN mỗi ngày (từ 25/11/2026; trước đó hằng tuần), hoặc bấm tay: Actions › Sao lưu dữ liệu › Run workflow.
+# - Cần 2 secret bắt buộc (Settings › Secrets and variables › Actions):
 #     SUPABASE_DB_URL  = chuỗi "Session pooler" trong Supabase › Connect (có mật khẩu DB). Không dùng "Direct connection"
 #                        (chỉ có IPv6, máy GitHub không vào được).
 #     BACKUP_PASS      = mật khẩu mã hoá bản sao lưu. LƯU KỸ — mất mật khẩu này thì bản sao lưu không mở được.
+# - 3 secret TUỲ CHỌN để chép thêm bản mã hoá lên Cloudflare R2 (bucket `vitristudio-backup`, giữ 30 bản mới nhất);
+#   thiếu thì bỏ qua bước R2, vẫn giữ file đính kèm Actions:
+#     R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY  (Cloudflare › R2 › Manage API tokens › token quyền
+#     "Object Read & Write" chỉ cho bucket vitristudio-backup).
 # - Repo đang công khai: file đính kèm của Actions ai đăng nhập GitHub cũng tải được → file luôn được mã hoá AES-256
 #   trước khi tải lên, không bao giờ commit vào repo.
 # - Khôi phục: xem CLAUDE.md, nhật ký 31/10 "Sao lưu dữ liệu".
@@ -11,7 +15,7 @@ name: Sao lưu dữ liệu
 
 on:
   schedule:
-    - cron: '0 20 * * 0'
+    - cron: '0 20 * * *'
   workflow_dispatch:
 
 permissions:
@@ -28,6 +32,9 @@ jobs:
     env:
       DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       BACKUP_PASS: ${{ secrets.BACKUP_PASS }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
     steps:
       - name: Kiểm tra secret
         run: |
@@ -72,10 +79,35 @@ jobs:
           echo "name=$name" >> "$GITHUB_OUTPUT"
           ls -l out
 
-      - name: Lưu bản sao (giữ 90 ngày)
+      - name: Lưu bản sao (file đính kèm Actions, giữ 30 ngày)
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.dump.outputs.name }}
           path: out/*.gpg
-          retention-days: 90
+          retention-days: 30
           if-no-files-found: error
+
+      - name: Chép lên Cloudflare R2 (giữ 30 bản mới nhất)
+        if: ${{ env.R2_ACCOUNT_ID != '' && env.R2_ACCESS_KEY_ID != '' && env.R2_SECRET_ACCESS_KEY != '' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          # R2 không nhận tổng kiểm CRC mặc định của AWS CLI mới
+          AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+          AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        run: |
+          set -euo pipefail
+          EP="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          B="s3://vitristudio-backup"
+          f=$(ls out/*.gpg)
+          k=$(basename "$f")
+          aws s3 cp "$f" "$B/$k" --endpoint-url "$EP" --only-show-errors
+          # Kiểm tra file đã lên và đúng kích thước
+          want=$(stat -c %s "$f")
+          got=$(aws s3 ls "$B/$k" --endpoint-url "$EP" | awk '{print $3}')
+          [ "$want" = "$got" ] || { echo "::error::R2 lưu sai kích thước (cần $want, có ${got:-không có})"; exit 1; }
+          echo "Đã lên R2: $k ($got byte)"
+          # Giữ 30 bản mới nhất, xoá bản cũ hơn
+          aws s3 ls "$B/" --endpoint-url "$EP" | awk '{print $4}' | grep -E '^vitri-.*\.dump\.gpg$' | sort | head -n -30 \
+            | while read -r old; do aws s3 rm "$B/$old" --endpoint-url "$EP" --only-show-errors; echo "Xoá bản cũ: $old"; done
