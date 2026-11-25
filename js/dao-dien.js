@@ -6,7 +6,7 @@ import { parseCoords, haversineKm } from './geo.js';
 import { scanArea, routeTo, pickHubs, loadHubFx, simplifyLine, CATEGORIES, loadZones, loadInfra, metroBuildNear, placesNear, guessCategory } from './data.js';
 import { HUBS } from './hubs.js';
 import { parseListing, summaryChips, KINDS } from './dd-parse.js';
-import { BUYERS, suggestBuyer, buildStory, MUSIC_LIB, AUTO_TONE, popText, heroIndex } from './dd-agent.js';
+import { BUYERS, suggestBuyer, buildStory, MUSIC_LIB, AUTO_TONE, popText, heroIndex, ctaKeyOf } from './dd-agent.js';
 import { createDirector3D, CAT3D, kmBetween, fmtKm, fmtSub, shortName } from './dd3d.js';
 import { rpc } from './account.js';
 import { SB_URL, SB_KEY } from './sb.js';
@@ -1574,6 +1574,7 @@ function paintConfirm() {
   $('confirmChips').textContent = '';
   summaryChips(L).forEach((c, i) => { const s = document.createElement('span'); s.textContent = c; if (!i) s.className = 'kind'; $('confirmChips').append(s); });
   $('phoneIn').hidden = S.edits.showPhone !== true; if (!$('phoneIn').hidden && document.activeElement !== $('phoneIn')) $('phoneIn').value = S.edits.phone ?? S.listing?.phones?.[0] ?? '';
+  if (document.activeElement !== $('ctaKeyIn')) $('ctaKeyIn').value = S.edits.ctaKey || ctaKeyOf(L.kind || 'nhapho');
   $('kindEg').textContent = `(vd "${(KINDS[L.kind]?.label || 'Nhà phố').toUpperCase()}")`;
 }
 function askConfirm() {
@@ -1588,6 +1589,7 @@ document.querySelectorAll('#confirm .opt button').forEach(b => b.onclick = () =>
 $('phoneIn').addEventListener('input', () => { S.edits.phone = $('phoneIn').value.trim(); save(); });
 $('phoneOn').onchange = () => { S.edits.showPhone = $('phoneOn').checked ? true : undefined; edited(); };
 $('phoneEd').addEventListener('change', () => { S.edits.phone = $('phoneEd').value.trim(); edited(); });
+$('ctaKeyIn').addEventListener('input', () => { const v = $('ctaKeyIn').value.trim().toUpperCase().slice(0, 18); S.edits.ctaKey = v && v !== ctaKeyOf(S.listing?.kind || 'nhapho') ? v : undefined; save(); });
 $('confirmX').onclick = () => { $('confirm').hidden = true; };
 $('confirmEdit').onclick = () => { $('confirm').hidden = true; const f = $('infoform'); f.hidden = false; renderInfoForm(); f.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
 $('confirmGo').onclick = () => { $('confirm').hidden = true; runAgent(); };

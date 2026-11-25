@@ -647,6 +647,7 @@ function ppmOf(price, area) {
 }
 const kwOf = kind => ({ nhapho: 'căn nhà', bietthu: 'căn biệt thự', nhavuon: 'căn nhà vườn', canho: 'căn hộ', datnen: 'lô đất' }[kind] || 'căn nhà');
 // Từ khoá kêu gọi mặc định theo loại (khách sửa được)
+export const ctaKeyOf = kind => CTA_KEY[kind] || 'XEM NHÀ';
 const CTA_KEY = { nhapho: 'XEM NHÀ', bietthu: 'XEM BIỆT THỰ', nhavuon: 'XEM NHÀ VƯỜN', canho: 'XEM CĂN HỘ', datnen: 'XEM ĐẤT' };
 // tên loại ngắn để đọc gộp ("trường mầm non", "chợ", "bệnh viện") — tên riêng đầy đủ đã hiện trên nhãn bản đồ
 function catWord(p) {
