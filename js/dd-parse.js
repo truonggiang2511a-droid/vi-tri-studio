@@ -20,8 +20,11 @@ export const KINDS = {
 const RENT_RX = /cho\s*thuê|nhà\s*thuê|phòng\s*thuê|giá\s*thuê|thuê\s*(nhà|phòng|căn|mặt\s*bằng|kho|xưởng|văn\s*phòng|ki[ốo]t)/i;
 export const isRent = t => RENT_RX.test(t) && (!/\bbán\b/i.test(t) || /^\s*(?:[^\n]{0,12})?(cho\s*thuê|thuê)/i.test(t));
 function kindOf(t, rent) {
-  if (rent && /phòng\s*trọ|phòng\s*cho\s*thuê|căn\s*hộ\s*mini|chdv|studio|ký\s*túc|phòng\s*riêng|nhà\s*trọ/i.test(t)) return 'phong';
-  if (rent && /mặt\s*bằng|shophouse|ki[ốo]t|cửa\s*hàng|văn\s*phòng|kho\s*xưởng|nhà\s*xưởng|showroom|\bkho\b|xưởng/i.test(t)) return 'matbang';
+  // Cho thuê: chỉ nhận phòng / mặt bằng khi tin NÓI RÕ là cho thuê loại đó — tránh nhầm "nhà cho thuê gần cửa hàng, văn phòng" thành mặt bằng
+  const built0 = /(\d\s*(tầng|lầu)|trệt|\d\s*(pn|phòng\s*ngủ)|nhà\s*(nguyên\s*căn|phố|hẻm|cấp))/i.test(t);
+  if (rent && /cho\s*thuê\s*(phòng|căn\s*hộ\s*mini|chdv|studio)|phòng\s*trọ|nhà\s*trọ|chdv|căn\s*hộ\s*mini|ký\s*túc/i.test(t) && !built0) return 'phong';
+  if (rent && /cho\s*thuê\s*(mặt\s*bằng|shophouse|ki[ốo]t|kho|xưởng|nhà\s*xưởng|showroom)|mặt\s*bằng\s*(kinh\s*doanh|cho\s*thuê)/i.test(t)) return 'matbang';
+  if (rent && /cho\s*thuê\s*(cửa\s*hàng|văn\s*phòng)|^\s*(?:[^\n]{0,12})?(mặt\s*bằng|shophouse|ki[ốo]t|nhà\s*xưởng|kho\s*xưởng)/i.test(t) && !built0) return 'matbang';
   if (/biệt\s*thự|villa/i.test(t)) return 'bietthu';
   if (/nhà\s*vườn|đất\s*vườn\s*có\s*nhà|homestay|farmstay/i.test(t)) return 'nhavuon';
   if (/căn\s*hộ|chung\s*cư|apartment|condotel|officetel|penthouse/i.test(t)) return 'canho';
