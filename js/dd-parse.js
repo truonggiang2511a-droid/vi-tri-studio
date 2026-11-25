@@ -12,9 +12,16 @@ export const KINDS = {
   canho: { label: 'Căn hộ', icon: '🏢' },
   datnen: { label: 'Lô đất', icon: '📐' },
   duan: { label: 'Dự án', icon: '🏗️' },
+  phong: { label: 'Phòng cho thuê', icon: '🛏️' },
+  matbang: { label: 'Mặt bằng', icon: '🏪' },
   nhapho: { label: 'Nhà phố', icon: '🏠' },
 };
-function kindOf(t) {
+// Cho thuê (25/11): "cho thuê / nhà thuê / giá thuê / thuê nhà…" mà tin không phải tin bán (có chữ "bán" thì chỉ tính khi tin bắt đầu bằng "cho thuê")
+const RENT_RX = /cho\s*thuê|nhà\s*thuê|phòng\s*thuê|giá\s*thuê|thuê\s*(nhà|phòng|căn|mặt\s*bằng|kho|xưởng|văn\s*phòng|ki[ốo]t)/i;
+export const isRent = t => RENT_RX.test(t) && (!/\bbán\b/i.test(t) || /^\s*(?:[^\n]{0,12})?(cho\s*thuê|thuê)/i.test(t));
+function kindOf(t, rent) {
+  if (rent && /phòng\s*trọ|phòng\s*cho\s*thuê|căn\s*hộ\s*mini|chdv|studio|ký\s*túc|phòng\s*riêng|nhà\s*trọ/i.test(t)) return 'phong';
+  if (rent && /mặt\s*bằng|shophouse|ki[ốo]t|cửa\s*hàng|văn\s*phòng|kho\s*xưởng|nhà\s*xưởng|showroom|\bkho\b|xưởng/i.test(t)) return 'matbang';
   if (/biệt\s*thự|villa/i.test(t)) return 'bietthu';
   if (/nhà\s*vườn|đất\s*vườn\s*có\s*nhà|homestay|farmstay/i.test(t)) return 'nhavuon';
   if (/căn\s*hộ|chung\s*cư|apartment|condotel|officetel|penthouse/i.test(t)) return 'canho';
@@ -33,15 +40,19 @@ function kindOf(t) {
 export function parseListing(text) {
   const raw = String(text || '');
   const t = raw.normalize('NFC');
-  const out = { kind: kindOf(t) };
+  const rent = isRent(t);
+  const out = { kind: kindOf(t, rent) };
+  if (rent) out.rent = true;
   // Toạ độ / link Google Maps trong tin
   const c = parseCoords(t);
   if (c && !c.error) out.coord = { lat: c.lat, lng: c.lng };
   const link = t.match(/https?:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|(www\.)?google\.[a-z.]+\/maps)\S*/i);
   if (link) out.mapLink = link[0];
   // Giá: "3,2 tỷ", "3 tỷ 200", "850 triệu", "giá 12.5 tỷ"
-  let m = t.match(/(\d+(?:[.,]\d+)?)\s*tỷ\s*(\d{1,3})?(?!\s*\/)/i);
-  if (m) {
+  let m = rent ? t.match(/(?<![\p{L}\d.,])(\d+(?:[.,]\d+)?)\s*(triệu|tr)\s*(\d)?(?![\p{L}\d])(?:\s*\/?\s*(?:tháng|th)\b)?/iu) : null;
+  if (rent && m && (m[3] || /tháng|\/\s*th\b|giá/i.test(t))) out.price = `${m[3] ? `${m[1]},${m[3]}` : m[1]} triệu/tháng`;
+  else if (rent && (m = t.match(/(\d{3,4})\s*(k|nghìn|ngàn)\b/i))) out.price = `${m[1]} nghìn/tháng`;
+  else if ((m = t.match(/(\d+(?:[.,]\d+)?)\s*tỷ\s*(\d{1,3})?(?!\s*\/)/i))) {
     let v = num(m[1]); if (m[2]) v += num(m[2]) / (m[2].length === 1 ? 10 : 1000);
     out.price = `${fmt(v)} tỷ`;
   } else if ((m = t.match(/(\d{2,4})\s*(triệu|tr)\b(?!\s*\/\s*(m|tháng))/i))) out.price = `${m[1]} triệu`;
@@ -66,6 +77,10 @@ export function parseListing(text) {
   if (out.floors && /lửng/i.test(t)) out.floors = out.floors.replace('1 trệt', '1 trệt, lửng');
   m = t.match(/(\d+)\s*(pn|phòng\s*ngủ)/i); if (m) out.beds = +m[1];
   m = t.match(/(\d+)\s*(wc|toilet|nhà\s*vệ\s*sinh)/i); if (m) out.baths = +m[1];
+  if (out.kind === 'duan') {
+    m = t.match(/chủ\s*đầu\s*tư\s*:?\s*([^\n,.;|()]{3,40})/i); if (m) out.developer = m[1].trim();
+    m = t.match(/(?:quy\s*mô|diện\s*tích)\s*:?\s*(?:hơn\s*|gần\s*|~\s*)?(\d+(?:[.,]\d+)?)\s*(ha|hecta|héc\s*ta)\b/i); if (m) out.scale = `${m[1].replace('.', ',')} ha`;
+  }
   // Pháp lý
   if (/sổ\s*hồng\s*riêng|shr\b/i.test(t)) out.legal = 'Sổ hồng riêng';
   else if (/sổ\s*đỏ/i.test(t)) out.legal = 'Sổ đỏ';
@@ -85,8 +100,8 @@ export function parseListing(text) {
     if (name.length >= 4) out.title = name.replace(/^./, s => s.toUpperCase());
   }
   // Mặt tiền đường / hẻm cho dòng phụ ảnh bìa: "Mặt tiền Đường 3 Tháng 2"
-  m = t.match(/mặt\s*tiền\s+((?:đường\s+)?[\p{Lu}\d][^\n,.;:]{1,30})/iu);
-  if (m) out.street = 'Mặt tiền ' + m[1].trim().replace(/^đường/i, 'Đường');
+  m = t.match(/mặt\s*tiền\s+(?!\d+(?:[.,]\d+)?\s*(?:m\b|mét|x|×|\*))((?:đường\s+)?[\p{Lu}\d][^\n,.;:]{1,30})/iu);
+  if (m) out.street = 'Mặt tiền ' + m[1].replace(/\s+(?:giá|dt|diện\s*tích|sổ|lh|liên\s*hệ|\d+(?:[.,]\d+)?\s*[x×*]\s*\d)(?![\p{L}]).*$/iu, '').trim().replace(/^đường/i, 'Đường');
   else if ((m = t.match(/(hẻm\s*xe\s*hơi|hxh|hẻm\s*\d+[^\n,.;:]{0,25}|đường\s+[\p{Lu}\d][^\n,.;:]{1,25})/iu))) {
     const s = m[1].trim();
     out.street = /hxh/i.test(s) ? 'Hẻm xe hơi' : (s === s.toUpperCase() ? s.toLowerCase() : s).replace(/^./, c => c.toUpperCase());

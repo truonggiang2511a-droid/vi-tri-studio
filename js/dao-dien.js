@@ -513,13 +513,14 @@ function setTone(v) {
   $('tone').value = v; S.edits.tone = v; save();
   if (story && !$('studio').hidden) edited(); else renderTones();
 }
-const BDS = { duan: ['Dự án', 'đi xem dự án'], nhapho: ['Căn nhà', 'đi xem nhà'], bietthu: ['Biệt thự', 'đi xem biệt thự'], nhavuon: ['Nhà vườn', 'đi xem nhà vườn'], canho: ['Căn hộ', 'đi xem căn hộ'], datnen: ['Lô đất', 'đi xem lô đất'] };
+const BDS = { phong: ['Phòng cho thuê', 'đi xem phòng'], matbang: ['Mặt bằng', 'đi xem mặt bằng'], duan: ['Dự án', 'đi xem dự án'], nhapho: ['Căn nhà', 'đi xem nhà'], bietthu: ['Biệt thự', 'đi xem biệt thự'], nhavuon: ['Nhà vườn', 'đi xem nhà vườn'], canho: ['Căn hộ', 'đi xem căn hộ'], datnen: ['Lô đất', 'đi xem lô đất'] };
 const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 function aiPayload(st, L) {
   const [loai, xem] = BDS[st.kind] || BDS.nhapho, mm = p => (p.min != null ? Math.max(1, Math.round(p.min)) : null);
   const facts = {
     loai_bds: loai, tieu_de: L.title || null,
-    thong_tin_nha: { gia: (!st.priceEnd && L.price) || null, dien_tich: L.dims || (L.area ? `${L.area} m²` : null), loai_dat: L.thoCu || null, so_tang: (st.kind !== 'canho' && st.kind !== 'duan' && L.floors) || null,
+    ...(st.rent ? { hinh_thuc: 'CHO THUÊ (giá theo tháng): không nói mua, bán, sang tên, xuống tiền, đầu tư, tăng giá; người nghe là người ĐI THUÊ' } : {}),
+    thong_tin_nha: { gia: (!st.priceEnd && L.price) || null, dien_tich: L.dims || (L.area ? `${L.area} m²` : null), loai_dat: L.thoCu || null, so_tang: (!['canho', 'duan', 'phong'].includes(st.kind) && L.floors) || null,
       can_ho_o_tang: L.level || null, phong_ngu: L.beds || null, phap_ly: L.legal || null, duong_truoc_nha: L.road || null },
     diem_noi_bat: L.highlights || [], khach_muc_tieu: { o: 'o', thue: 'cho_thue', vung: 'dau_tu' }[S.buyer] || null, noi_lo_khach_hang: PAINS[S.buyer] || null,
     xa_phuong: storeData().ward || L.ward || null, tinh_thanh: L.province || null,
@@ -551,7 +552,8 @@ function aiPayload(st, L) {
     ban_kinh_km: st.oldR, loai_tien_ich: [...new Set(st.pois.map(p => CATEGORIES[p.cat]?.label || p.cat))], so_truc_duong: st.roads.length });
   if (OLD) st.roads.forEach(r => put('rd:' + r.id, 'rd:' + r.id, { canh: 'Một trục đường lớn: line trục sáng lên, tên đường chữ 3D trên mặt đường. 1 câu ngắn, gọi đúng tên trong "ten": cach_nha dưới 120 m thì nói nằm ngay trục này, không thì nói từ nhà ra trục bao nhiêu phút (dùng đúng phut_xe)',
     ten: r.name, cach_nha: fmtKm(r.km), phut_xe: r.km < 0.12 ? null : r.min }));
-  const whyCanh = 'Trả lời câu hỏi "Vì sao nên mua?": mở bằng ĐÚNG câu hỏi đó (có thể thêm tên loại bất động sản), rồi nêu ĐÚNG các lý do trong ly_do theo ĐÚNG thứ tự, lý do CUỐI là lý do lớn nhất (nói rõ là lý do lớn nhất), giữ nguyên mọi con số; KHÔNG thêm lý do khác, KHÔNG hứa tăng giá, lời lãi, rẻ hơn khu vực. Giọng gần gũi, chân thành như người môi giới có tâm đang tư vấn, tạo niềm tin. Kết bằng 1 câu ngắn mời kiểm tra số liệu trên bản đồ';
+  const whyCanh0 = 'Trả lời câu hỏi "Vì sao nên mua?": mở bằng ĐÚNG câu hỏi đó (có thể thêm tên loại bất động sản), rồi nêu ĐÚNG các lý do trong ly_do theo ĐÚNG thứ tự, lý do CUỐI là lý do lớn nhất (nói rõ là lý do lớn nhất), giữ nguyên mọi con số; KHÔNG thêm lý do khác, KHÔNG hứa tăng giá, lời lãi, rẻ hơn khu vực. Giọng gần gũi, chân thành như người môi giới có tâm đang tư vấn, tạo niềm tin. Kết bằng 1 câu ngắn mời kiểm tra số liệu trên bản đồ';
+  const whyCanh = st.rent ? whyCanh0.replace(/nên mua/g, 'nên thuê').replace(/NÊN MUA/g, 'NÊN THUÊ') : whyCanh0;
   if (OLD && st.pois.length && st.statsTitle) put('summary', 'summary', { canh: 'Tổng kết trước lời kêu gọi: thẻ "VÌ SAO NÊN MUA?" với các ô lý do hiện trên cùng. ' + whyCanh, ly_do: st.reasons });
   else if (OLD && st.pois.length) put('summary', 'summary', st.stats?.length >= 2
     ? { canh: 'Tổng kết trước lời kêu gọi: thẻ 3 con số lớn hiện trên cùng, bảng tiện ích ở dưới. 1–2 câu đọc đúng 3 con số này rồi chốt giá trị vị trí (không hứa lời lãi)', con_so: st.stats.map(x => `${x.n} ${x.unit} ${x.sub}`) }
@@ -575,7 +577,7 @@ function aiPayload(st, L) {
     : { canh: 'Tổng kết trước lời kêu gọi: 3 con số lớn hiện trên hình. 1–2 câu đọc đúng 3 con số này rồi chốt giá trị vị trí (không hứa lời lãi)', con_so: st.stats.map(x => `${x.n} ${x.unit} ${x.sub}`) });
   // câu ảnh thực tế giữ đúng chữ Giang chốt 16/11 ("Đây là hình ảnh thực tế của sản phẩm, anh chị xem qua nhé.") → không gửi AI viết lại
   const key = st.ctaKey.toLowerCase();
-  put('outro', 'cta', { ...(L.price ? { gia: L.price } : {}), canh: `Kết video: ${st.priceEnd ? 'LẦN ĐẦU nói giá bán (gia) trong video — đọc giá rõ ràng' : 'nhắc giá (nếu có)'} rồi kêu gọi ${st.ctaMode === 'binhluan' ? `BÌNH LUẬN chữ '${key}' hoặc nhắn tin` : `NHẮN TIN chữ '${key}'`} để nhận thông tin chi tiết về sản phẩm (đúng các chữ này) rồi DỪNG: không hẹn đi xem, không mời xem nhà/đất, không thêm câu nào sau đó. Không đọc số điện thoại.` });
+  put('outro', 'cta', { ...(L.price ? { gia: L.price } : {}), canh: `Kết video: ${st.priceEnd ? `LẦN ĐẦU nói ${st.rent ? 'giá thuê' : 'giá bán'} (gia) trong video — đọc giá rõ ràng` : 'nhắc giá (nếu có)'} rồi kêu gọi ${st.ctaMode === 'binhluan' ? `BÌNH LUẬN chữ '${key}' hoặc nhắn tin` : `NHẮN TIN chữ '${key}'`} để nhận thông tin chi tiết về sản phẩm (đúng các chữ này) rồi DỪNG: không hẹn đi xem, không mời xem nhà/đất, không thêm câu nào sau đó. Không đọc số điện thoại.` });
   return { facts, segments: seg, back };
 }
 async function aiWrite() {
@@ -834,8 +836,8 @@ function renderBoard() {
     b.append(sceneCard({ key: 'cluster', title: `📍 Quanh nhà · gom ${story.cluster.idx.length} tiện ích vào 1 cảnh`, sub: ' · bấm tên để đưa lên cảnh riêng', text: L.cluster, extra: ex }));
   }
   if (!OLD && story.build?.length) b.append(sceneCard({ key: 'build', title: '🚧 Hạ tầng đang thi công · ' + story.build[0].name, text: L.build, cat: 'road', removable: true }));
-  if (!OLD && story.score && !story.statsInCta) b.append(sceneCard({ key: 'score', title: story.statsTitle ? `❓ Vì sao nên mua? · ${story.stats.length} lý do từ số liệu thật` : '📊 Tổng kết · 3 con số lớn', text: L.score }));
-  if (OLD && story.pois.length) b.append(sceneCard({ key: 'summary', title: story.statsTitle ? `❓ Vì sao nên mua? · ${story.stats.length} lý do + bảng tiện ích` : story.stats?.length >= 2 ? '📊 Tổng kết · 3 con số lớn + bảng tiện ích' : '📋 Tổng kết · bảng tiện ích + khoảng cách', text: L.summary }));
+  if (!OLD && story.score && !story.statsInCta) b.append(sceneCard({ key: 'score', title: story.statsTitle ? `❓ Vì sao nên ${story.rent ? 'thuê' : 'mua'}? · ${story.stats.length} lý do từ số liệu thật` : '📊 Tổng kết · 3 con số lớn', text: L.score }));
+  if (OLD && story.pois.length) b.append(sceneCard({ key: 'summary', title: story.statsTitle ? `❓ Vì sao nên ${story.rent ? 'thuê' : 'mua'}? · ${story.stats.length} lý do + bảng tiện ích` : story.stats?.length >= 2 ? '📊 Tổng kết · 3 con số lớn + bảng tiện ích' : '📋 Tổng kết · bảng tiện ích + khoảng cách', text: L.summary }));
   if (OLD) b.append(sceneCard({ key: 'cta', title: `Kết · ${story.cta}`, text: L.cta }));
   if (S.photos.length) {
     const ex = document.createElement('div'); ex.className = 'thumbs';
@@ -1217,7 +1219,7 @@ function postText(st, L, url) {
   const title = L.title || KINDS[st.kind].label;
   const where = [title.toLowerCase().includes(ward.toLowerCase()) ? '' : ward, prov].filter(Boolean).join(', ');
   const info = [L.price && `💰 ${L.price}`, L.dims || (L.area && `${L.area} m²`), L.floors || L.level, L.beds && `${L.beds} phòng ngủ`, L.legal].filter(Boolean).join(' · ');
-  const tags = [...new Set(['batdongsan', 'nhadat', { nhapho: 'nhapho', bietthu: 'bietthu', nhavuon: 'nhavuon', canho: 'canho', datnen: 'datnen', duan: 'duan' }[st.kind], tagOf(prov), tagOf(ward), 'muabannhadat'].filter(Boolean))];
+  const tags = [...new Set(['batdongsan', 'nhadat', { nhapho: 'nhapho', bietthu: 'bietthu', nhavuon: 'nhavuon', canho: 'canho', datnen: 'datnen', duan: 'duan', phong: 'phongtro', matbang: 'matbang' }[st.kind], tagOf(prov), tagOf(ward), st.rent ? 'chothue' : 'muabannhadat'].filter(Boolean))];
   return [
     `🏠 ${title.toUpperCase()}${where ? ` – ${where}` : ''}`, info, '',
     ...st.pois.slice(0, 4).map(p => `📍 ${p.name}: ${fmtSub(p, st.bird)}`),
@@ -1271,7 +1273,7 @@ async function makePage() {
     const ward = storeData().ward || L.ward || '';
     const p = await rpc('vt_page_save', { p_token: token(), p: {
       id: rec.id || null, title: L.title || [KINDS[st.kind].label, ward].filter(Boolean).join(' · '),
-      price: L.price || '', area: L.dims || (L.area ? `${L.area} m²` : ''), beds: st.kind === 'datnen' || st.kind === 'duan' || !L.beds ? '' : String(L.beds), legal: L.legal || '',
+      price: L.price || '', area: L.dims || (L.area ? `${L.area} m²` : ''), beds: ['datnen', 'duan', 'phong', 'matbang'].includes(st.kind) || !L.beds ? '' : String(L.beds), legal: L.legal || '',
       address: [ward, L.province].filter(Boolean).join(', '), lat: S.house.lat, lng: S.house.lng, phone: L.phones?.[0] || '', brand: $('brand').value.trim(),
       style: 'vangneon', video_url: '', description: (L.highlights || []).join('\n'), photos,
       pois: st.pois.map(x => ({ name: x.name, cat: x.cat, catName: CATEGORIES[x.cat]?.label || '', km: Math.round(x.km * 100) / 100 })),
@@ -1574,7 +1576,7 @@ function paintConfirm() {
   $('confirmChips').textContent = '';
   summaryChips(L).forEach((c, i) => { const s = document.createElement('span'); s.textContent = c; if (!i) s.className = 'kind'; $('confirmChips').append(s); });
   $('phoneIn').hidden = S.edits.showPhone !== true; if (!$('phoneIn').hidden && document.activeElement !== $('phoneIn')) $('phoneIn').value = S.edits.phone ?? S.listing?.phones?.[0] ?? '';
-  if (document.activeElement !== $('ctaKeyIn')) $('ctaKeyIn').value = S.edits.ctaKey || ctaKeyOf(L.kind || 'nhapho');
+  if (document.activeElement !== $('ctaKeyIn')) $('ctaKeyIn').value = S.edits.ctaKey || ctaKeyOf(L.kind || 'nhapho', L.rent);
   $('kindEg').textContent = `(vd "${(KINDS[L.kind]?.label || 'Nhà phố').toUpperCase()}")`;
 }
 function askConfirm() {
@@ -1589,7 +1591,7 @@ document.querySelectorAll('#confirm .opt button').forEach(b => b.onclick = () =>
 $('phoneIn').addEventListener('input', () => { S.edits.phone = $('phoneIn').value.trim(); save(); });
 $('phoneOn').onchange = () => { S.edits.showPhone = $('phoneOn').checked ? true : undefined; edited(); };
 $('phoneEd').addEventListener('change', () => { S.edits.phone = $('phoneEd').value.trim(); edited(); });
-$('ctaKeyIn').addEventListener('input', () => { const v = $('ctaKeyIn').value.trim().toUpperCase().slice(0, 18); S.edits.ctaKey = v && v !== ctaKeyOf(S.listing?.kind || 'nhapho') ? v : undefined; save(); });
+$('ctaKeyIn').addEventListener('input', () => { const v = $('ctaKeyIn').value.trim().toUpperCase().slice(0, 18); S.edits.ctaKey = v && v !== ctaKeyOf(S.listing?.kind || 'nhapho', S.listing?.rent) ? v : undefined; save(); });
 $('confirmX').onclick = () => { $('confirm').hidden = true; };
 $('confirmEdit').onclick = () => { $('confirm').hidden = true; const f = $('infoform'); f.hidden = false; renderInfoForm(); f.scrollIntoView({ block: 'center', behavior: 'smooth' }); };
 $('confirmGo').onclick = () => { $('confirm').hidden = true; runAgent(); };

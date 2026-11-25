@@ -72,6 +72,7 @@ const W0 = 405;
 // Vùng an toàn khổ dọc TikTok / Reels / Facebook (giống app cũ: FORMATS.v.safe = top 96, bottom 196, x 22, r 84 trên 540×960):
 // trên 10% là tab + tên kênh, dưới 20% là tên tài khoản + mô tả, mép phải 15,5% là cột nút Thích/Bình luận (từ 42% chiều cao trở xuống)
 const SAFE = { top: 0.1, bottom: 0.204, x: 0.041, r: 0.156, rY: 0.42 };
+const FLAT_KINDS = new Set(['canho', 'duan', 'phong', 'matbang']);   // không dựng khối nhà 3D, ghim thành phố
 const CAP_Y = 0.72;   // tâm phụ đề (app cũ M1_CAP_Y)                       // khung thiết kế 405×720 (9:16) như bản thử, nhân k = width / 405
 const GOLD = '#f5c451';
 export const CAT3D = {
@@ -618,7 +619,7 @@ export function createDirector3D({ width, height, story, overlay = null, lite = 
     omt: { type: 'vector', url: 'https://tiles.openfreemap.org/planet' },
     // khối căn nhà (theo kích thước trong tin) / lô đất; căn hộ không vẽ khối (ghim + vòng sáng)
     house: { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon',
-      coordinates: [story.lot ? story.lot.ring : story.footprint ? story.footprint.ring : story.kind === 'canho' || story.kind === 'duan' ? rectM(H, 0.1, 0.1) : rectM(H, 5, 20)] } } },
+      coordinates: [story.lot ? story.lot.ring : story.footprint ? story.footprint.ring : FLAT_KINDS.has(story.kind) ? rectM(H, 0.1, 0.1) : rectM(H, 5, 20)] } } },
     train: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
   };
   const layers = [
@@ -992,7 +993,7 @@ export function createDirector3D({ width, height, story, overlay = null, lite = 
   }
   const sceneIdx = t => { const i = tl.scenes.findIndex(s => t < s.t1); return i < 0 ? tl.scenes.length - 1 : i; };
   const sceneAt = t => tl.scenes[sceneIdx(t)];
-  const houseH = t => (story.lot ? 2.2 : story.footprint ? story.footprint.height : story.kind === 'canho' || story.kind === 'duan' ? 0 : 11) * easeOut(clamp01((t - PIN_T - 0.2) / 0.9));
+  const houseH = t => (story.lot ? 2.2 : story.footprint ? story.footprint.height : FLAT_KINDS.has(story.kind) ? 0 : 11) * easeOut(clamp01((t - PIN_T - 0.2) / 0.9));
   // 16/11 vòng 13: khối căn nhà / tấm lô chỉ hiện tới hết cảnh căn nhà (kể cả đoạn lùi ra trung cảnh), sang cảnh sau mờ dần 1 s;
   // kiểu ghép app cũ (OPEN): mờ hẳn trước chỗ nối vì phần vẽ kiểu app cũ không có khối
   const HS = tl.scenes.find(s => s.kind === 'house' || s.kind === 'lot');
@@ -1512,9 +1513,17 @@ export function createDirector3D({ width, height, story, overlay = null, lite = 
     rrect(ctx, -(x1 - x0) / 2, -h / 2, x1 - x0, h, 16 * k);
     ctx.fillStyle = 'rgba(8,12,22,0.82)'; ctx.fill(); ctx.lineWidth = 2 * k; ctx.strokeStyle = GOLD; ctx.stroke();
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = GOLD; ctx.font = font(800, 13); ctx.fillText('GIÁ BÁN', 0, -h / 2 + 22 * k);
-    ctx.font = `900 ${40 * k}px Montserrat, ${FONT}`; ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 10 * k;
-    ctx.fillText(fitEllipsis(ctx, txt, x1 - x0 - 24 * k), 0, h / 2 - 14 * k);
+    ctx.fillStyle = GOLD; ctx.font = font(800, 13); ctx.fillText(story.priceLabel || 'GIÁ BÁN', 0, -h / 2 + 22 * k);
+    ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 10 * k;
+    // giá thuê "3,5 triệu/tháng": số + đơn vị to, "/tháng" nhỏ bên cạnh (không bị cắt "…")
+    const sl = txt.indexOf('/'), main = sl > 0 ? txt.slice(0, sl) : txt, suf = sl > 0 ? txt.slice(sl) : '';
+    const maxW = x1 - x0 - 24 * k;
+    ctx.font = `900 ${40 * k}px Montserrat, ${FONT}`; const mw = ctx.measureText(main).width;
+    ctx.font = `800 ${18 * k}px Montserrat, ${FONT}`; const sw = suf ? ctx.measureText(suf).width + 4 * k : 0;
+    const fit = Math.min(1, maxW / (mw + sw));
+    ctx.textAlign = 'left'; const xs = -(mw + sw) * fit / 2;
+    ctx.font = `900 ${40 * k * fit}px Montserrat, ${FONT}`; ctx.fillText(main, xs, h / 2 - 14 * k);
+    if (suf) { ctx.font = `800 ${18 * k * fit}px Montserrat, ${FONT}`; ctx.fillText(suf, xs + mw * fit + 4 * k * fit, h / 2 - 14 * k); }
     ctx.restore();
   }
   // SĐT cuối video (tuỳ chọn của khách): thẻ nhỏ ngay trên giá / nút kêu gọi, trong dải an toàn; giọng không đọc số
@@ -1584,14 +1593,14 @@ export function createDirector3D({ width, height, story, overlay = null, lite = 
     const e = u <= 0 ? 1 : easeBounce(clamp01(u / 0.7));
     // vòng 13: ghim đứng trên MÁI khối căn nhà (chiều cao khối × điểm ảnh/mét theo phương ngang màn hình × sin góc nghiêng)
     let roof = 0;
-    if (!story.lot && story.kind !== 'canho' && story.kind !== 'duan') {
+    if (!story.lot && !FLAT_KINDS.has(story.kind)) {
       const hh = houseH(t) * houseVis(t);
       if (hh > 0.05) { const q = proj(offM(H, 20, map.getBearing() + 90)); roof = hh * Math.hypot(q[0] - x, q[1] - y) / 20 * Math.sin(map.getPitch() * Math.PI / 180); }
     }
     const lift = (u <= 0 ? 0 : (1 - e) * 90 * k) + roof;
     // bóng dưới chân ghim (trên mái khi có khối nhà)
     ctx.beginPath(); ctx.ellipse(x, y - roof + 1 * k, 11 * k, 4 * k, 0, 0, 7); ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fill();
-    goldPin(ctx, x, y - lift, (u <= 0 ? 0.8 : 1) * k, story.kind === 'datnen' || story.kind === 'nhavuon' ? 'pin' : story.kind === 'canho' || story.kind === 'duan' ? 'city' : 'house');
+    goldPin(ctx, x, y - lift, (u <= 0 ? 0.8 : 1) * k, story.kind === 'datnen' || story.kind === 'nhavuon' ? 'pin' : FLAT_KINDS.has(story.kind) ? 'city' : 'house');
   }
   // Ghim nhỏ dưới chân nhãn tiện ích: chấm màu nhóm, viền vàng
   function poiPin(ctx, at, cat) {
