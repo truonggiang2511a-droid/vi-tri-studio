@@ -7,7 +7,7 @@ import { scanArea, routeTo, pickHubs, loadHubFx, simplifyLine, CATEGORIES, loadZ
 import { HUBS } from './hubs.js';
 import { parseListing, summaryChips, KINDS } from './dd-parse.js';
 import { BUYERS, suggestBuyer, buildStory, MUSIC_LIB, AUTO_TONE, popText, heroIndex, ctaKeyOf } from './dd-agent.js';
-import { createDirector3D, CAT3D, kmBetween, fmtKm, fmtSub, shortName } from './dd3d.js';
+import { createDirector3D, CAT3D, kmBetween, fmtKm, fmtSub, shortName, fmtMin } from './dd3d.js';
 import { rpc } from './account.js';
 import { SB_URL, SB_KEY } from './sb.js';
 import { exportMp4, decodeAudioFile, mixAudio, canEncodeMp4 } from './export.js';
@@ -114,6 +114,18 @@ function anchorOf(x, r) {
   return { id: x.id, type: x.type, name: x.name, lat: x.lat, lng: x.lng, km: Math.round(kmv * 10) / 10,
     min: Math.max(1, Math.round(r && r.min > 0 ? Math.min(r.min, typical) : typical)), coords: r ? simplifyLine(r.coords, 0.015) : null };
 }
+// 25/11 điểm đến tự do (MCP: Claude của khách thêm "đi ô tô ra Hà Nội", cảng, KCN xa…): đi vào cảnh kết nối vùng như điểm mốc.
+// Số liệu: Claude đưa km/phút/đường đi (du_lieu_ngoai) thì dùng; không có thì lấy đường đi thật 1 lần (routeTo) hoặc ước lượng và ghi "ước chừng".
+function extAnchorOf(h, d, r) {
+  const km0 = haversineKm(h, d), real = r || (d.km ? { km: d.km, min: d.phut, coords: d.duong } : null);
+  const kmv = real?.km ? real.km : km0 * (km0 > 300 ? 1.45 : 1.35);
+  const spd = kmv > 300 ? 60 : Math.max(26, Math.min(70, 24 + 0.5 * kmv));
+  const hasMin = real && real.min > 0;
+  return { id: d.id, type: ['center', 'airport', 'port', 'station', 'metro'].includes(d.loai) ? d.loai : 'center', name: d.ten, lat: d.lat, lng: d.lng, ext: true,
+    est: !hasMin, km: Math.round(kmv * 10) / 10, min: Math.max(1, Math.round(hasMin ? real.min : kmv / spd * 60)),
+    coords: real?.coords?.length ? simplifyLine(real.coords, kmv > 300 ? 0.05 : 0.015) : null };
+}
+const extList = () => (proj?.opts?.diem_den || (/^(localhost|127.0.0.1)$/.test(location.hostname) && window.__ddDest) || []).filter(d => d && d.id && Number.isFinite(d.lat) && Number.isFinite(d.lng)).slice(0, 3);
 function loadRegion(h) {
   const hubs = pickHubs(h);
   // 16/11: kết nối vùng mặc định có cảng biển — pickHubs (dùng chung với app cũ, không đổi) chỉ lấy cảng ≤ 40 km chim bay;
@@ -124,9 +136,10 @@ function loadRegion(h) {
     if (p) hubs.push({ id: 'port:' + p.name, type: 'port', name: p.name, lat: p.lat, lng: p.lng, km0: Math.round(p.d * 100) / 100 });
   }
   // có ngay số ước lượng → Agent luôn có cảnh kết nối vùng kể cả khi mạng chậm; đường đi thật về thì thay vào
-  S.anchors = hubs.map(x => anchorOf(x, null));
-  anchorJob = Promise.all(hubs.map(x => routeTo(h, x).catch(() => null)))
-    .then(routes => { if (S.house === h) S.anchors = hubs.map((x, i) => anchorOf(x, routes[i])); }).catch(() => {});
+  const EX = extList();
+  S.anchors = [...hubs.map(x => anchorOf(x, null)), ...EX.map(d => extAnchorOf(h, d, null))];
+  anchorJob = Promise.all([...hubs, ...EX].map(x => (x.km || x.duong ? Promise.resolve(null) : routeTo(h, x).catch(() => null))))
+    .then(routes => { if (S.house === h) S.anchors = [...hubs.map((x, i) => anchorOf(x, routes[i])), ...EX.map((d, j) => extAnchorOf(h, d, routes[hubs.length + j]))]; }).catch(() => {});
   regionJob = (async () => {
     await anchorJob;
     if (S.house !== h) return;
@@ -778,7 +791,7 @@ function renderBoard() {
   // vòng 9 (vẽ như app cũ): thứ tự thẻ = thứ tự cảnh app cũ — bán kính → kết nối vùng → hạ tầng → từng trục đường → từng tiện ích → tổng kết → kết → ảnh
   if (OLD) b.append(sceneCard({ key: 'overview', title: `❓ Sống ở đây có tiện không? · ⭕ vòng bán kính ${String(story.oldR).replace('.', ',')} km`, text: L.overview }));
   // vòng 7: kết nối vùng ngay sau căn nhà (trung tâm, sân bay, cảng, metro, cao tốc) — đúng thứ tự trong video
-  story.anchors.forEach((a, i) => b.append(sceneCard({ key: 'anchor:' + a.id, title: '🧭 ' + a.name, sub: ` · ${a.km} km · ${a.min} phút`, text: L.anchor[i], cat: a.type, drag: true, removable: true })));
+  story.anchors.forEach((a, i) => b.append(sceneCard({ key: 'anchor:' + a.id, title: '🧭 ' + a.name, sub: ` · ${a.km} km · ${fmtMin(a.min)}`, text: L.anchor[i], cat: a.type, drag: true, removable: true })));
   const inf = story.infra || {};
   if (inf.airport) b.append(sceneCard({ key: 'airport', title: 'Sân bay · máy bay cất cánh', text: L.airport, cat: 'airport', removable: true }));
   if (inf.metro) b.append(sceneCard({ key: 'metro', title: 'Metro · tàu chạy dọc tuyến', text: L.metro, cat: 'metro', removable: true }));
@@ -939,8 +952,8 @@ function renderBigList() {
   if (!roads.length) box.append(Object.assign(document.createElement('p'), { className: 'tip', textContent: 'Chưa thấy trục đường lớn trong bán kính quét.' }));
   // điểm mốc vùng
   grp('🧭 Kết nối vùng: trung tâm · sân bay · cảng biển (Agent chọn sẵn 3) · ga — vẽ đường đi thật + số phút');
-  const selA = st.anchors.map(a => a.id), anc = (S.anchors || []).filter(a => a.min <= 150);
-  for (const a of anc) row(A_ICON[a.type] || '📍', a.name, `${a.min} phút · ${fmtKm(a.km)}`, selA.includes(a.id), () => toggle('anchorsOff', 'anchorsAdd', a.id, selA.includes(a.id), 5, selA.length));
+  const selA = st.anchors.map(a => a.id), anc = (S.anchors || []).filter(a => a.min <= 150 || a.ext);
+  for (const a of anc) row(A_ICON[a.type] || '📍', a.name, `${fmtMin(a.min)} · ${fmtKm(a.km)}`, selA.includes(a.id), () => toggle('anchorsOff', 'anchorsAdd', a.id, selA.includes(a.id), 5, selA.length));
   if (!anc.length) box.append(Object.assign(document.createElement('p'), { className: 'tip', textContent: regionJob && !S.anchors?.length ? 'Đang tải điểm mốc vùng… mở lại sau vài giây.' : 'Chưa có điểm mốc vùng.' }));
   // cảnh hạ tầng
   const I = S.infra || {}, inf = st.infra || {};
@@ -1340,6 +1353,7 @@ function applyProject(p) {
     if (typeof o.bird === 'boolean') $('bird').checked = o.bird;
     if (typeof o.brand === 'string') $('brand').value = o.brand;
     mergeManual(o.manual);
+    { const dd = JSON.stringify(o.diem_den || []); if (S._dd !== undefined && S._dd !== dd && S.house && S.anchors) { S._dd = dd; loadRegion(S.house); } S._dd = dd; }
     if (o.voice && o.voice !== VOICE.id) voicePick.then(() => {
       if (isVbee(o.voice) && !vbeeKey()) { proj.voiceNote = 'Giọng Vbee Claude chọn cần kết nối Vbee trên máy này (app cũ › Giọng đọc) — đang dùng giọng mặc định.'; return; }
       setVoice(o.voice, false); if ($('voice').options.length) { if (![...$('voice').options].some(x => x.value === o.voice)) $('voice').append(new Option('Giọng Claude chọn', o.voice)); $('voice').value = o.voice; }

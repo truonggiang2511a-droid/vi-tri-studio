@@ -2,7 +2,7 @@
 // Chọn tiện ích theo khách mua, viết lời theo SỐ LIỆU THẬT (khoảng cách, phút, số tiện ích trong 1 km), chọn phong cách
 // (nhạc, cách vẽ) theo loại bất động sản. Bản luật — bước sau thay phần viết lời bằng AI máy chủ (cùng dữ liệu, cùng luật cấm bịa).
 import { KINDS, infoChips, fmtNum } from './dd-parse.js';
-import { rectM, ROAD_COLORS, shortName } from './dd3d.js';
+import { rectM, ROAD_COLORS, shortName, fmtMin } from './dd3d.js';
 import { autoPickRoads } from './data.js';
 
 // 15/11 (Giang): tách rõ "Đầu tư sinh lời" (khoá 'vung' giữ nguyên cho dữ liệu đã lưu — trước là "Kết nối khu vực") và "Đầu tư cho thuê"
@@ -164,8 +164,10 @@ export function buildStory(S, L, buyer, edits = {}) {
     const a = (S.anchors || []).find(x => x.id === id);
     if (a && !anc.includes(a) && !(edits.anchorsOff || []).includes(id)) anc.push(a);
   }
+  // điểm đến tự do (MCP) luôn có mặt trừ khi khách tắt; đứng sau các điểm mốc mặc định
+  for (const a of (S.anchors || []).filter(x => x.ext)) if (!anc.includes(a) && !(edits.anchorsOff || []).includes(a.id)) anc.push(a);
   if (edits.anchorOrder) anc = anc.slice().sort((a, b) => edits.anchorOrder.indexOf(a.id) - edits.anchorOrder.indexOf(b.id));
-  const anchors = anc.map(a => ({ id: a.id, name: a.name, type: a.type, at: [a.lng, a.lat], km: a.km, min: a.min, route: a.coords ? a.coords.map(ll) : null }));
+  const anchors = anc.map(a => ({ id: a.id, name: a.name, type: a.type, at: [a.lng, a.lat], km: a.km, min: a.min, ext: !!a.ext, est: !!a.est, route: a.coords ? a.coords.map(ll) : null }));
 
   // Hình căn nhà / lô đất: theo kích thước trong tin, quay mặt ra đường trước nhà
   const f = S.streets?.front;
@@ -554,7 +556,7 @@ export function buildStory(S, L, buyer, edits = {}) {
     radar: radarLine, house: houseLine ? cap(houseLine) : '', lot: lotLine ? cap(lotLine) : '',
     poi: pois.map((p, i) => poiLine(p, buyer, pois.slice(0, i).filter(q => q.cat === 'truong').length)),   // 'Sáng đưa con đi học' cho trường xuất hiện đầu tiên
     // kết nối vùng: số phút ô tô theo đường đi thật
-    anchor: anchors.map((a, i) => a.type === 'center' ? `Về ${a.name} chỉ khoảng <b>${a.min} phút</b> ô tô, quãng đường <b>${fmtNum(a.km)} km</b>${a.min <= 60 && anchors.findIndex(x => x.type === 'center') === i ? (buyer === 'thue' ? ', người thuê đi làm trung tâm thuận tiện' : buyer === 'vung' ? ', kết nối về lõi đô thị thuận tiện' : ', đi làm, mua sắm, giải trí đều thuận tiện') : ''}.`
+    anchor: anchors.map((a, i) => a.ext ? `Từ nhà ra ${a.name} khoảng <b>${fmtNum(a.km >= 100 ? Math.round(a.km) : a.km)} km</b>, đi ô tô ${a.est ? 'ước chừng ' : 'khoảng '}<b>${fmtMin(a.min)}</b>.` : a.type === 'center' ? `Về ${a.name} chỉ khoảng <b>${a.min} phút</b> ô tô, quãng đường <b>${fmtNum(a.km)} km</b>${a.min <= 60 && anchors.findIndex(x => x.type === 'center') === i ? (buyer === 'thue' ? ', người thuê đi làm trung tâm thuận tiện' : buyer === 'vung' ? ', kết nối về lõi đô thị thuận tiện' : ', đi làm, mua sắm, giải trí đều thuận tiện') : ''}.`
       : a.type === 'airport' ? `Ra ${a.name} khoảng <b>${a.min} phút</b>, bay đi công tác, về quê nhanh gọn.`
         : a.type === 'port' ? `Ra ${a.name} khoảng <b>${a.min} phút</b>, quãng đường <b>${fmtNum(a.km)} km</b>${buyer === 'vung' ? ', thuận lợi kho bãi, vận chuyển hàng hoá' : ''}.`
           : `${cap('Tới ' + a.name)} cách <b>${fmtNum(a.km)} km</b>, khoảng <b>${a.min} phút</b> ô tô.`),

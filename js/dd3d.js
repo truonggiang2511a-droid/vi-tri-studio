@@ -85,11 +85,13 @@ export const CAT3D = {
 const FONT = '"Be Vietnam Pro", system-ui, sans-serif';
 
 // dưới 1 km làm tròn 10 m — khớp lời đọc (dd-agent km(): thẻ "735 m" mà giọng đọc "730 m" trông như sai số)
-export const fmtKm = km => km < 0.995 ? `${Math.round(km * 100) * 10} m` : `${km.toFixed(1).replace('.', ',')} km`;
+export const fmtKm = km => km < 0.995 ? `${Math.round(km * 100) * 10} m` : km >= 100 ? `${Math.round(km)} km` : `${km.toFixed(1).replace('.', ',')} km`;
 // Có đường đi thật thì dùng phút thật; không có thì ước tính 22 km/h như app (dấu ~); chim bay thì chỉ ghi khoảng cách
 // 15/11: phút trước, km sau (người mua nghĩ bằng phút)
+// thời gian: dưới 3 giờ ghi phút (như cũ); xa hơn ghi giờ ("khoảng 28 giờ") — điểm đến tự do ở xa (vd. TP.HCM → Hà Nội)
+export const fmtMin = m => { m = Math.max(1, Math.round(m)); return m >= 180 ? `${Math.round(m / 60)} giờ` : `${m} phút`; };
 export const fmtSub = (p, bird) => bird || p.bird ? `${fmtKm(p.km)} · đường chim bay`
-  : `${p.min != null ? Math.max(1, Math.round(p.min)) : '≈' + Math.max(1, Math.round(p.km / 22 * 60))} phút · ${fmtKm(p.km)}`;   // "≈" (dấu "~" đứng đầu dễ đọc thành dấu trừ)
+  : `${p.min != null ? fmtMin(p.min) : '≈' + fmtMin(p.km / 22 * 60)} · ${fmtKm(p.km)}`;   // "≈" (dấu "~" đứng đầu dễ đọc thành dấu trừ)
 
 // tên gọn của tiện ích (bỏ phần "huyện …", sau "-" / ",", trong ngoặc) — nhãn ghim + lời đọc cảnh lượn 360°
 export const shortName = n => { const s0 = String(n || ''); const s = s0.replace(/\s*[([].*$/, '').split(/\s+[-–]\s+|,/)[0].replace(/\s+(huyện|quận|thị xã|thành phố|tp\.?|tỉnh|phường|xã)\s+\S.*$/i, '').trim(); return s || s0; };
@@ -1453,7 +1455,7 @@ export function createDirector3D({ width, height, story, overlay = null, lite = 
     if (!ancScenes.length) return;
     const a = clamp01(Math.min((t - ancScenes[0].t0) / 0.4, (ancScenes[ancScenes.length - 1].t1 - t) / 0.3));
     if (a <= 0) return;
-    const names = story.anchors.map(x => A_WORD[x.type] || 'Điểm mốc'), cur = s.kind === 'anchor' ? s.i : -1;
+    const names = story.anchors.map(x => x.ext ? shortName(x.name) : (A_WORD[x.type] || 'Điểm mốc')), cur = s.kind === 'anchor' ? s.i : -1;
     const title = 'KẾT NỐI VÙNG', sep = '  ·  ';
     ctx.save();
     ctx.font = font(900, 16); const wt = ctx.measureText(title).width;
