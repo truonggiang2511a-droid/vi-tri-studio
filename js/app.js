@@ -13,7 +13,7 @@ import { parseCoordText, checkPolygon, convertLot, MERIDIANS, fmtMeridian } from
 import { decodeAudioFile, mixAudio, preloadTiles, loadTilesAt, exportMp4, exportRealtime, canEncodeMp4, unlockAudioContext } from './export.js';
 import { MOTION } from './motion.js';
 import { processPlan, FULL_QUAD, planNeedsAlpha } from './planimg.js';
-import { onAccountChange, initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount } from './account.js';
+import { onAccountChange, initAccount, setAccountLocation, beginExport, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount, buyCardSeen } from './account.js';
 import { splitVoice, joinForTts, splitAt } from './voicesplit.js';
 import { loadConfig, initTracking, countVisit, funnel } from './track.js';
 import { xuatStart, xuatCheckCrash } from './xuatlog.js';
@@ -3501,6 +3501,7 @@ async function doExport() {
     } catch (e) { console.warn('Ảnh bìa lỗi', e); lastIssue = 'Tạo ảnh bìa lỗi: ' + (e.message || e); setCover(null); }
     progress(100, 'Xong');
     funnel('xuat_xong');
+    buyCardSeen();
     xlog?.done();
     if (account.profile && await saveProject({ silent: true })) toast(`Đã dựng xong video${coverFile ? ' và ảnh bìa' : ''}. Căn này đã lưu vào mục Căn đã lưu.`, 4000);
     else toast(coverFile ? 'Đã dựng xong video và ảnh bìa (nút "Lưu ảnh bìa" ngay dưới video).' : 'Đã dựng xong video.', 4000);

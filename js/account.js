@@ -222,8 +222,30 @@ function renderBadge() {
         : `Đã hết lượt. <button type="button" class="link-btn" data-act="buy">Mua thêm lượt</button>`;
     }
   }
+  renderBuyCard();
   if (promoOn()) startPromoTick();
 }
+
+// Thẻ mua gói 30 video ngay sau khi xuất xong (26/11/2026): CHỈ khách chưa từng trả tiền (profile.paid === false) và chưa có gói không giới hạn.
+// Khách đã trả tiền / gói không giới hạn → thẻ ẩn. Không đổi đơn hàng, giá hay sự kiện đo: nút chỉ mở bảng giá có sẵn (data-act="buy" / "resume").
+const BUY_CARD_PKG = 'goi30';
+function renderBuyCard() {
+  const el = $('buyCard');
+  if (!el) return;
+  const p = S.profile;
+  const pk = (S.info?.packages || []).find(x => x.id === BUY_CARD_PKG && x.credits > 0);
+  if (!p || p.paid !== false || p.unlimited || !pk) { el.hidden = true; el.innerHTML = ''; return; }
+  const promo = promoOn();
+  const price = promo ? promoPrice(pk.price) : pk.price;
+  const per = money(Math.round(price / pk.credits / 100) * 100);
+  const pend = !isTestAcct(p) && S.order && S.order.status === 'pending' ? S.order : null;
+  el.innerHTML = `<strong>🎬 Làm tiếp nhiều căn, giá rẻ hơn</strong>
+    <span class="bc-line">Gói <b>${pk.credits} video</b>: <b>${money(price)}</b>${price < pk.price ? ` <s>${money(pk.price)}</s>` : ''} (chỉ ${per}/video).${promo ? ` Ưu đãi lần mua đầu giảm ${S.promo.percent}%, còn <span class="bc-left" data-promo-left="min">${leftText(S.promo.until)}</span>.` : ''}</span>
+    ${pend ? `<button type="button" class="btn btn-primary" data-act="resume">Mở lại mã QR đơn ${esc(pend.code)}</button>` : '<button type="button" class="btn btn-primary" data-act="buy">Xem gói và mua</button>'}`;
+  el.hidden = false;
+}
+// app.js gọi khi khung kết quả vừa hiện: đếm số lần thẻ được nhìn thấy (phễu nội bộ, không gửi Meta/TikTok)
+export function buyCardSeen() { const el = $('buyCard'); if (el && !el.hidden) funnel('xcard'); }
 
 // ---------- Đăng nhập / đăng ký ----------
 let authResolve = null;
@@ -802,9 +824,9 @@ export async function initAccount(opts = {}) {
     const b = e.target.closest('[data-act]');
     if (!b) return;
     if (b.dataset.act === 'register') requireLogin(b.dataset.reason || '', 'register');
-    else if (b.dataset.act === 'buy') openPricing();
+    else if (b.dataset.act === 'buy') { if (b.closest('#buyCard')) funnel('xcard_bam'); openPricing(); }
     else if (b.dataset.act === 'invite') openInvite();
-    else if (b.dataset.act === 'resume' && S.order) { const id = S.order.package_id; openPricing().then(() => { if (id && $('payDlg').open) pickPackage(id); }); }
+    else if (b.dataset.act === 'resume' && S.order) { if (b.closest('#buyCard')) funnel('xcard_bam'); const id = S.order.package_id; openPricing().then(() => { if (id && $('payDlg').open) pickPackage(id); }); }
   });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && S.token) refreshAccount(); });
   emit();
