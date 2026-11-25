@@ -81,7 +81,10 @@
           <div class="opt" data-k="captions"><button type="button" data-v="1">Bật</button><button type="button" data-v="0">Tắt</button></div></div>
         <div class="qz"><b>Nói giá lúc nào?</b>
           <div class="opt" data-k="priceEnd"><button type="button" data-v="1">Cuối video</button><button type="button" data-v="0">Ngay từ đầu</button></div></div>
-        <p class="tip">Số điện thoại trong tin đăng không bao giờ lên video. Muốn sửa giá, loại, kích thước… bấm “Sửa thông tin”.</p>
+        <div class="qz"><b>Số điện thoại ở cảnh cuối <small>(mặc định không hiện — nền tảng hay giảm lượt xem video có số)</small></b>
+          <div class="opt" data-k="showPhone"><button type="button" data-v="1">Hiện</button><button type="button" data-v="0">Không hiện</button></div>
+          <input id="phoneIn" type="tel" inputmode="tel" maxlength="16" placeholder="Số điện thoại hiện trên video" hidden></div>
+        <p class="tip">Số điện thoại chỉ lên video khi bạn chọn Hiện; giọng đọc không đọc số. Muốn sửa giá, loại, kích thước… bấm “Sửa thông tin”.</p>
         <div class="row2"><button class="btn2" id="confirmEdit" type="button">✏️ Sửa thông tin</button><button class="cta gold" id="confirmGo" type="button">✅ Đúng rồi, dựng video</button></div>
       </div>
     </div>
@@ -141,6 +144,7 @@
             <label class="tog"><input type="checkbox" id="full"> Bản đầy đủ <small>(YouTube, Zalo · nhiều tiện ích hơn, dài hơn)</small></label>
             <label class="tog"><input type="checkbox" id="globe" checked> Mở đầu từ quả địa cầu <small>(bay từ trái đất xuống tỉnh, thêm ~4 giây)</small></label>
             <label class="tog"><input type="checkbox" id="kindOn" checked> Chữ loại sản phẩm <small>(vd "NHÀ PHỐ" trên thẻ đầu, ảnh bìa)</small></label>
+            <label class="tog"><input type="checkbox" id="phoneOn"> SĐT cuối video <input id="phoneEd" type="tel" inputmode="tel" maxlength="16" placeholder="0909 123 456" style="width:130px"></label>
             <label class="tog"><input type="checkbox" id="capOn" checked> Phụ đề <small>(chữ chạy theo lời đọc)</small></label>
             <label class="tog"><input type="checkbox" id="priceEnd" checked> Giá để cuối video <small>(khách tò mò xem hết · ảnh bìa ghi "XEM CUỐI VIDEO")</small></label>
           </div>

@@ -47,7 +47,7 @@ export function oldScene(src, story) {
   return {
     keyLook: '', motion: 'denvang', motionHookOnly: true, priceEnd: !!story.priceEnd,
     house: { lat: H.lat, lng: H.lng }, label: LABEL[kind] || LABEL.nhapho, rent: false, sub,
-    title: 'Vị trí & tiện ích', brand: src.brand || '', phone: '', logo: null, logoBg: null, avatar: null, avatarCut: false, wm: '',
+    title: 'Vị trí & tiện ích', brand: src.brand || '', phone: story.phone || '', logo: null, logoBg: null, avatar: null, avatarCut: false, wm: '',
     photos: (story.photos || []).filter(Boolean), photoLabels: (story.photos || []).map(() => ''), clips: [],
     info: { price: L.price || '', area: L.dims || (L.area ? `${fmtN(L.area)} m²` : ''), thoCu: kind === 'canho' ? '' : L.thoCu || '',
       beds: kind === 'datnen' ? '' : L.beds ? String(L.beds) : '', legal: L.legal || '', floors: kind === 'datnen' ? '' : L.floors || '', roadWidth: '' },

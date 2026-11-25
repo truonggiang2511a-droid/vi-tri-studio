@@ -250,6 +250,10 @@ export function buildStory(S, L, buyer, edits = {}) {
   // 25/11 (Giang): chữ loại sản phẩm tự điền (vd "NHÀ PHỐ") và phụ đề là TUỲ CHỌN của khách (hỏi trước khi Agent dựng)
   const showKind = edits.showKind !== false, captions = edits.captions !== false;
   const kindTxt = showKind ? KINDS[kind].label : '';
+  // SĐT cuối video: mặc định KHÔNG hiện (nền tảng hay giảm lượt hiển thị video có số); khách bật thì lấy số trong tin đăng, sửa được
+  const phoneDigits = String(edits.phone ?? L.phones?.[0] ?? '').replace(/\D/g, '');
+  const phone = edits.showPhone === true && phoneDigits.length >= 8 && phoneDigits.length <= 11
+    ? phoneDigits.length === 10 ? `${phoneDigits.slice(0, 4)} ${phoneDigits.slice(4, 7)} ${phoneDigits.slice(7)}` : phoneDigits : '';
   const P = L.price && !priceEnd ? `<b>${L.price}</b>` : '', ppm = priceEnd ? '' : ppmOf(L.price, L.area), PPM = ppm ? `<b>${ppm}</b>` : '';
   const legal = L.legal ? L.legal.toLowerCase() : '', legalOk = /sổ\s*(hồng|đỏ)/i.test(L.legal || '');
   const kcnD = kcn && (mins(kcn) ? `<b>${mins(kcn)} phút</b>` : `<b>${km(kcn.km)}</b>`);
@@ -589,7 +593,7 @@ export function buildStory(S, L, buyer, edits = {}) {
     globe: edits.globe !== false,
     labelStyle: ['trang', 'kinh', 'mau'].includes(edits.labelStyle) ? edits.labelStyle : 'trang', ctaSub: `để nhận thông tin chi tiết về sản phẩm`, ctaLong: `${ctaAsk} nhận thông tin`,
     style: styleOf(kind, buyer), bird: !!edits.bird,
-    watermark: edits.watermark || '', showKind, captions,
+    watermark: edits.watermark || '', showKind, captions, phone,
     // bản ngắn: tối đa 5 ảnh thực tế cuối video
     photos: (edits.photos || []).slice(0, full ? 99 : 4), roads, zones: [...zones, ...airportZone(S, infra, anchors), ...landmarkZones(S, anchors, zones)], build,
     // Ảnh bìa (mẫu Giang chọn 11/11): tên căn/dự án, phường, GIÁ BÁN to, 2 dòng phụ — chữ lấy đúng từ tin đăng; màu tự đổi theo căn

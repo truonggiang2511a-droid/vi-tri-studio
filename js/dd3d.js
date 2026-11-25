@@ -1517,6 +1517,19 @@ export function createDirector3D({ width, height, story, overlay = null, lite = 
     ctx.fillText(fitEllipsis(ctx, txt, x1 - x0 - 24 * k), 0, h / 2 - 14 * k);
     ctx.restore();
   }
+  // SĐT cuối video (tuỳ chọn của khách): thẻ nhỏ ngay trên giá / nút kêu gọi, trong dải an toàn; giọng không đọc số
+  function phoneChip(ctx, a) {
+    const ph = story.phone;
+    if (!ph || a <= 0) return;
+    const x0 = SAFE.x * width, x1 = width - SAFE.r * width, h = 32 * k;
+    const top = height * CAP_Y - 96 * k - 14 * k - (PRICE ? 84 * k + 10 * k : 0), y = top - 8 * k - h;
+    ctx.save(); ctx.globalAlpha = clamp01(a);
+    ctx.font = font(900, 17); const w = Math.min(x1 - x0, ctx.measureText('📞 ' + ph).width + 28 * k);
+    ctx.translate((x0 + x1) / 2, y + h / 2 + (1 - EASE(clamp01(a))) * 8 * k);
+    rrect(ctx, -w / 2, -h / 2, w, h, 12 * k); ctx.fillStyle = 'rgba(8,12,22,0.82)'; ctx.fill(); ctx.lineWidth = 1.5 * k; ctx.strokeStyle = GOLD; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('📞 ' + ph, 0, 1 * k);
+    ctx.restore();
+  }
   // nút kêu gọi cuối: trên phụ đề, trong dải an toàn (né cột nút bên phải của nền tảng); 2 dòng: từ khoá + "để nhận …"
   function cta(ctx, a) {
     if (a <= 0) return;
@@ -2252,6 +2265,7 @@ export function createDirector3D({ width, height, story, overlay = null, lite = 
       if (story.stats?.length) statsCard(ctx, prevK === 'score' && !HERO ? 1 : (t - s.t0 - 0.3) / 0.4, 99);
       priceCard(ctx, t, s);
       cta(ctx, (t - s.ctaAt) / 0.4);
+      phoneChip(ctx, (t - s.ctaAt - 0.2) / 0.4);
     }
     if (s.kind === 'photos') photos(ctx, t, s);
     ctaBar(ctx, t, s);
