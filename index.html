@@ -527,6 +527,7 @@
           <button id="ttsBtn" class="btn btn-primary btn-lg btn-block vo-go" type="button">🎙️ Tạo giọng đọc theo kịch bản ở Bước 1</button>
           <button id="voVoiceOnly" class="link-btn vo-only" type="button" hidden></button>
           <button id="noVoiceBtn" class="link-btn vo-skip" type="button">Không cần giọng đọc? Bỏ qua, chỉ dùng nhạc nền</button>
+          <p id="voiceQuota" class="voice-quota" aria-live="polite" hidden></p>
           <p id="ttsMsg" class="hint" aria-live="polite"></p>
           <p id="aiStatus" class="hint small">Đang kiểm tra giọng đọc AI…</p>
         </div>
@@ -596,6 +597,7 @@
       </div>
       <div id="resultBox" class="result" hidden>
         <video id="resultVideo" controls playsinline></video>
+        <p id="resultCharge" class="voice-quota" aria-live="polite" hidden></p>
         <div class="result-actions">
           <button id="saveBtn" class="btn btn-primary" type="button">Lưu về máy</button>
           <button id="coverSaveTop" class="btn btn-quiet" type="button" hidden>🖼 Lưu ảnh bìa</button>

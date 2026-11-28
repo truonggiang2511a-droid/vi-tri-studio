@@ -13,7 +13,8 @@ import { SB_URL, SB_KEY } from './sb.js';
 import { exportMp4, decodeAudioFile, mixAudio, canEncodeMp4 } from './export.js';
 import { createHybrid } from './dd-old.js';
 import { setImageryToken, preferSession, warmSession, onTileSource } from './render.js';
-import { token, voiceLines, voiceOf, prefetchVoices, canExport, chargeExport, VOICE, setVoice, initialVoice, listVoices, isVbee, vbeeKey } from './dd-voice.js';
+import { token, voiceLines, voiceOf, prefetchVoices, canExport, chargeExport, VOICE, setVoice, initialVoice, listVoices, isVbee, vbeeKey, houseVoiceStatus } from './dd-voice.js';
+import { voiceQuotaText } from './account.js';
 import { MAX_PHOTOS, savePhotos, loadPhotoBlobs, shrink, toBitmap, kvGet, kvPut } from './dd-photos.js';
 import { track, funnel } from './track.js';
 import { xuatStart, xuatCheckCrash, devClass } from './xuatlog.js';
@@ -480,8 +481,17 @@ async function rebuild() {
   setDirty(false);
   const missing = allLines(story).some(t => !voiceOf(t));
   $('voiceNote').hidden = !(missing && (!token() || voiceErr === 'login'));
+  showVoiceQuota();
   mixReady();
   snapSoon();
+}
+// Dòng "giọng đọc căn này còn…" (chỉ hiện khi đang bật giới hạn); kèm lý do nếu vừa không đọc được giọng
+async function showVoiceQuota() {
+  const v = await houseVoiceStatus(S.house);
+  const el = $('voiceQuota');
+  el.hidden = !v;
+  if (v) el.textContent = voiceQuotaText(v) + (voiceErr && voiceErr !== 'login' ? ' ' + voiceErr : '');
+  return v;
 }
 // Khách sửa (thứ tự / thêm / bỏ / lời): cập nhật bảng ngay, video tạo lại khi bấm "Tạo lại video" (đọc lại câu đã sửa)
 let dirty = false;
@@ -1172,7 +1182,10 @@ async function exportVideo(localOnly = false) {
     // đủ giọng cho mọi câu trước khi xuất
     if (!localOnly && allLines(story).some(t => !voiceOf(t))) {
       txt.textContent = 'AI đang đọc lời…';
-      if (!(await voiceAll(n => { if (n) txt.textContent = `AI đang đọc lời ${n}`; }))) throw new Error(voiceErr === 'login' ? 'Phiên đăng nhập hết hạn, đăng nhập lại.' : voiceErr || 'Chưa đọc được giọng.');
+      if (!(await voiceAll(n => { if (n) txt.textContent = `AI đang đọc lời ${n}`; }))) {
+        showVoiceQuota();
+        throw Object.assign(new Error(voiceErr === 'login' ? 'Phiên đăng nhập hết hạn, đăng nhập lại.' : voiceErr || 'Chưa đọc được giọng.'), { voice: true });
+      }
       await rebuild();
     }
     const best = document.querySelector('input[name=q]:checked').value === 'best';
@@ -1204,6 +1217,12 @@ async function exportVideo(localOnly = false) {
     if (!localOnly) { funnel('dd_xuat_xong'); xlog?.done(); }
     const url = URL.createObjectURL(blob);
     fill.style.width = '100%'; txt.textContent = `✓ Xong trong ${Math.round((performance.now() - t0) / 1000)} giây`;
+    const done = txt.textContent;
+    if (!localOnly) showVoiceQuota().then(v => {
+      if (!v) return;
+      txt.textContent = done + (r.charged ? ` · Đã trừ 1 lượt video, còn ${r.profile?.credits ?? 0} lượt.` : r.mode === 'reexport' ? ' · Xuất lại: không trừ thêm lượt video.' : '')
+        + (v.lan_con != null && v.lan_con < v.lan_max ? ' Lần tạo giọng đã dùng được chốt cùng video này.' : '');
+    });
     const v = Object.assign(document.createElement('video'), { src: url, controls: true, playsInline: true });
     const a = Object.assign(document.createElement('a'), { href: url, download: `vi-tri-studio-ai-dao-dien-${h}p.mp4`, textContent: `⬇ Tải video về máy (${(blob.size / 1048576).toFixed(1)} MB)` });
     $('out').append(v, a);
@@ -1217,7 +1236,7 @@ async function exportVideo(localOnly = false) {
     window.__lastExport = { blob, sec: (performance.now() - t0) / 1000, lost: xs.lost };
   } catch (e) {
     const best = document.querySelector('input[name=q]:checked')?.value === 'best';
-    txt.textContent = 'Lỗi: ' + (e.message || e) + (best && !/720p/.test(String(e.message)) ? ' Máy yếu thì chọn "Nhanh 720p" rồi xuất lại.' : '');
+    txt.textContent = e.voice ? e.message : 'Lỗi: ' + (e.message || e) + (best && !/720p/.test(String(e.message)) ? ' Máy yếu thì chọn "Nhanh 720p" rồi xuất lại.' : '');
     window.__lastExport = { error: String(e.stack || e), lost: xs?.lost || 0 };
     if (!localOnly) { funnel('dd_xuat_loi'); funnel(`dd_xloi_${e?.glLost ? 'gl_' : ''}${devClass()}`, true); }
   } finally { xlog?.end(); unwake?.(); if (window.__lastExport && xs) window.__lastExport.lost = xs.lost; xs?.destroy(); preferSession(false); btn.disabled = false; revivePreview(); }

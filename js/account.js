@@ -45,6 +45,7 @@ const S = {
   profile: null,
   info: null,          // gói, ngân hàng, số lượt dùng thử
   reexportUntil: null, // còn được xuất lại miễn phí vị trí hiện tại tới lúc nào
+  voice: null,         // giới hạn giọng của căn đang làm (vt_voice_status); null = chưa bật giới hạn cho tài khoản này
   redo: null,          // số lần còn lại ở vị trí hiện tại {exports_left, tts_left, until}
   loc: null,
   order: null,         // đơn đang chờ thanh toán
@@ -90,7 +91,7 @@ function setSession(token, profile) {
   emit();
 }
 function clearSession() {
-  S.token = null; S.profile = null; S.reexportUntil = null; S.redo = null; S.order = null;
+  S.token = null; S.profile = null; S.reexportUntil = null; S.redo = null; S.voice = null; S.order = null;
   writeToken(null);
   emit();
 }
@@ -98,10 +99,25 @@ function clearSession() {
 export const authHeaders = () => (S.token ? { authorization: 'Bearer ' + S.token } : {});
 
 let devSent = false;
+// Số lần đọc cả bài / ký tự sửa câu còn lại. Máy chủ trả null khi chưa bật giới hạn (hoặc chưa có hàm) → giao diện như cũ.
+export const voiceStatus = at => rpc('vt_voice_status', at).catch(() => null);
+const so = n => Number(n || 0).toLocaleString('vi-VN');
+export const voiceRuleText = v => v ? `Giọng đọc AI mỗi căn trong 24 giờ: ${v.lan_max} lần đọc cả bài, sau đó ${so(v.sua_max)} ký tự để sửa câu.` : '';
+export function voiceQuotaText(v) {
+  if (!v) return '';
+  if (v.lan_con == null) return voiceRuleText(v);
+  if (v.lan_con > 0) return `Giọng đọc căn này (24 giờ): còn ${v.lan_con}/${v.lan_max} lần đọc cả bài, sau đó còn ${so(v.sua_con)} ký tự để sửa câu.`
+    + (v.lan_con < v.lan_max ? ' Mỗi lần bấm tạo giọng (cách nhau hơn 2 phút) tính 1 lần, kể cả khi chỉ đọc vài câu.' : '');
+  return `Giọng đọc căn này (24 giờ): đã dùng đủ ${v.lan_max} lần đọc cả bài · còn ${so(v.sua_con)}/${so(v.sua_max)} ký tự để sửa câu.`;
+}
+
 export async function refreshAccount() {
   if (!S.token) { emit(); return; }
   try {
-    const r = await rpc('vt_me', { p_token: S.token, p_lat: S.loc?.lat ?? null, p_lng: S.loc?.lng ?? null });
+    const at = { p_token: S.token, p_lat: S.loc?.lat ?? null, p_lng: S.loc?.lng ?? null };
+    const voiceJob = voiceStatus(at);
+    const r = await rpc('vt_me', at);
+    S.voice = await voiceJob;
     // Ghi nhận máy đang dùng tài khoản này (một lần mỗi lần mở app) để tài khoản tạo thêm trên máy này không nhận lại lượt dùng thử
     if (!devSent) {
       devSent = true;
@@ -209,12 +225,18 @@ function renderBadge() {
   const note = $('creditNote');
   if (note) {
     const trial = S.info?.trial_credits ?? 3;
+    const VL = S.voice;   // chỉ có khi giới hạn tạo giọng áp cho tài khoản này
+    const voiceRule = voiceRuleText(VL);
     if (!p) {
       note.innerHTML = `Đăng ký miễn phí để nhận <strong>${trial} video</strong> dùng thử. <button type="button" class="link-btn" data-act="register">Đăng ký</button>`;
-    } else if (S.redo && new Date(S.redo.until) > new Date() && (S.redo.exports_left > 0 || S.redo.tts_left > 0)) {
+    } else if (VL && S.redo && new Date(S.redo.until) > new Date() && S.redo.exports_left > 0) {
+      note.innerHTML = `Căn này còn <strong>${S.redo.exports_left} lần xuất</strong> không trừ lượt (tới ${fmtDate(S.redo.until)}). ${voiceRule}`;
+    } else if (!VL && S.redo && new Date(S.redo.until) > new Date() && (S.redo.exports_left > 0 || S.redo.tts_left > 0)) {
       note.innerHTML = `Căn này còn <strong>${S.redo.exports_left} lần xuất</strong> và <strong>${S.redo.tts_left} lần tạo giọng</strong> không trừ lượt (tới ${fmtDate(S.redo.until)}).`;
     } else if (p.unlimited) {
-      note.innerHTML = `Gói không giới hạn tới ${fmtDate(p.unlimited_until, false)}.`;
+      note.innerHTML = `Gói không giới hạn tới ${fmtDate(p.unlimited_until, false)}. ${voiceRule}`;
+    } else if (VL && p.credits > 0) {
+      note.innerHTML = `Còn <strong>${p.credits} lượt</strong>. Mỗi lượt = 1 căn, chỉ trừ khi xuất video xong, được ${S.info?.redo_exports ?? 3} lần xuất trong ${S.info?.reexport_hours ?? 24} giờ. ${voiceRule}`;
     } else if (p.credits > 0) {
       note.innerHTML = `Còn <strong>${p.credits} lượt</strong>. Mỗi lượt = 1 căn, gồm ${S.info?.redo_exports ?? 3} lần xuất video và ${S.info?.redo_tts ?? 3} lần tạo giọng AI trong ${S.info?.reexport_hours ?? 24} giờ.`;
     } else {

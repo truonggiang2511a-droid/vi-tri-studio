@@ -13,7 +13,7 @@ import { parseCoordText, checkPolygon, convertLot, MERIDIANS, fmtMeridian } from
 import { decodeAudioFile, mixAudio, preloadTiles, loadTilesAt, exportMp4, exportRealtime, canEncodeMp4, unlockAudioContext } from './export.js';
 import { MOTION } from './motion.js';
 import { processPlan, FULL_QUAD, planNeedsAlpha } from './planimg.js';
-import { onAccountChange, initAccount, setAccountLocation, beginExport, exportOk, exportFail, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount, buyCardSeen } from './account.js';
+import { onAccountChange, initAccount, setAccountLocation, beginExport, exportOk, exportFail, requireLogin, authHeaders, handleAiError, account, openPricing, rpc, refreshAccount, buyCardSeen, voiceQuotaText } from './account.js';
 import { splitVoice, joinForTts, splitAt } from './voicesplit.js';
 import { loadConfig, initTracking, countVisit, funnel } from './track.js';
 import { xuatStart, xuatCheckCrash } from './xuatlog.js';
@@ -2987,6 +2987,43 @@ function nudgeVoice() {
   b.scrollIntoView({ behavior: 'smooth', block: 'center' });
   b.classList.remove('pulse'); void b.offsetWidth; b.classList.add('pulse');
 }
+// Khoá Vbee riêng của khách không tính vào giới hạn giọng
+const ownVoiceKey = () => String(state.voiceId || '').startsWith('vb:');
+// Dòng "còn bao nhiêu lần / ký tự" ngay dưới nút tạo giọng; hết lần đọc cả bài thì báo luôn đoạn sắp đọc dài bao nhiêu
+function renderVoiceQuota() {
+  const el = $('voiceQuota');
+  if (!el) return;
+  const v = account.profile && !ownVoiceKey() ? account.voice : null;
+  el.hidden = !v;
+  if (!v) return;
+  let t = voiceQuotaText(v), over = false;
+  if (v.lan_con === 0) {
+    const todo = scriptSegments().filter(s => speakable(s.text) && !voiceOk(s));
+    const need = todo.length ? joinForTts(todo.map(s => speakable(s.text))).length : 0;
+    over = need > v.sua_con;
+    if (need) t += ` Đoạn cần đọc lần này: ${need.toLocaleString('vi-VN')} ký tự${over ? ', vượt số còn lại: hãy sửa ít câu hơn' : ''}.`;
+  }
+  el.textContent = t;
+  el.classList.toggle('over', over);
+}
+
+// Sau khi xuất xong: ghi rõ đã trừ gì và giọng đọc căn này còn bao nhiêu (chỉ khi đang bật giới hạn giọng)
+async function showExportCharge(dn) {
+  const el = $('resultCharge');
+  if (!el) return;
+  el.hidden = true;
+  if (!account.voice) return;
+  await refreshAccount();   // lấy số mới nhất sau khi máy chủ đã ghi lượt xuất
+  const v = account.voice;
+  if (!v) return;
+  const paid = dn?.charged ? `Đã trừ 1 lượt video, còn ${dn.profile?.credits ?? 0} lượt.`
+    : dn?.mode === 'reexport' ? 'Xuất lại căn này: không trừ thêm lượt video.'
+    : dn?.mode === 'unlimited' ? 'Gói không giới hạn: đã ghi 1 video.' : '';
+  const used = !ownVoiceKey() && v.lan_con != null && v.lan_con < v.lan_max ? ` Lần tạo giọng đã dùng được chốt cùng video này. ${voiceQuotaText(v)}` : '';
+  el.textContent = (paid + used).trim();
+  el.hidden = !el.textContent;
+}
+
 function updateVoCard() {
   const btn = $('ttsBtn');
   if (!btn) return;
@@ -3012,6 +3049,7 @@ function updateVoCard() {
   const miss = segs.filter(s => !voiceOk(s)).length;
   pill.textContent = { none: 'Chưa tạo', stale: 'Cần đọc lại', ready: '✓ Đã có giọng' }[st];
   pill.classList.toggle('ok', st === 'ready');
+  renderVoiceQuota();
   if (ttsBusy) return;
   btn.textContent = st === 'none' ? '🎙️ Tạo giọng đọc theo kịch bản ở Bước 1'
     : st === 'stale' ? `🎙️ Đọc lại giọng cho ${miss} câu đã sửa`
@@ -3160,7 +3198,12 @@ async function generateVoices() {
   // Căn đã trừ lượt và còn lần tạo giọng → không hỏi; hết lần hoặc căn mới → báo sẽ trừ 1 lượt
   const R = account.redo;
   const freeHere = R && new Date(R.until) > new Date() && R.tts_left > 0;
-  if (ai.gated && p0 && !p0.unlimited && !freeHere) {
+  const VL = account.voice;   // đang bật giới hạn: tạo giọng không trừ lượt, máy chủ quyết định còn được tạo hay không
+  if (VL) {
+    if (ai.gated && p0 && !p0.unlimited && p0.credits <= 0 && !(R && new Date(R.until) > new Date())) {
+      openPricing('Đã hết lượt. Mua thêm lượt để tạo giọng đọc và xuất video.'); return;
+    }
+  } else if (ai.gated && p0 && !p0.unlimited && !freeHere) {
     const info = account.info || {};
     if (p0.credits <= 0) { openPricing(R ? 'Căn này đã dùng hết số lần tạo giọng. Mua thêm lượt để tạo lại.' : 'Đã hết lượt. Mua thêm lượt để tạo giọng đọc và xuất video.'); return; }
     if (!confirm(`${R ? 'Căn này đã dùng hết số lần tạo giọng của lượt trước.\n' : ''}Tạo giọng đọc sẽ dùng 1 lượt cho căn này (còn ${p0.credits} lượt).\nMỗi lượt gồm ${info.redo_exports ?? 3} lần xuất video và ${info.redo_tts ?? 3} lần tạo giọng trong ${info.reexport_hours ?? 24} giờ.\n\nTiếp tục?`)) return;
@@ -3198,14 +3241,15 @@ async function generateVoices() {
       made += grp.length;
       renderScript();
     }
-    refreshAccount();
+    refreshAccount().then(() => { const t = ownVoiceKey() ? '' : voiceQuotaText(account.voice); if (t) toast(t, 6000); });
     state.aiVoiceOn = true; $('aiVoiceOn').checked = true;
     msg.textContent = `Đã tạo giọng cho ${made} câu. Video đã giãn theo lời đọc, bấm phát để nghe.`;
     media.mixKey = '';
     scheduleRebuild();
   } catch (e) {
     if (e.status && await handleAiError(e.status, e.body)) msg.textContent = e.body?.error || 'Cần đăng nhập hoặc thêm lượt để tạo giọng.';
-    else msg.textContent = 'Tạo giọng lỗi: ' + e.message;
+    else msg.textContent = e.body?.code === 'DAILY_LIMIT' ? e.message : 'Tạo giọng lỗi: ' + e.message;
+    refreshAccount();   // cập nhật số còn lại (câu lỗi giọng không bị tính)
   } finally {
     ttsBusy = false;
     btn.disabled = false;
@@ -3498,6 +3542,7 @@ async function doExport() {
     const dn = await exportOk(gate);
     committed = true;
     const chargeMsg = dn?.charged ? `Đã trừ 1 lượt, còn ${dn.profile?.credits ?? 0} lượt. ` : '';
+    showExportCharge(dn);
     $('resultMeta').textContent = `${width}×${height} · ${Math.round(xtl.duration)} giây · ${(blob.size / 1048576).toFixed(1)} MB · ${ext.toUpperCase()}`;
     $('shareBtn').hidden = !(navigator.canShare && navigator.canShare({ files: [resultFile] }));
     // Ảnh bìa đi kèm video (thẻ mở đầu của phong cách, cùng cỡ video). Lỗi ảnh bìa không được làm hỏng video đã xuất.
@@ -5154,6 +5199,7 @@ function init() {
   $('vbeeForget').addEventListener('click', vbeeForget);
   syncVbeeOwn();
   onAccountChange(() => syncVbeeOwn());
+  onAccountChange(() => renderVoiceQuota());
   let demoAudio = null;
   $('vbeeDemo').addEventListener('click', () => {
     const v = (ai.voices || []).find(x => x.id === state.voiceId);

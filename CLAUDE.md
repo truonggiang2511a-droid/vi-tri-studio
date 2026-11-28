@@ -47,10 +47,17 @@ Ghi chú phải ĐÃ LÊN GitHub (xin Giang cho đẩy) rồi mới mời chuy�
   khác nhau. Quét thật 2 căn mới: ven TP (10.6923,106.5711) 7 tìm + 9 Place, 10 điểm Vietmap; vùng quê Long An
   (10.62,106.48) 7 tìm + 3 Place, chỉ 5 điểm (UBND, trạm y tế khớp 0). CẦN LÀM 30/11–1/12: đo lại lượt/ngày
   (`vt_visits` page 'map' + `vt_vm_place`), xem `vietmap-khoa2`/`vietmap-loi`; khách kêu thiếu điểm ở vùng quê thì cân nhắc
-  chỉ nới bán kính khi ra quá ít điểm. PR #5 (nháp cũ) còn mở, xin Giang cho đóng. Giang tự xem Total Quota của 2 khoá.
-- Giới hạn tạo giọng 24 giờ (đề xuất, CHƯA áp dụng; chờ Giang nhắn "làm giới hạn"): dùng thử 6 lần / 8.000 ký tự; gói 10 và 30
-  video 20 lần / 20.000; không giới hạn 30 lần / 20.000; mỗi căn chưa xuất tối đa 6 lần; 1 lần = các lượt gọi trong cùng khung
-  2 phút. Khi làm: thử trên DB bằng khối tự huỷ, thêm công tắc tắt, rồi mới bật.
+  chỉ nới bán kính khi ra quá ít điểm. PR #5 (nháp cũ) đã đóng 28/11 20:59 theo ý Giang, không gộp. Giang tự xem Total Quota của 2 khoá.
+- **Code + SQL + ghi chú giới hạn giọng nằm ở nhánh `gioi-han-giong` (CHƯA gộp `main`).** Làm tiếp: `git checkout gioi-han-giong`,
+  gộp `main` mới vào trước, build lại, rồi mới xin Giang cho đẩy.
+- **28/11 21:35 Giang: TẠM CHƯA BẬT cho khách, giữ như cũ.** Không bật, không đẩy code khi Giang chưa bảo. Khung "Giới hạn
+  giọng đọc" trong trang quản trị mới đề xuất, chưa làm (ô "Số lần tạo giọng AI mỗi lượt" hiện có thuộc cách tính cũ).
+- Giới hạn tạo giọng (Giang chốt lại 28/11 21:21): DB ĐÃ ÁP DỤNG `vt_tts_limit` + `_v2` + `_v3`, công tắc `tts_limit_mode`
+  = **off** (khách chưa bị gì). Code (hoàn lượt khi lỗi giọng + hiện số còn lại ở app cũ và AI đạo diễn) CHƯA đẩy → CHỜ Giang
+  cho đẩy, kiểm web thật, rồi mới bật khi Giang bảo "bật". Thử nội bộ: `update vt_config set tts_limit_mode='test' where id=1;`
+  (tài khoản nội bộ thấy đủ giao diện mới) · cho khách: `'on'` · tắt ngay: `'off'`. ĐỪNG bật 'on' khi code chưa lên web.
+- Kịch bản AI: 26–28/11 mọi lỗi là `ai-loi-het-tien` (Claude hết tiền); đã chuyển Gemini 28/11 20:16 → 29/11 đo lại
+  `vt_visits` page 'svc' + hỏi Giang gói/hạn mức khoá Gemini (không còn AI dự phòng).
 - Làm sau: khoá ArcGIS riêng chỉ quyền Định tuyến (`ARCGIS_ROUTE_KEY`), chạy ổn rồi mới tắt quyền Định tuyến của `ARCGIS_KEY`.
 - API Claude hết tiền: đọc ảnh sổ đỏ tạm ngưng; Gemini lỗi/hết lượt thì không còn AI dự phòng.
 
@@ -1055,3 +1062,31 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
   trạm sạc (từng chiếm 1–3 trong 16 chỗ). Bán kính không làm giảm số lượt tìm, chỉ bớt từ khoá mới giảm. Chạm bản đồ thêm
   tiện ích: 19 → 7 lần tìm. Khoá nhớ đệm giữ `|5`. Ước tính ~550–650 giao dịch/ngày (CHƯA đo thật; xem `vt_vm_place` + `vt_visits`
   sau 2–3 ngày). Thử Vietmap giả: tối đa 7 tìm + 12 Place/lần quét.
+- 2026-11-28 21:00 (Giang: "làm giới hạn"): giới hạn tạo giọng 24 giờ nằm hết trong SQL, KHÔNG sửa code app (câu báo `DAILY_LIMIT`
+  hiện thẳng cho khách, giọng đã tạo vẫn dùng được). "1 lần" = gọi giọng cho cùng căn (< 0,3 km) trong 2 phút kể từ lượt đầu
+  (bảng `vt_tts_burst`, chỉ ghi khi công tắc áp cho tài khoản đó; `vt__user(…, true)` khoá dòng nên 5 câu gọi cùng lúc vẫn là 1 lần).
+  Nhóm: không giới hạn còn hạn → 30 lần/20.000; từng có đơn `paid` → 20/20.000; còn lại → 6/8.000; theo căn `moi_can` (0 = bỏ),
+  đếm lại sau mỗi lần căn đó xuất. Số nằm ở `vt_config.tts_limits`. `no_limits` miễn khi 'on', bị áp khi 'test'. Khoá Vbee của khách
+  không tính. Mở cho 1 khách bị chặn: xoá dòng `vt_tts_burst` của khách (giới hạn ký tự vẫn theo `vt_usage`).
+  Đã thử trong khối tự huỷ trên DB thật (mọi ca đúng, rút sạch), áp dụng xong so md5 thân hàm khớp file. Ước theo lịch sử 14 ngày
+  (nhóm theo khoảng nghỉ > 2 phút, hơi khác cách đếm thật): vượt mức gói/ngày: thử 2/152, đã mua 0/42, không giới hạn 0/2;
+  vượt 6 lần/căn chưa xuất: **đã mua 5/42** (cao nhất 11), thử 2/152. Lưu ý AI đạo diễn bắt mọi câu có giọng mới xuất được →
+  khách chạm giới hạn mà còn câu chưa đọc thì phải đợi.
+- 2026-11-28 21:10 (Giang chốt B, thay `moi_can` 6/1 của bản đầu): mỗi vị trí (< 0,3 km) **2 lần tạo giọng / 24 giờ**; mỗi lần đọc
+  trong 2 phút đầu, sau đó thêm **500 ký tự sửa câu** (tổng 1.000). Đọc quá phần sửa còn lại → tự sang lần 2. Xuất xong thì lần
+  đang có khép lại (sửa tiếp tính lần 2, phần sửa còn dư của lần 1 bỏ). Xuất không mở thêm lần. Mức theo gói/ngày giữ nguyên.
+  `supabase/vt_tts_limit_v2.sql`: `vt__tts_plan`, bảng `vt_tts_call`, `vt_tts_refund(p_key, p_call)` (khoá = `TELEGRAM_SECRET`),
+  `vt_public_info.voice_limit` (chỉ có khi 'on' → app đổi câu chữ, bỏ hộp hỏi cũ "Tạo giọng sẽ dùng 1 lượt" — câu đó sai từ 25/11
+  vì tạo giọng không còn trừ lượt; khi tắt app giữ như cũ). `lib/tts.js` hoàn lượt khi trả lỗi ≥ 400 (FPT lỗi ở bước `?poll=`
+  thì không hoàn). Kiểm: file SQL thật trên Postgres 16 cục bộ 57/57 ca (stub bảng + hàm phụ); áp dụng xong md5 4 hàm khớp file;
+  thử nhanh trên DB thật trong khối tự huỷ; node giả 6/6 ca hoàn lượt; Chrome 390 px bật/tắt. Bài học: thử SQL bằng Postgres cục
+  bộ chạy đúng file (`psql -f`) khỏi phải chép tay vào khối `do`.
+- 2026-11-28 21:21 (Giang, THAY quy tắc 21:10): mỗi vị trí 24 giờ = **2 lần ĐỌC CẢ BÀI** (kịch bản dài bao nhiêu cũng đọc hết,
+  chỉ còn trần ký tự/ngày theo gói) → hết 2 lần mới tới **1.000 ký tự sửa câu** (chung cho căn, sửa nhiều đợt). App luôn báo số
+  còn lại; xuất xong chốt lần đang mở + báo đã trừ lượt. SQL `vt_tts_limit_v3.sql`: `vt_tts_burst.last_at` + trigger
+  `vt_tts_call_touch` (1 lần = các câu cách nhau < 2 phút, tối đa 10 phút từ đầu; câu sửa không mở lại cửa sổ), `vt__tts_house`,
+  `vt_voice_status(token, lat, lng)` (null khi không áp → app giữ giao diện cũ; app KHÔNG còn dùng `vt_public_info.voice_limit`).
+  App: `voiceQuotaText` (account.js), `#voiceQuota` + `#resultCharge` (index.html), `#voiceQuota` (dao-dien.html). Giọng Vbee
+  khoá riêng không hiện. Kiểm: Postgres cục bộ chạy đúng file 50/50 ca; DB thật khớp md5; Chrome 390 px bật/tắt, bị chặn, xuất
+  thật video mẫu (vt_export_start → done, hiện đúng dòng trừ lượt), 0 lỗi trang. AI đạo diễn mới thử tải trang (chưa dựng video
+  với giới hạn bật). CHƯA tạo giọng thật trên web.

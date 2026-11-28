@@ -1,7 +1,7 @@
 // AI đạo diễn — giọng đọc + tài khoản (không phụ thuộc hộp thoại của trang chính index.html).
 // Giọng: /api/tts của app (mặc định giọng Google Nữ HD; giọng Vbee của khách — xem setVoice; cùng giới hạn lượt giọng mỗi căn). Có bộ nhớ theo câu:
 // khách sửa / đổi thứ tự → chỉ câu mới phải đọc lại. Lượt: kiểm tra trước (vt_me), TRỪ SAU khi xuất xong (vt_export_begin).
-import { rpc } from './account.js';
+import { rpc, voiceStatus } from './account.js';
 import { speakNumbers, speakPhones } from './vinum.js';
 import { decodeAudioFile } from './export.js';
 import { kvGet, kvPut } from './dd-photos.js';
@@ -128,6 +128,8 @@ export function prefetchVoices(texts, loc) {
 export const voiceOf = t => cache.get(keyOf(t)) || null;
 
 // ---- tài khoản / lượt ----
+// Số lần đọc cả bài / ký tự sửa câu còn lại của căn (null = chưa bật giới hạn, hoặc đang dùng giọng Vbee của khách)
+export const houseVoiceStatus = loc => token() && loc && !isVbee() ? voiceStatus({ p_token: token(), p_lat: loc.lat, p_lng: loc.lng }) : Promise.resolve(null);
 // Kiểm tra (không trừ): còn lượt, còn hạn không giới hạn, hoặc vị trí này đã xuất trong 24 giờ (xuất lại miễn phí)
 export async function canExport(loc) {
   const t = token();
