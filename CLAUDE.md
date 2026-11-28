@@ -40,13 +40,14 @@ Ghi chú phải ĐÃ LÊN GitHub (xin Giang cho đẩy) rồi mới mời chuy�
 ### Bàn giao (cập nhật 28/11 tối)
 
 **Đã có trên `main`:** vá `/api/map`, giới hạn theo IP, kho nhớ R2 (6fa3bff); kịch bản AI chuyển sang Gemini, Claude dự phòng
-(31a3b01). Giang đã thử tạo kịch bản được.
+(31a3b01); khoá Vietmap dự phòng + bớt lượt quét (a60c518, 0e56732). Giang đã thử tạo kịch bản được.
 
 **Đang chờ Giang:**
-- Vietmap 28/11 tối: bản bớt từ khoá (7 từ khoá, 2 km) thay cho PR #5 (PR nháp cũ còn mở, xin Giang cho đóng). Sau khi đẩy 2–3 ngày: đo lại lượt/ngày.
-- Khoá Vietmap dự phòng: code `VIETMAP_KEY_2` ĐÃ viết 28/11 tối (nhật ký mục 5). Giang báo đã dán khoá mới; tên/loại biến
-  CHƯA kiểm được → sau khi đẩy, mở `https://vitristudio.com/api/map/vmcheck`: cả `khoa_chinh` và `khoa_du_phong` phải
-  `dung_duoc: true`, `hai_khoa_giong_nhau: false`.
+- Vietmap: ĐÃ LÊN WEB 28/11 20:53 (khoá dự phòng + bản 7 từ khoá/2 km, 0e56732). `/api/map/vmcheck`: 2 khoá đều dùng được,
+  khác nhau. Quét thật 2 căn mới: ven TP (10.6923,106.5711) 7 tìm + 9 Place, 10 điểm Vietmap; vùng quê Long An
+  (10.62,106.48) 7 tìm + 3 Place, chỉ 5 điểm (UBND, trạm y tế khớp 0). CẦN LÀM 30/11–1/12: đo lại lượt/ngày
+  (`vt_visits` page 'map' + `vt_vm_place`), xem `vietmap-khoa2`/`vietmap-loi`; khách kêu thiếu điểm ở vùng quê thì cân nhắc
+  chỉ nới bán kính khi ra quá ít điểm. PR #5 (nháp cũ) còn mở, xin Giang cho đóng. Giang tự xem Total Quota của 2 khoá.
 - Giới hạn tạo giọng 24 giờ (đề xuất, CHƯA áp dụng; chờ Giang nhắn "làm giới hạn"): dùng thử 6 lần / 8.000 ký tự; gói 10 và 30
   video 20 lần / 20.000; không giới hạn 30 lần / 20.000; mỗi căn chưa xuất tối đa 6 lần; 1 lần = các lượt gọi trong cùng khung
   2 phút. Khi làm: thử trên DB bằng khối tự huỷ, thêm công tắc tắt, rồi mới bật.
