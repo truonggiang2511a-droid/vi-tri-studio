@@ -43,6 +43,7 @@ Ghi chú phải ĐÃ LÊN GitHub (xin Giang cho đẩy) rồi mới mời chuy�
 (31a3b01); khoá Vietmap dự phòng + bớt lượt quét (a60c518, 0e56732). Giang đã thử tạo kịch bản được.
 
 **Đang chờ Giang:**
+- Quét căn gần (28/11 ~22:05, ĐO NGẦM, xem cuối mục 5): sau 3–5 ngày xem `vm-gan-du`/`vm-gan-sot`/`nho-quet` (`vt_visits` page 'map') hoặc dòng ♻️ báo cáo 7h, rồi hỏi Giang có đặt `VM_REUSE=on` không. Trước khi bật nên hỏi Vietmap về điều khoản lưu/dùng lại dữ liệu.
 - Vietmap: ĐÃ LÊN WEB 28/11 20:53 (khoá dự phòng + bản 7 từ khoá/2 km, 0e56732). `/api/map/vmcheck`: 2 khoá đều dùng được,
   khác nhau. Quét thật 2 căn mới: ven TP (10.6923,106.5711) 7 tìm + 9 Place, 10 điểm Vietmap; vùng quê Long An
   (10.62,106.48) 7 tìm + 3 Place, chỉ 5 điểm (UBND, trạm y tế khớp 0). CẦN LÀM 30/11–1/12: đo lại lượt/ngày
@@ -1055,3 +1056,11 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
   trạm sạc (từng chiếm 1–3 trong 16 chỗ). Bán kính không làm giảm số lượt tìm, chỉ bớt từ khoá mới giảm. Chạm bản đồ thêm
   tiện ích: 19 → 7 lần tìm. Khoá nhớ đệm giữ `|5`. Ước tính ~550–650 giao dịch/ngày (CHƯA đo thật; xem `vt_vm_place` + `vt_visits`
   sau 2–3 ngày). Thử Vietmap giả: tối đa 7 tìm + 12 Place/lần quét.
+- 2026-11-28 22:00 (Giang nhắn "làm": dùng lại lần quét của căn gần) — Giang nhắn "đẩy lên" 22:00 → đưa lên `main` ở chế độ ĐO NGẦM (chưa tiết kiệm lượt nào):
+  `lib/map.js` ghi lần quét ĐẦY ĐỦ vào R2 `vmnb1/<ô 0,01 độ>/<toạ độ>`; biến `VM_REUSE` chưa đặt = đo ngầm (khách vẫn quét thật,
+  đếm `vm-gan-du` / `vm-gan-sot`), `on` = mượn căn cách ≤ `VM_REUSE_M` (mặc định 200 m, 50–300), `off` = tắt. Kết quả mượn không
+  thành nguồn, chỉ nhớ 1 giờ ở máy chủ (trình duyệt tối đa 1 ngày). Đếm riêng `nho-quet/nho-tim/nho-xa/nho-duong`; báo cáo 7h thêm
+  dòng ♻️. Đo vài ngày rồi mới quyết bật `on` (xem tỉ lệ mượn được và tỉ lệ sót). 'Sót' chỉ so tên + vị trí trong 500 m.
+  Cloudflare gói Free: R2 tính vào 1.000 lần gọi dịch vụ Cloudflare, không vào 50 lần gọi ra ngoài (changelog 11/2/2026).
+  Chưa tìm được điều khoản lưu dữ liệu của Vietmap. Thử: Vietmap + R2 giả 14/14 đạt, `bash build.sh`, `wrangler deploy --dry-run`;
+  CHƯA gọi Vietmap/R2 thật. Không đổi giao diện, SQL, thanh toán, sự kiện đo.
