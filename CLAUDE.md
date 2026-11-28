@@ -43,6 +43,7 @@ Ghi chú phải ĐÃ LÊN GitHub (xin Giang cho đẩy) rồi mới mời chuy�
 (31a3b01). Giang đã thử tạo kịch bản được.
 
 **Đang chờ Giang:**
+- Vietmap 28/11 tối: bản bớt từ khoá (7 từ khoá, 2 km) thay cho PR #5 (PR nháp cũ còn mở, xin Giang cho đóng). Sau khi đẩy 2–3 ngày: đo lại lượt/ngày.
 - Khoá Vietmap dự phòng: code `VIETMAP_KEY_2` ĐÃ viết 28/11 tối (nhật ký mục 5). Giang báo đã dán khoá mới; tên/loại biến
   CHƯA kiểm được → sau khi đẩy, mở `https://vitristudio.com/api/map/vmcheck`: cả `khoa_chinh` và `khoa_du_phong` phải
   `dung_duoc: true`, `hai_khoa_giong_nhau: false`.
@@ -150,7 +151,7 @@ Cron (`wrangler.jsonc`): `*/30 * * * *` nhắc Telegram khách chưa được g�
 - **Đường lớn**: `stitchWays()` trong `js/data.js` nối các đoạn cùng tuyến hở < 300 m, cùng hướng.
 - **Giọng đọc**: giọng AI và giọng khách tự đọc đều nằm trong `media.voiceSegs` (mỗi cảnh một đoạn, khoá `voiceKey(text)`). Tự đọc: `applyOwnVoice()` — thu trong app thì cắt theo mốc bấm "Câu tiếp" (`splitAt`), tải file thì cắt theo khoảng lặng (`splitVoice`).
 - **Dữ liệu tiện ích** (`js/data.js`): OSM (OpenFreeMap) + Overture (`poi/`) + **Vietmap** (`/api/map/nearby`, đầy đủ nhất ở VN). Tìm theo tên: dữ liệu đã quét + Vietmap (`/api/map/vsearch`) + Photon.
-- **Vietmap / Cloudflare**: mỗi yêu cầu Worker chỉ được ~50 lần gọi ra ngoài. `nearby` = 10 lần tìm + tối đa 24 lần lấy toạ độ, không nhớ đệm từng điểm. Kết quả rỗng thì KHÔNG nhớ đệm (`noCache`). Thêm `&debug=1` để xem số kết quả từng từ khoá. Đổi logic thì đổi tên khoá nhớ đệm (`vmnear3`→`vmnear4`) để bỏ kết quả cũ.
+- **Vietmap / Cloudflare**: mỗi yêu cầu Worker chỉ được ~50 lần gọi ra ngoài. `nearby` (28/11) = 7 từ khoá trong 2 km (mầm non, tiểu học, trung học, trạm y tế, chợ, siêu thị, UBND) + tối đa 12 lần lấy toạ độ; MỖI từ khoá thêm = thêm 1 giao dịch mỗi lần quét. Còn lại do OSM + Overture lo. Khoá nhớ đệm vẫn `vmnear9…|5` để dùng lại căn đã quét. Kết quả rỗng/thiếu thì KHÔNG nhớ lâu. Thêm `&debug=1` để xem số kết quả từng từ khoá. Đổi logic mà cần bỏ kết quả cũ thì đổi tên khoá (`vmnear9`→`vmnear10`).
 
 ---
 
@@ -1044,3 +1045,12 @@ Nên làm vào giờ vắng khách. Đổi một thứ một lần (không sửa
   mã lỗi (không trả khoá), mỗi khoá tốn 1 lượt Reverse, nhớ 30 phút (giờ kiểm ở trường `luc`). Route v3: tài liệu không nói
   trả gì khi hết lượt. Tài liệu: maps.vietmap.vn/docs/vi/map-api/errors/. Thử bằng Vietmap giả (có giả giới hạn 50 lần gọi),
   `npm ci && bash build.sh`, `wrangler deploy --dry-run`; CHƯA gọi Vietmap thật.
+- 2026-11-28 tối (Giang: "chỉ quét tiện ích thật sự gần nhà, còn lại để bên miễn phí lo"; hỏi bản tối ưu đợt Opus 5.5 đạt chưa):
+  KIỂM: bản 31/10 (nhớ toạ độ, tối đa 16 Place), 19/11 (5 km, bỏ tìm sân bay/ga/bến xe) đã chạy; bản 20/11 bớt từ khoá (PR #5,
+  nhánh `vietmap-tiet-kiem`) CHƯA BAO GIỜ gộp. Đo 23–28/11 ≈ 1.200 giao dịch/ngày (~45 lần quét × 19 tìm + ~280 Place mới +
+  ~50 reverse + tìm tên) → gần như chưa giảm so với ~1.300. Bài học: PR nháp chờ duyệt phải ghi vào mục Bàn giao, không thì mất.
+  LÀM (thay PR #5): Vietmap chỉ còn 7 từ khoá trong 2 km, Place ≤ 12; bỏ khỏi Vietmap bệnh viện, công viên, KCN (kiểm 3 căn:
+  Overture trong `poi/` có), khu đô thị/khu dân cư (nguồn miễn phí YẾU nhóm này — Overture gần như không có; OSM chưa kiểm),
+  trạm sạc (từng chiếm 1–3 trong 16 chỗ). Bán kính không làm giảm số lượt tìm, chỉ bớt từ khoá mới giảm. Chạm bản đồ thêm
+  tiện ích: 19 → 7 lần tìm. Khoá nhớ đệm giữ `|5`. Ước tính ~550–650 giao dịch/ngày (CHƯA đo thật; xem `vt_vm_place` + `vt_visits`
+  sau 2–3 ngày). Thử Vietmap giả: tối đa 7 tìm + 12 Place/lần quét.
