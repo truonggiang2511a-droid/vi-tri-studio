@@ -313,7 +313,9 @@ async function fillRoadGaps(onlyIds = null) {
           calls++;
           // Thử cả hai chiều (đường một chiều/tách làn làm một chiều phải đi vòng), lấy chiều ngắn hơn
           const A = { lat: pr.A.p[0], lng: pr.A.p[1] }, B = { lat: pr.B.p[0], lng: pr.B.p[1] };
-          const [r1, r2] = await Promise.all([rawRoute(A, B), rawRoute(B, A)]);
+          // 28/11: chiều đầu đã gần như đi thẳng qua chỗ hở thì khỏi gọi chiều ngược (đỡ nửa số lượt chỉ đường)
+          const r1 = await rawRoute(A, B);
+          const r2 = r1 && r1.km <= pr.d * 1.2 + 0.1 ? null : await rawRoute(B, A);
           const rt = [r1, r2].filter(Boolean).sort((x, y) => x.km - y.km)[0];
           if (rt && rt.coords?.length > 1 && rt.km <= pr.d * 1.8 + 0.4) list.push([[A.lat, A.lng], ...rt.coords, [B.lat, B.lng]]);
         }
