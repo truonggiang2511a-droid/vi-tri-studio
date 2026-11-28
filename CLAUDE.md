@@ -34,6 +34,27 @@ NQ 87/2025, rủi ro qua `/meta/risk/check`), cảnh rủi ro/giá trong video q
 (cùng WebCodecs + Mediabunny như app), cần Safari 26+, giấy phép Automators khi đội ≥ 4 người → đề xuất làm hiệu ứng chữ/vector
 động ngay trong `render.js` (spring/interpolate tự viết, Lottie vẽ lên canvas theo khung), để Remotion cho webapp A-roll/B-roll.
 
+**Đoạn chat dài** (Giang yêu cầu 28/11): ghi tóm tắt vào mục "Bàn giao" bên dưới rồi mời Giang mở chat mới cho đỡ tốn token.
+Ghi chú phải ĐÃ LÊN GitHub (xin Giang cho đẩy) rồi mới mời chuyển — commit nằm trên máy làm việc thì chat mới không đọc được.
+
+### Bàn giao (cập nhật 28/11 tối)
+
+**Đã có trên `main`:** vá `/api/map`, giới hạn theo IP, kho nhớ R2 (6fa3bff); kịch bản AI chuyển sang Gemini, Claude dự phòng
+(31a3b01). Giang đã thử tạo kịch bản được.
+
+**Đang chờ Giang:**
+- Khoá Vietmap: xem Total Quota của khoá cũ. Còn ≥ ~2.000 lượt → giữ `VIETMAP_KEY`, thêm Secret `VIETMAP_KEY_2` (khoá mới) rồi
+  nhắn "làm khoá dự phòng" (code CHƯA đọc `VIETMAP_KEY_2`). Gần hết → thay thẳng `VIETMAP_KEY` rồi Deploy.
+- Giới hạn tạo giọng 24 giờ (đề xuất, CHƯA áp dụng; chờ Giang nhắn "làm giới hạn"): dùng thử 6 lần / 8.000 ký tự; gói 10 và 30
+  video 20 lần / 20.000; không giới hạn 30 lần / 20.000; mỗi căn chưa xuất tối đa 6 lần; 1 lần = các lượt gọi trong cùng khung
+  2 phút. Khi làm: thử trên DB bằng khối tự huỷ, thêm công tắc tắt, rồi mới bật.
+- Làm sau: khoá ArcGIS riêng chỉ quyền Định tuyến (`ARCGIS_ROUTE_KEY`), chạy ổn rồi mới tắt quyền Định tuyến của `ARCGIS_KEY`.
+- API Claude hết tiền: đọc ảnh sổ đỏ tạm ngưng; Gemini lỗi/hết lượt thì không còn AI dự phòng.
+
+**Kiểm 28/11 ~20:35 (chỉ đọc DB):** `charge_mode` = on, `tts_daily_chars` = 20.000, `unlimited_daily_exports` = 10. Trần 10
+video/ngày VẪN được kiểm ở `vt_export_start` và `vt_export_begin`. Tạo giọng kiểu mới (`vt_ai_allow`) đang chặn theo ký tự và
+theo số căn chưa xuất (4 căn/24 giờ), chưa đếm số lần. `arcgis-route`: 27/11 791 lượt, 28/11 (chưa hết ngày) 629 lượt.
+
 ---
 
 ## 1. Kiến trúc nhanh
